@@ -1,0 +1,26 @@
+{
+  "name": "formula-race",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "node server/index.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "three": "^0.180.0",
+    "ws": "^8.22.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
