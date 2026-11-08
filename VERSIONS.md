@@ -1,6 +1,6 @@
 # Klec GP / Vertex GP — verze
 
-**0.5** = současná (AI tempo live, atmosféra, demo polish).  
+**0.6** = současná (UX menu, zvuk, landscape).  
 Historie commitů v gitu zůstává; staré tagy se nemažou.
 
 **Hub:** https://gittizen.github.io/vertex-gp/  
@@ -10,29 +10,32 @@ Historie commitů v gitu zůstává; staré tagy se nemažou.
 
 ## Přehled
 
-| **0.1** Vertex GP | **0.2** Klec GP | **0.3** mobil | **0.4** svět | **0.5** AI + demo |
-| --- | --- | --- | --- | --- |
-| [Hrát](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) · [Netlify](https://tourmaline-gingersnap-268fa6.netlify.app/) |
-| Základ engine | Identita | Dotyk + hosting | Okolí tratí | Live AI + atmosféra |
+| **0.1** Vertex GP | **0.2** Klec GP | **0.3** mobil | **0.4** svět | **0.5** AI + demo | **0.6** UX + zvuk |
+| --- | --- | --- | --- | --- | --- |
+| [Hrát](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) · [Netlify](https://tourmaline-gingersnap-268fa6.netlify.app/) |
+| Základ engine | Identita | Dotyk + hosting | Okolí tratí | Live AI + atmosféra | Jet CTA, dock Zpět, engine SFX |
 
 ---
 
-## 0.5 — AI, atmosféra, produktový polish *(současná)*
+## 0.6 — UX menu, zvuk, landscape *(současná)*
 
-**Cíl:** živější AI a menu, čitelnější tratě, hratelná produkce + archivy.
+**Cíl:** rychlejší cesta do závodu, srozumitelnější nastavení, konzistentní panely, lepší audio feel.
 
-- Community / pace learning → úprava jezdců podle dat
-- Default: náhodní AI soupeři každý solo závod
-- Menu styl Kalendář; Klecany garage = Volvo V70 1. gen
-- Opravy terénu (Námko), noční kontrast, AI launch/lean
-- Dokumentace: README, CHANGELOG, RECREATE_PROMPT
+- Domů: primární **Jet** (klasika hned), chipy trať / vůz / obtíž / rekordy; Online jako dlaždice
+- Nastavení: **Hráčské** vs sbalené **Pokročilé** (soutěže, AI učení, rekordy)
+- Všechny menu panely: scroll těla, **Zpět** v černém dock pásu (jako Zvuk)
+- Engine zvuky podle peklostroje; freestyle tišší; landscape-first + volitelné portrait
+- Tratě: lehčí karty v seznamu; tagy Kasárny/Plácek zjednodušené
 
 **Postup release**
-1. `GameVersion.ts` + `package.json` → **0.5**
-2. Větev `0.4` z předchozího release; `node scripts/build-version-pages.mjs`
-3. Netlify = produkce 0.5; Pages = hub včetně `/0.5/`
+1. `GameVersion.ts` + `package.json` → **0.6**
+2. Větev `0.5` z `v0.5.0`; `node scripts/build-version-pages.mjs`
+3. Netlify = produkce 0.6; Pages = hub včetně `/0.6/`
 
 ---
+
+## 0.5 — AI, atmosféra, produktový polish
+Live tempo AI, náhodní soupeři, kalendář atmosféra, demo docs.
 
 ## 0.4 — Reálnější svět
 Okolí, berm/blanket, unikátní podklady, stíny bez děr v asfaltu.

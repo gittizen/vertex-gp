@@ -1,6 +1,6 @@
-# Klec GP · v0.5
+# Klec GP · v0.6
 
-![Klec GP gameplay](./versions/0.5/screenshot.png)
+![Klec GP gameplay](./versions/0.6/screenshot.png)
 
 **Prohlížečová 2.5D semi-sim závodní hra** ze světa Klecan a okolí. Solo s AI, freestyle triky, online až 4 hráči.
 
@@ -10,7 +10,7 @@ Studentský produkt s vlastní značkou, tratěmi podle reálných míst, pečli
 |--|--|
 | **Hrát** | https://tourmaline-gingersnap-268fa6.netlify.app/ |
 | **Historie verzí** | https://gittizen.github.io/vertex-gp/ |
-| **Archivy** | [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) |
+| **Archivy** | [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) · [0.6](https://gittizen.github.io/vertex-gp/0.6/) |
 | **Changelog** | [CHANGELOG.md](./CHANGELOG.md) |
 | **Rebuild prompt** | [RECREATE_PROMPT.md](./RECREATE_PROMPT.md) |
 
@@ -37,7 +37,7 @@ Autor: **Filip Khunt** · ve hře věkové omezení **16+** · repozitář histo
 - **Vozidla** od formule po skate; tuning s rozpočtem bodů  
 - **AI** — Lehká / Střední / Těžká; default *každý solo závod jiní soupeři*  
 - **Online** — založ místnost, pošli odkaz  
-- **Menu** — volitelné vizuální styly (neon, mech, led, kalendář…)
+- **Menu** — Jet na Domů, hráčské vs pokročilé nastavení, volitelné vizuální styly
 
 **Drobnosti pro hráče:** koloběžka v garáži (easter egg), soutěže / žebříčky, watermark tratí, CS + EN.
 

@@ -196,7 +196,7 @@ const TUNE_KEYS: (keyof PlayerTuningValues)[] = [
 export class Menu {
   private readonly root: HTMLElement
   private selectedTrackId = TRACKS[0].id
-  private selectedVehicle: VehicleKind = TRACKS[0].vehicle
+  private selectedVehicle: VehicleKind = 'street'
   private selectedColor = PLAYER_COLOR_CHOICES[0]!
   private selectedNeon = NEON_COLOR_CHOICES[0]!
   private selectedDifficulty: DifficultyId = 'normal'
@@ -239,6 +239,8 @@ export class Menu {
   /** Leaderboard filtr tratě ('' = vše). */
   private lbTrackId = ''
   private recordsBack: Screen = 'home'
+  /** Zpět z podstránek nastavení (chip z Domova → home, hub → settings). */
+  private settingsSubBack: Screen = 'settings'
   /** Remap: skate vs bike triky. */
   private ctrlTrickKind: 'skate' | 'bike' = 'skate'
   /** Rozbalené podstyly kalendáře v atmosféře. */
@@ -408,16 +410,18 @@ export class Menu {
 
   /**
    * Viditelné Zpět (hlavně telefon — Esc tam není).
-   * Na PC nechá i jemný Esc hint.
+   * dock = fixed vpravo dole obrazovky (výjimky mimo panel)
+   * flow = v černém pásu panelu (menu-panel-dock) — scrolluje tělo, Zpět zůstává
    */
-  private backRow(to: Screen | 'entry' = 'home'): string {
+  private backRow(to: Screen | 'entry' = 'home', mode: 'dock' | 'flow' = 'dock'): string {
     const entry = to === 'entry'
     const label = entry ? t('menu.backEntry') : t('menu.back')
     const attr = entry ? 'data-back-entry' : 'data-back'
     const esc = isMobileClient()
       ? ''
       : `<p class="menu-esc-hint">${entry ? t('menu.escHint') : t('menu.escBack')}</p>`
-    return `<div class="menu-nav-back">
+    const modeClass = mode === 'flow' ? ' menu-nav-back--flow' : ' menu-nav-back--dock'
+    return `<div class="menu-nav-back${modeClass}">
       <button type="button" class="btn-ghost menu-back-btn" ${attr}>${label}</button>
       ${esc}
     </div>`
@@ -519,7 +523,7 @@ export class Menu {
       this.screen === 'aiLearn' ||
       this.screen === 'controls'
     ) {
-      this.screen = 'settings'
+      this.screen = this.settingsSubBack
       this.render()
       return 'stay'
     }
@@ -535,13 +539,8 @@ export class Menu {
       this.render()
       return 'stay'
     }
-    if (this.screen === 'online') {
-      this.screen = 'raceMode'
-      this.render()
-      return 'stay'
-    }
-    if (this.screen === 'raceMode' || this.screen === 'records') {
-      this.screen = 'home'
+    if (this.screen === 'online' || this.screen === 'raceMode' || this.screen === 'records') {
+      this.screen = this.screen === 'records' ? this.recordsBack : 'home'
       this.render()
       return 'stay'
     }
@@ -601,6 +600,9 @@ export class Menu {
     if (this.screen === 'home') {
       const atmHome = this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE
       const art = menuArtForTone(atmHome.tone, atmHome.calendarPack)
+      const trackName = this.escape(this.trackLabel())
+      const vehicleName = this.vehicleLabel(this.selectedVehicle)
+      const diffName = this.diffLabel()
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -609,41 +611,72 @@ export class Menu {
             ${brandLockupHtml({ size: 'menu' })}
           </header>
           <div class="gta-tiles">
-            <button type="button" class="gta-tile gta-tile-hero" data-go="raceMode" style="--tile:url('${art.race}')">
-              <span class="gta-tile-kicker">${t('menu.raceModeEyebrow')}</span>
-              <strong class="gta-tile-label">${t('menu.startRace')}</strong>
-              <span class="gta-tile-sub">${t('menu.raceClassicBlurb')}</span>
+            <button type="button" class="gta-tile gta-tile-hero" data-play style="--tile:url('${art.race}')">
+              <span class="gta-tile-kicker">${t('menu.raceClassic')}</span>
+              <strong class="gta-tile-label">${t('menu.playNow')}</strong>
+              <span class="gta-tile-sub">${trackName} · ${vehicleName}</span>
             </button>
             <button type="button" class="gta-tile" data-go="tracks" style="--tile:url('${art.tracks}')">
               <strong class="gta-tile-label">${t('menu.trackSelect')}</strong>
-              <span class="gta-tile-sub">${this.escape(this.trackLabel())}</span>
+              <span class="gta-tile-sub">${trackName}</span>
             </button>
             <button type="button" class="gta-tile" data-go="vehicles" style="--tile:url('${art.garage}')">
               <strong class="gta-tile-label">${t('menu.vehicleSelect')}</strong>
-              <span class="gta-tile-sub">${this.vehicleLabel(this.selectedVehicle)}</span>
+              <span class="gta-tile-sub">${vehicleName}</span>
             </button>
-            <button type="button" class="gta-tile" data-go="records" style="--tile:url('${art.board}')">
-              <strong class="gta-tile-label">${t('menu.leaderboard')}</strong>
+            <button type="button" class="gta-tile" data-go="online" style="--tile:url('${art.race}')">
+              <strong class="gta-tile-label">${t('menu.onlineShort')}</strong>
+              <span class="gta-tile-sub">${t('menu.onlineTileSub')}</span>
             </button>
             <button type="button" class="gta-tile" data-go="settings" style="--tile:url('${art.settings}')">
               <strong class="gta-tile-label">${t('menu.settings')}</strong>
+              <span class="gta-tile-sub">${t('menu.leaderboard')} · ${t('menu.difficulty')}</span>
             </button>
           </div>
-          <p class="tune-rules home-status">
-            ${t('menu.statusTrack')}: <strong>${this.escape(this.trackLabel())}</strong>
-            · ${t('menu.statusVehicle')}: <strong>${this.vehicleLabel(this.selectedVehicle)}</strong>
-            · ${t('menu.statusDiff')} <strong>${this.diffLabel()}</strong>
-            · ${t('menu.statusTuning')} ${tuningSum(this.tuning)}/${TUNING_BUDGET}
-          </p>
-          ${this.backRow('entry')}
+          <div class="home-chips" role="group" aria-label="${t('menu.statusTrack')}">
+            <button type="button" class="home-chip" data-go="tracks">
+              <span class="home-chip-k">${t('menu.statusTrack')}</span>
+              <strong>${trackName}</strong>
+            </button>
+            <button type="button" class="home-chip" data-go="vehicles">
+              <span class="home-chip-k">${t('menu.statusVehicle')}</span>
+              <strong>${vehicleName}</strong>
+            </button>
+            <button type="button" class="home-chip" data-go="difficulty">
+              <span class="home-chip-k">${t('menu.statusDiff')}</span>
+              <strong>${diffName}</strong>
+            </button>
+            <button type="button" class="home-chip" data-go="records">
+              <span class="home-chip-k">${t('menu.leaderboard')}</span>
+              <strong>${t('menu.recordsOpen')}</strong>
+            </button>
+          </div>
+          ${
+            isMobileClient()
+              ? ''
+              : `<p class="menu-esc-hint menu-esc-hint-home">${t('menu.escHint')}</p>`
+          }
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('entry')
+      this.root.querySelector<HTMLButtonElement>('[data-play]')?.addEventListener('click', () => {
+        this.raceModePick = 'classic'
+        this.confirmRaceMode()
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          if (btn.dataset.go === 'records') this.recordsBack = 'home'
-          this.screen = (btn.dataset.go as Screen) || 'home'
+          const go = (btn.dataset.go as Screen) || 'home'
+          if (go === 'records') this.recordsBack = 'home'
+          if (go === 'difficulty') this.settingsSubBack = 'home'
+          if (go === 'settings') this.settingsSubBack = 'settings'
+          if (go === 'online') {
+            this.raceModePick = 'online'
+            this.screen = 'online'
+            this.render()
+            this.onBrowseOnline?.()
+            return
+          }
+          this.screen = go
           this.render()
         })
       })
@@ -670,32 +703,34 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel gta-panel">
-          <div class="race-mode-layout">
-            <div class="race-mode-list">
-              ${modes
-                .map((m) => {
-                  const active = m.id === pick.id ? 'active' : ''
-                  const online = m.online ? 'home-panel-online' : ''
-                  return `<button type="button" class="track-card ${active} ${online}" data-race-mode="${m.id}">
-                    <strong>${m.title}</strong>
-                  </button>`
-                })
-                .join('')}
+        <div class="menu-shell menu-panel gta-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <div class="race-mode-layout">
+              <div class="race-mode-list">
+                ${modes
+                  .map((m) => {
+                    const active = m.id === pick.id ? 'active' : ''
+                    const online = m.online ? 'home-panel-online' : ''
+                    return `<button type="button" class="track-card ${active} ${online}" data-race-mode="${m.id}">
+                      <strong>${m.title}</strong>
+                    </button>`
+                  })
+                  .join('')}
+              </div>
+              <div class="race-mode-detail" data-race-detail>
+                <strong data-race-title>${pick.title}</strong>
+                <p data-race-blurb>${pick.blurb}</p>
+                <p class="tune-rules" data-race-hint>${confirmHint}</p>
+                <div class="hold-track ${pick.id === 'online' ? '' : 'is-hidden'}" aria-hidden="true"><div class="hold-bar" data-hold-fill></div></div>
+              </div>
             </div>
-            <div class="race-mode-detail" data-race-detail>
-              <strong data-race-title>${pick.title}</strong>
-              <p data-race-blurb>${pick.blurb}</p>
-              <p class="tune-rules" data-race-hint>${confirmHint}</p>
-              <div class="hold-track ${pick.id === 'online' ? '' : 'is-hidden'}" aria-hidden="true"><div class="hold-bar" data-hold-fill></div></div>
-            </div>
+            ${
+              onPhone
+                ? `<p class="tune-rules menu-mobile-warn">${t('menu.mobileLimits')}</p>`
+                : ''
+            }
           </div>
-          ${
-            onPhone
-              ? `<p class="tune-rules menu-mobile-warn">${t('menu.mobileLimits')}</p>`
-              : ''
-          }
-          ${this.backRow('home')}
+          ${this.backRow('home', 'flow')}
         </div>
       `
       this.bindMuteBar()
@@ -789,32 +824,34 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules menu-scroll-hint">${t('menu.tracksScrollHint')}</p>
-          <div class="tracks-layout">
-            <div class="tracks-list">${TRACKS.map((tr) => this.trackCard(tr)).join('')}</div>
-            <div class="tracks-preview-pane">
-              ${trackPreviewHtml(selected, race.reverse)}
-              <div class="track-preview-meta">
-                <strong>${this.escape(this.trackName(selected))}</strong>
-                <span>${selected.sandbox ? t('menu.sandboxMeta') : this.escape(this.trackBlurb(selected))}</span>
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules menu-scroll-hint">${t('menu.tracksScrollHint')}</p>
+            <div class="tracks-layout">
+              <div class="tracks-list">${TRACKS.map((tr) => this.trackCard(tr)).join('')}</div>
+              <div class="tracks-preview-pane">
+                ${trackPreviewHtml(selected, race.reverse)}
+                <div class="track-preview-meta">
+                  <strong>${this.escape(this.trackName(selected))}</strong>
+                  <span>${selected.sandbox ? t('menu.sandboxMeta') : this.escape(this.trackBlurb(selected))}</span>
+                </div>
+                ${
+                  selected.sandbox
+                    ? `<p class="tune-rules">${t('menu.sandboxHint')}</p>`
+                    : `<p class="tune-rules">${t('menu.raceDirection')}</p>
+                <div class="dir-grid">
+                  <button type="button" class="track-card ${!race.reverse ? 'active' : ''}" data-reverse="0">
+                    <strong>${t('menu.raceDir.normal')}</strong>
+                  </button>
+                  <button type="button" class="track-card ${race.reverse ? 'active' : ''}" data-reverse="1">
+                    <strong>${t('menu.raceDir.reverse')}</strong>
+                  </button>
+                </div>`
+                }
               </div>
-              ${
-                selected.sandbox
-                  ? `<p class="tune-rules">${t('menu.sandboxHint')}</p>`
-                  : `<p class="tune-rules">${t('menu.raceDirection')}</p>
-              <div class="dir-grid">
-                <button type="button" class="track-card ${!race.reverse ? 'active' : ''}" data-reverse="0">
-                  <strong>${t('menu.raceDir.normal')}</strong>
-                </button>
-                <button type="button" class="track-card ${race.reverse ? 'active' : ''}" data-reverse="1">
-                  <strong>${t('menu.raceDir.reverse')}</strong>
-                </button>
-              </div>`
-              }
             </div>
           </div>
-          ${this.backRow('home')}
+          ${this.backRow('home', 'flow')}
         </div>
       `
       this.bindMuteBar()
@@ -839,48 +876,53 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules menu-scroll-hint">${t('menu.vehiclesScrollHint')}</p>
-          <div class="tracks-layout vehicles-layout">
-            <div class="tracks-list">
-              ${VEHICLE_KINDS.map((k) => {
-                const active = k === kind ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-vehicle="${k}">
-                  <strong>${this.vehicleLabel(k)}</strong>
-                  <span>${t(`vehicle.${k}.max`)}</span>
-                </button>`
-              }).join('')}
-            </div>
-            <div class="tracks-preview-pane vehicle-stage">
-              <canvas id="vehicle-preview" class="vehicle-preview-canvas"></canvas>
-              <p class="tune-help">${t('menu.vehicleDrag')}</p>
-              <div class="track-preview-meta">
-                <strong>${this.vehicleLabel(kind)}</strong>
-                <span>${t(`vehicle.${kind}.max`)}</span>
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules menu-scroll-hint">${t('menu.vehiclesScrollHint')}</p>
+            <div class="tracks-layout vehicles-layout">
+              <div class="tracks-list">
+                ${VEHICLE_KINDS.map((k) => {
+                  const active = k === kind ? 'active' : ''
+                  return `<button type="button" class="track-card ${active}" data-vehicle="${k}">
+                    <strong>${this.vehicleLabel(k)}</strong>
+                    <span>${t(`vehicle.${k}.max`)}</span>
+                  </button>`
+                }).join('')}
               </div>
-              <p class="tune-rules">${t('menu.colorPick')}</p>
-              <div class="color-grid">
-                ${this.colorSwatchHtml('color', COLOR_NONE, this.selectedColor)}
-                ${PLAYER_COLOR_CHOICES.map((c) => this.colorSwatchHtml('color', c, this.selectedColor)).join('')}
-                <label class="color-rgb" title="${t('menu.colorRgb')}">
-                  <input type="color" id="color-rgb" value="${this.selectedColor < 0 ? '#c62828' : '#' + this.selectedColor.toString(16).padStart(6, '0')}" />
-                </label>
-              </div>
-              ${
-                kind === 'scooter'
-                  ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
-                  : ''
-              }
-              <p class="vehicle-lore">${t(`vehicle.${kind}.invented`)}</p>
-              <p class="vehicle-lore">${t(`vehicle.${kind}.first`)}</p>
-              <p class="tune-rules">${t('menu.vehicleControls')}</p>
-              <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>
-              <div class="vehicle-flow-foot">
-                <button type="button" class="btn-ghost vehicle-tuning-link" data-next>${t('menu.tuning')}</button>
+              <div class="tracks-preview-pane vehicle-stage">
+                <canvas id="vehicle-preview" class="vehicle-preview-canvas"></canvas>
+                <p class="tune-help">${t('menu.vehicleDrag')}</p>
+                <div class="track-preview-meta">
+                  <strong>${this.vehicleLabel(kind)}</strong>
+                  <span>${t(`vehicle.${kind}.max`)}</span>
+                </div>
+                <p class="tune-rules">${t('menu.colorPick')}</p>
+                <div class="color-grid">
+                  ${this.colorSwatchHtml('color', COLOR_NONE, this.selectedColor)}
+                  ${PLAYER_COLOR_CHOICES.map((c) => this.colorSwatchHtml('color', c, this.selectedColor)).join('')}
+                  <label class="color-rgb" title="${t('menu.colorRgb')}">
+                    <input type="color" id="color-rgb" value="${this.selectedColor < 0 ? '#c62828' : '#' + this.selectedColor.toString(16).padStart(6, '0')}" />
+                  </label>
+                </div>
+                ${
+                  kind === 'scooter'
+                    ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
+                    : ''
+                }
+                <details class="vehicle-more">
+                  <summary>${t('menu.vehicleMore')}</summary>
+                  <p class="vehicle-lore">${t(`vehicle.${kind}.invented`)}</p>
+                  <p class="vehicle-lore">${t(`vehicle.${kind}.first`)}</p>
+                  <p class="tune-rules">${t('menu.vehicleControls')}</p>
+                  <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>
+                </details>
+                <div class="vehicle-flow-foot">
+                  <button type="button" class="btn-ghost vehicle-tuning-link" data-next>${t('menu.tuning')}</button>
+                </div>
               </div>
             </div>
           </div>
-          ${this.backRow('home')}
+          ${this.backRow('home', 'flow')}
         </div>
         ${
           this.scooterPopup
@@ -969,41 +1011,43 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-tuning vehicles-tune">
-          <p class="tune-rules menu-budget-line">${this.vehicleLabel(kind)} · ${t('menu.budget')} <span class="budget-pill">${used} / ${TUNING_BUDGET} ${t('menu.points')}</span></p>
-          <div class="tracks-layout vehicles-layout">
-            <div class="tuning-side">
-              <p class="tune-rules">${t('menu.tuneRules')}</p>
-              <div class="tune-stack">
-                ${TUNE_KEYS.map((key) => this.slider(key, t(`menu.${key}`), this.tuning[key])).join('')}
+        <div class="menu-shell menu-panel menu-tuning vehicles-tune menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules menu-budget-line">${this.vehicleLabel(kind)} · ${t('menu.budget')} <span class="budget-pill">${used} / ${TUNING_BUDGET} ${t('menu.points')}</span></p>
+            <div class="tracks-layout vehicles-layout">
+              <div class="tuning-side">
+                <p class="tune-rules">${t('menu.tuneRules')}</p>
+                <div class="tune-stack">
+                  ${TUNE_KEYS.map((key) => this.slider(key, t(`menu.${key}`), this.tuning[key])).join('')}
+                </div>
+                <p class="tune-hint" id="tune-hint">${tuningHint(this.tuning)}</p>
               </div>
-              <p class="tune-hint" id="tune-hint">${tuningHint(this.tuning)}</p>
+              <div class="tracks-preview-pane vehicle-stage">
+                <canvas id="vehicle-preview" class="vehicle-preview-canvas"></canvas>
+                <p class="tune-help">${t('menu.vehicleDrag')}</p>
+                <div class="track-preview-meta">
+                  <strong>${this.vehicleLabel(kind)}</strong>
+                  <span>${t(`vehicle.${kind}.max`)}</span>
+                </div>
+                <p class="tune-rules">${kind === 'bike' ? t('menu.wheelPick') : kind === 'scooter' ? t('menu.neonNone') : t('menu.neonPick')}</p>
+                ${
+                  kind === 'scooter'
+                    ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
+                    : `<div class="color-grid">
+                  ${this.colorSwatchHtml('neon', NEON_NONE, this.selectedNeon)}
+                  ${NEON_COLOR_CHOICES.map((c) => this.colorSwatchHtml('neon', c, this.selectedNeon)).join('')}
+                  <label class="color-rgb" title="${t('menu.neonRgb')}">
+                    <input type="color" id="neon-rgb" value="${this.selectedNeon < 0 ? '#ff2bd6' : '#' + this.selectedNeon.toString(16).padStart(6, '0')}" />
+                  </label>
+                </div>`
+                }
+              </div>
             </div>
-            <div class="tracks-preview-pane vehicle-stage">
-              <canvas id="vehicle-preview" class="vehicle-preview-canvas"></canvas>
-              <p class="tune-help">${t('menu.vehicleDrag')}</p>
-              <div class="track-preview-meta">
-                <strong>${this.vehicleLabel(kind)}</strong>
-                <span>${t(`vehicle.${kind}.max`)}</span>
-              </div>
-              <p class="tune-rules">${kind === 'bike' ? t('menu.wheelPick') : kind === 'scooter' ? t('menu.neonNone') : t('menu.neonPick')}</p>
-              ${
-                kind === 'scooter'
-                  ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
-                  : `<div class="color-grid">
-                ${this.colorSwatchHtml('neon', NEON_NONE, this.selectedNeon)}
-                ${NEON_COLOR_CHOICES.map((c) => this.colorSwatchHtml('neon', c, this.selectedNeon)).join('')}
-                <label class="color-rgb" title="${t('menu.neonRgb')}">
-                  <input type="color" id="neon-rgb" value="${this.selectedNeon < 0 ? '#ff2bd6' : '#' + this.selectedNeon.toString(16).padStart(6, '0')}" />
-                </label>
-              </div>`
-              }
+            <div class="menu-flow-actions">
+              <button type="button" class="btn-ghost" data-next>${t('menu.tuningDone')}</button>
             </div>
           </div>
-          <div class="menu-flow-actions">
-            <button type="button" class="btn-ghost" data-next>${t('menu.tuningDone')}</button>
-            ${this.backRow('vehicles')}
-          </div>
+          ${this.backRow('vehicles', 'flow')}
         </div>
       `
       this.bindMuteBar()
@@ -1057,16 +1101,25 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-settings-hub">
-          <div class="home-actions">
-            <button type="button" class="btn-ghost home-panel" data-go="controls">${t('menu.settingsControls')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="difficulty">${t('menu.difficulty')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="audio">${t('menu.settingsAudio')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="atmosphere">${t('menu.settingsAtmosphere')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="competitions">${t('menu.settingsCompetitions')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="aiLearn">${t('menu.settingsAiLearn')}</button>
+        <div class="menu-shell menu-panel menu-settings-hub menu-panel-dock">
+          <div class="menu-panel-body">
+            <div class="home-actions">
+              <p class="settings-group-label">${t('menu.settingsPlayer')}</p>
+              <button type="button" class="btn-ghost home-panel" data-go="controls">${t('menu.settingsControls')}</button>
+              <button type="button" class="btn-ghost home-panel" data-go="difficulty">${t('menu.difficulty')}</button>
+              <button type="button" class="btn-ghost home-panel" data-go="audio">${t('menu.settingsAudio')}</button>
+              <button type="button" class="btn-ghost home-panel" data-go="atmosphere">${t('menu.settingsAtmosphere')}</button>
+              <details class="settings-advanced">
+                <summary>${t('menu.settingsAdvanced')}</summary>
+                <div class="settings-advanced-list">
+                  <button type="button" class="btn-ghost home-panel" data-go="competitions">${t('menu.settingsCompetitions')}</button>
+                  <button type="button" class="btn-ghost home-panel" data-go="aiLearn">${t('menu.settingsAiLearn')}</button>
+                  <button type="button" class="btn-ghost home-panel" data-go="records">${t('menu.leaderboard')}</button>
+                </div>
+              </details>
+            </div>
           </div>
-          ${this.backRow('home')}
+          ${this.backRow('home', 'flow')}
         </div>
         ${this.settingsThanks()}
       `
@@ -1075,7 +1128,10 @@ export class Menu {
       this.bindThanks()
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          this.screen = (btn.dataset.go as Screen) || 'settings'
+          const go = (btn.dataset.go as Screen) || 'settings'
+          if (go === 'records') this.recordsBack = 'settings'
+          this.settingsSubBack = 'settings'
+          this.screen = go
           this.render()
         })
       })
@@ -1092,32 +1148,34 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules menu-scroll-hint">${t('menu.compBlurb')}</p>
-          <div class="tracks-layout">
-            <div class="tracks-list">
-              ${COMPETITIONS.map((c) => {
-                const active = c.id === cur ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-comp="${c.id}">
-                  <strong>${t(`comp.${c.id}`)}</strong>
-                  <span>${t(`comp.${c.id}.blurb`)}</span>
-                </button>`
-              }).join('')}
-            </div>
-            <div class="tracks-preview-pane comp-preview-pane" style="--comp-photo:url('${art.race}')">
-              <div class="comp-preview-hero"></div>
-              <div class="track-preview-meta">
-                <strong>${t(`comp.${pick.id}`)}</strong>
-                <span>${t(`comp.${pick.id}.blurb`)}</span>
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules menu-scroll-hint">${t('menu.compBlurb')}</p>
+            <div class="tracks-layout">
+              <div class="tracks-list">
+                ${COMPETITIONS.map((c) => {
+                  const active = c.id === cur ? 'active' : ''
+                  return `<button type="button" class="track-card ${active}" data-comp="${c.id}">
+                    <strong>${t(`comp.${c.id}`)}</strong>
+                    <span>${t(`comp.${c.id}.blurb`)}</span>
+                  </button>`
+                }).join('')}
               </div>
-              <p class="tune-help">${t(`comp.${pick.id}.help`)}</p>
+              <div class="tracks-preview-pane comp-preview-pane" style="--comp-photo:url('${art.race}')">
+                <div class="comp-preview-hero"></div>
+                <div class="track-preview-meta">
+                  <strong>${t(`comp.${pick.id}`)}</strong>
+                  <span>${t(`comp.${pick.id}.blurb`)}</span>
+                </div>
+                <p class="tune-help">${t(`comp.${pick.id}.help`)}</p>
+              </div>
             </div>
           </div>
-          ${this.backRow('settings')}
+          ${this.backRow(this.settingsSubBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('settings')
+      this.bindBack(this.settingsSubBack)
       this.root.querySelectorAll<HTMLButtonElement>('[data-comp]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.audioApi?.playClick?.()
@@ -1154,54 +1212,56 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules">${t('menu.aiLearnBlurb')}</p>
-          <p class="tune-help">${t('menu.aiLearnStats', { n: samples.length, c: model.cells.length })}</p>
-          <div class="dir-grid" style="margin:12px 0">
-            <button type="button" class="track-card ${learn.enabled ? 'active' : ''}" data-learn-enabled>
-              <strong>${t('menu.aiLearnCollect')}</strong>
-              <span>${learn.enabled ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-            </button>
-            <button type="button" class="track-card ${learn.applyToAi ? 'active' : ''}" data-learn-apply>
-              <strong>${t('menu.aiLearnApply')}</strong>
-              <span>${learn.applyToAi ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-            </button>
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules">${t('menu.aiLearnBlurb')}</p>
+            <p class="tune-help">${t('menu.aiLearnStats', { n: samples.length, c: model.cells.length })}</p>
+            <div class="dir-grid" style="margin:12px 0">
+              <button type="button" class="track-card ${learn.enabled ? 'active' : ''}" data-learn-enabled>
+                <strong>${t('menu.aiLearnCollect')}</strong>
+                <span>${learn.enabled ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+              </button>
+              <button type="button" class="track-card ${learn.applyToAi ? 'active' : ''}" data-learn-apply>
+                <strong>${t('menu.aiLearnApply')}</strong>
+                <span>${learn.applyToAi ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+              </button>
+            </div>
+            <div class="dir-grid" style="margin-bottom:12px">
+              <button type="button" class="menu-start" data-learn-export>${t('menu.aiLearnExport')}</button>
+              <button type="button" class="btn-ghost" data-learn-import>${t('menu.aiLearnImport')}</button>
+            </div>
+            <input type="file" accept="application/json,.json" data-learn-file hidden />
+            <textarea class="text-input" data-learn-box readonly rows="5" style="width:100%;font-size:11px" placeholder="${t('menu.aiLearnPh')}"></textarea>
+            <p class="tune-rules" data-learn-status style="margin-top:8px"></p>
+            <div style="overflow:auto;max-height:240px;margin-top:12px">
+              <table class="ai-learn-table">
+                <thead>
+                  <tr>
+                    <th>${t('menu.aiLearnColTrack')}</th>
+                    <th>${t('menu.aiLearnColVeh')}</th>
+                    <th>${t('menu.aiLearnColDiff')}</th>
+                    <th>N</th>
+                    <th>${t('menu.aiLearnColPlayers')}</th>
+                    <th>${t('menu.aiLearnColMedian')}</th>
+                    <th>${t('menu.aiLearnColTarget')}</th>
+                  </tr>
+                </thead>
+                <tbody>${tableRows || `<tr><td colspan="7">${t('menu.aiLearnEmpty')}</td></tr>`}</tbody>
+              </table>
+            </div>
+            <div class="atm-scene-panel" style="margin-top:18px">
+              <p class="atm-scene-title">${t('menu.paceExport')}</p>
+              <p class="tune-help">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
+              <button type="button" class="menu-start" data-pace-export>${t('menu.paceExportBtn')}</button>
+              <p class="tune-rules" data-pace-status style="margin-top:8px"></p>
+              <textarea class="text-input" data-pace-box readonly rows="5" style="width:100%;margin-top:10px;font-size:12px;opacity:0.9" placeholder="${t('menu.paceExportPh')}"></textarea>
+            </div>
           </div>
-          <div class="dir-grid" style="margin-bottom:12px">
-            <button type="button" class="menu-start" data-learn-export>${t('menu.aiLearnExport')}</button>
-            <button type="button" class="btn-ghost" data-learn-import>${t('menu.aiLearnImport')}</button>
-          </div>
-          <input type="file" accept="application/json,.json" data-learn-file hidden />
-          <textarea class="text-input" data-learn-box readonly rows="5" style="width:100%;font-size:11px" placeholder="${t('menu.aiLearnPh')}"></textarea>
-          <p class="tune-rules" data-learn-status style="margin-top:8px"></p>
-          <div style="overflow:auto;max-height:240px;margin-top:12px">
-            <table class="ai-learn-table">
-              <thead>
-                <tr>
-                  <th>${t('menu.aiLearnColTrack')}</th>
-                  <th>${t('menu.aiLearnColVeh')}</th>
-                  <th>${t('menu.aiLearnColDiff')}</th>
-                  <th>N</th>
-                  <th>${t('menu.aiLearnColPlayers')}</th>
-                  <th>${t('menu.aiLearnColMedian')}</th>
-                  <th>${t('menu.aiLearnColTarget')}</th>
-                </tr>
-              </thead>
-              <tbody>${tableRows || `<tr><td colspan="7">${t('menu.aiLearnEmpty')}</td></tr>`}</tbody>
-            </table>
-          </div>
-          <div class="atm-scene-panel" style="margin-top:18px">
-            <p class="atm-scene-title">${t('menu.paceExport')}</p>
-            <p class="tune-help">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
-            <button type="button" class="menu-start" data-pace-export>${t('menu.paceExportBtn')}</button>
-            <p class="tune-rules" data-pace-status style="margin-top:8px"></p>
-            <textarea class="text-input" data-pace-box readonly rows="5" style="width:100%;margin-top:10px;font-size:12px;opacity:0.9" placeholder="${t('menu.paceExportPh')}"></textarea>
-          </div>
-          ${this.backRow('settings')}
+          ${this.backRow(this.settingsSubBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('settings')
+      this.bindBack(this.settingsSubBack)
       this.bindAiLearn()
       this.root.querySelector<HTMLButtonElement>('[data-pace-export]')?.addEventListener('click', () => {
         this.audioApi?.playClick?.()
@@ -1259,128 +1319,134 @@ export class Menu {
                   </button>`
                 }).join('')}
               </div>
+              <button type="button" class="track-card ${feel.allowPortraitRotation ? 'active' : ''}" data-allow-portrait style="margin-top:12px;width:100%">
+                <strong>${t('menu.ctrlAllowPortrait')}</strong>
+                <span>${feel.allowPortraitRotation ? t('menu.ctrlOn') : t('menu.ctrlOff')} · ${t('menu.ctrlAllowPortraitBlurb')}</span>
+              </button>
             </div>`
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-controls">
-          <p class="tune-rules">${onPhone ? t('menu.ctrlBlurbMobile') : t('menu.ctrlBlurb')}</p>
-          ${
-            onPhone
-              ? ''
-              : `<div class="ctrl-overview" aria-label="${t('menu.ctrlTitle')}">
-            <div class="ctrl-overview-item">
-              <strong>${t('menu.ctrlOverviewSteer')}</strong>
-              <span>${t('menu.ctrlOverviewSteerVal')}</span>
-            </div>
-            <div class="ctrl-overview-item">
-              <strong>${t('menu.ctrlOverviewGas')}</strong>
-              <span>${t('menu.ctrlOverviewGasVal')}</span>
-            </div>
-            <div class="ctrl-overview-item">
-              <strong>${t('menu.ctrlOverviewSpecial')}</strong>
-              <span>${t('menu.ctrlOverviewSpecialVal')}</span>
-            </div>
-            <div class="ctrl-overview-item">
-              <strong>${t('menu.ctrlOverviewMenu')}</strong>
-              <span>${t('menu.ctrlOverviewMenuVal')}</span>
-            </div>
-          </div>`
-          }
-          <div class="bind-list">
-            ${mobileSchemeHtml}
-            <div class="bind-section">
-              <h3 class="bind-section-title">${t('menu.ctrlFeelTitle')}</h3>
-              <p class="tune-rules">${t('menu.ctrlFeelBlurb')}</p>
-              <label class="tune-row">
-                <span>${t('menu.ctrlSteerSens')} <strong class="tune-val" data-feel-sens-val>${sensPct}%</strong></span>
-                <input type="range" min="55" max="145" step="5" value="${sensPct}" data-feel-sens />
-              </label>
-              <label class="tune-row">
-                <span>${t('menu.ctrlHudScale')} <strong class="tune-val" data-feel-hud-val>${hudPct}%</strong></span>
-                <input type="range" min="75" max="135" step="5" value="${hudPct}" data-feel-hud />
-              </label>
-              <div class="dir-grid" style="margin:10px 0">
-                <button type="button" class="track-card ${feel.invertSteer ? 'active' : ''}" data-feel-invert>
-                  <strong>${t('menu.ctrlInvertSteer')}</strong>
-                  <span>${feel.invertSteer ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
-                <button type="button" class="track-card ${feel.stabilityAssist ? 'active' : ''}" data-feel-stability>
-                  <strong>${t('menu.ctrlStability')}</strong>
-                  <span>${feel.stabilityAssist ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
-                <button type="button" class="track-card ${feel.driftMode ? 'active' : ''}" data-feel-drift>
-                  <strong>${t('menu.ctrlDrift')}</strong>
-                  <span>${feel.driftMode ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
-                <button type="button" class="track-card ${raceFeel.skipCountdown ? 'active' : ''}" data-feel-skip-cd>
-                  <strong>${t('menu.ctrlSkipCountdown')}</strong>
-                  <span>${raceFeel.skipCountdown ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
-              </div>
-              <p class="tune-rules">${t('menu.ctrlCamFollow')}</p>
-              <div class="dir-grid">
-                ${camFollows
-                  .map((c) => {
-                    const active = c === feel.camFollow ? 'active' : ''
-                    return `<button type="button" class="track-card ${active}" data-feel-cam="${c}">
-                      <strong>${t(`menu.ctrlCam.${c}`)}</strong>
-                    </button>`
-                  })
-                  .join('')}
-              </div>
-            </div>
+        <div class="menu-shell menu-panel menu-controls menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules">${onPhone ? t('menu.ctrlBlurbMobile') : t('menu.ctrlBlurb')}</p>
             ${
               onPhone
-                ? `<div class="bind-section">
-              <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
-              <p class="tune-rules menu-mobile-warn">${t('menu.ctrlTricksMobileOff')}</p>
-            </div>`
-                : `<div class="bind-section">
-              <h3 class="bind-section-title">${t('menu.manualTitle')}</h3>
-              <p class="tune-rules">${t('menu.manualBlurb')}</p>
-              <div class="manual-grid">
-                <button type="button" class="track-card ${raceFeel.transmission === 'auto' ? 'active' : ''}" data-tx="auto">
-                  <strong>${t('menu.manual.off')}</strong>
-                  <span>${t('menu.manual.offBlurb')}</span>
-                  <em class="manual-hist">${t('menu.manual.offHist')}</em>
-                </button>
-                <button type="button" class="track-card ${raceFeel.transmission === 'manual' ? 'active' : ''}" data-tx="manual">
-                  <strong>${t('menu.manual.on')}</strong>
-                  <span>${t('menu.manual.onBlurb')}</span>
-                  <em class="manual-hist">${t('menu.manual.onHist')}</em>
-                </button>
-                <button type="button" class="track-card track-card-wide ${raceFeel.transmission === 'clutch' ? 'active' : ''}" data-tx="clutch">
-                  <strong>${t('menu.manual.clutch')}</strong>
-                  <span>${t('menu.manual.clutchBlurb')}</span>
-                  <em class="manual-hist">${t('menu.manual.clutchHist')}</em>
-                </button>
+                ? ''
+                : `<div class="ctrl-overview" aria-label="${t('menu.ctrlTitle')}">
+              <div class="ctrl-overview-item">
+                <strong>${t('menu.ctrlOverviewSteer')}</strong>
+                <span>${t('menu.ctrlOverviewSteerVal')}</span>
               </div>
-            </div>
-            ${section(t('menu.ctrlSectionDrive'), drive)}
-            ${section(t('menu.ctrlSectionSpecial'), special)}
-            ${section(t('menu.ctrlSectionSystem'), system)}
-            <div class="bind-section">
-              <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
-              <p class="tune-rules">${t('menu.ctrlTricksBlurb')}</p>
-              <div class="dir-grid" style="margin-bottom:10px">
-                <button type="button" class="track-card ${trickKind === 'skate' ? 'active' : ''}" data-trick-kind="skate">
-                  <strong>${t('vehicle.skate')}</strong>
-                </button>
-                <button type="button" class="track-card ${trickKind === 'bike' ? 'active' : ''}" data-trick-kind="bike">
-                  <strong>${t('vehicle.bike')}</strong>
-                </button>
+              <div class="ctrl-overview-item">
+                <strong>${t('menu.ctrlOverviewGas')}</strong>
+                <span>${t('menu.ctrlOverviewGasVal')}</span>
               </div>
-              <div class="trick-bind-list">${trickRows}</div>
+              <div class="ctrl-overview-item">
+                <strong>${t('menu.ctrlOverviewSpecial')}</strong>
+                <span>${t('menu.ctrlOverviewSpecialVal')}</span>
+              </div>
+              <div class="ctrl-overview-item">
+                <strong>${t('menu.ctrlOverviewMenu')}</strong>
+                <span>${t('menu.ctrlOverviewMenuVal')}</span>
+              </div>
             </div>`
             }
-            <button type="button" class="btn-ghost" data-reset-binds style="margin-top:6px">${t('menu.ctrlReset')}</button>
-            ${this.backRow('settings')}
+            <div class="bind-list">
+              ${mobileSchemeHtml}
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.ctrlFeelTitle')}</h3>
+                <p class="tune-rules">${t('menu.ctrlFeelBlurb')}</p>
+                <label class="tune-row">
+                  <span>${t('menu.ctrlSteerSens')} <strong class="tune-val" data-feel-sens-val>${sensPct}%</strong></span>
+                  <input type="range" min="55" max="145" step="5" value="${sensPct}" data-feel-sens />
+                </label>
+                <label class="tune-row">
+                  <span>${t('menu.ctrlHudScale')} <strong class="tune-val" data-feel-hud-val>${hudPct}%</strong></span>
+                  <input type="range" min="75" max="135" step="5" value="${hudPct}" data-feel-hud />
+                </label>
+                <div class="dir-grid" style="margin:10px 0">
+                  <button type="button" class="track-card ${feel.invertSteer ? 'active' : ''}" data-feel-invert>
+                    <strong>${t('menu.ctrlInvertSteer')}</strong>
+                    <span>${feel.invertSteer ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                  </button>
+                  <button type="button" class="track-card ${feel.stabilityAssist ? 'active' : ''}" data-feel-stability>
+                    <strong>${t('menu.ctrlStability')}</strong>
+                    <span>${feel.stabilityAssist ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                  </button>
+                  <button type="button" class="track-card ${feel.driftMode ? 'active' : ''}" data-feel-drift>
+                    <strong>${t('menu.ctrlDrift')}</strong>
+                    <span>${feel.driftMode ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                  </button>
+                  <button type="button" class="track-card ${raceFeel.skipCountdown ? 'active' : ''}" data-feel-skip-cd>
+                    <strong>${t('menu.ctrlSkipCountdown')}</strong>
+                    <span>${raceFeel.skipCountdown ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                  </button>
+                </div>
+                <p class="tune-rules">${t('menu.ctrlCamFollow')}</p>
+                <div class="dir-grid">
+                  ${camFollows
+                    .map((c) => {
+                      const active = c === feel.camFollow ? 'active' : ''
+                      return `<button type="button" class="track-card ${active}" data-feel-cam="${c}">
+                        <strong>${t(`menu.ctrlCam.${c}`)}</strong>
+                      </button>`
+                    })
+                    .join('')}
+                </div>
+              </div>
+              ${
+                onPhone
+                  ? `<div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
+                <p class="tune-rules menu-mobile-warn">${t('menu.ctrlTricksMobileOff')}</p>
+              </div>`
+                  : `<div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.manualTitle')}</h3>
+                <p class="tune-rules">${t('menu.manualBlurb')}</p>
+                <div class="manual-grid">
+                  <button type="button" class="track-card ${raceFeel.transmission === 'auto' ? 'active' : ''}" data-tx="auto">
+                    <strong>${t('menu.manual.off')}</strong>
+                    <span>${t('menu.manual.offBlurb')}</span>
+                    <em class="manual-hist">${t('menu.manual.offHist')}</em>
+                  </button>
+                  <button type="button" class="track-card ${raceFeel.transmission === 'manual' ? 'active' : ''}" data-tx="manual">
+                    <strong>${t('menu.manual.on')}</strong>
+                    <span>${t('menu.manual.onBlurb')}</span>
+                    <em class="manual-hist">${t('menu.manual.onHist')}</em>
+                  </button>
+                  <button type="button" class="track-card track-card-wide ${raceFeel.transmission === 'clutch' ? 'active' : ''}" data-tx="clutch">
+                    <strong>${t('menu.manual.clutch')}</strong>
+                    <span>${t('menu.manual.clutchBlurb')}</span>
+                    <em class="manual-hist">${t('menu.manual.clutchHist')}</em>
+                  </button>
+                </div>
+              </div>
+              ${section(t('menu.ctrlSectionDrive'), drive)}
+              ${section(t('menu.ctrlSectionSpecial'), special)}
+              ${section(t('menu.ctrlSectionSystem'), system)}
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
+                <p class="tune-rules">${t('menu.ctrlTricksBlurb')}</p>
+                <div class="dir-grid" style="margin-bottom:10px">
+                  <button type="button" class="track-card ${trickKind === 'skate' ? 'active' : ''}" data-trick-kind="skate">
+                    <strong>${t('vehicle.skate')}</strong>
+                  </button>
+                  <button type="button" class="track-card ${trickKind === 'bike' ? 'active' : ''}" data-trick-kind="bike">
+                    <strong>${t('vehicle.bike')}</strong>
+                  </button>
+                </div>
+                <div class="trick-bind-list">${trickRows}</div>
+              </div>`
+              }
+              <button type="button" class="btn-ghost" data-reset-binds style="margin-top:6px">${t('menu.ctrlReset')}</button>
+            </div>
           </div>
+          ${this.backRow(this.settingsSubBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('settings')
+      this.bindBack(this.settingsSubBack)
       this.bindControlFeel()
       this.root.querySelectorAll<HTMLButtonElement>('[data-tx]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -1496,11 +1562,13 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules">${t('menu.lbBlurb')}</p>
-          <div class="lb-tabs">${tabs}</div>
-          <ol class="records-list lb-list">${rows || `<li>${t('menu.recEmpty')}</li>`}</ol>
-          ${this.backRow(this.recordsBack)}
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules">${t('menu.lbBlurb')}</p>
+            <div class="lb-tabs">${tabs}</div>
+            <ol class="records-list lb-list">${rows || `<li>${t('menu.recEmpty')}</li>`}</ol>
+          </div>
+          ${this.backRow(this.recordsBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
@@ -1540,66 +1608,68 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules menu-scroll-hint">${t('menu.diffBlurb')}</p>
-          <div class="tracks-layout diff-layout">
-            <div class="tracks-list diff-list">
-              ${DIFFICULTIES.map((d) => {
-                const active = d.id === this.selectedDifficulty ? 'active' : ''
-                const pct = Math.round(d.speedScale * 100)
-                return `<button type="button" class="track-card diff-card ${active}" data-diff="${d.id}">
-                  <strong>${t(`diff.${d.id}`)}</strong>
-                  <span class="diff-card-scale">${t('menu.diffAiPace', { pct })}</span>
-                </button>`
-              }).join('')}
-            </div>
-            <div class="tracks-preview-pane diff-preview-pane">
-              <div class="track-preview-meta">
-                <strong>${t(`diff.${pick.id}`)}</strong>
-                <span>${t(`diff.${pick.id}Help`)}</span>
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules menu-scroll-hint">${t('menu.diffBlurb')}</p>
+            <div class="tracks-layout diff-layout">
+              <div class="tracks-list diff-list">
+                ${DIFFICULTIES.map((d) => {
+                  const active = d.id === this.selectedDifficulty ? 'active' : ''
+                  const pct = Math.round(d.speedScale * 100)
+                  return `<button type="button" class="track-card diff-card ${active}" data-diff="${d.id}">
+                    <strong>${t(`diff.${d.id}`)}</strong>
+                    <span class="diff-card-scale">${t('menu.diffAiPace', { pct })}</span>
+                  </button>`
+                }).join('')}
               </div>
-              <p class="diff-scale-badge">${t('menu.diffAiPace', { pct: scalePct })}</p>
-              <p class="tune-help">${t(`diff.${pick.id}Blurb`)}</p>
+              <div class="tracks-preview-pane diff-preview-pane">
+                <div class="track-preview-meta">
+                  <strong>${t(`diff.${pick.id}`)}</strong>
+                  <span>${t(`diff.${pick.id}Help`)}</span>
+                </div>
+                <p class="diff-scale-badge">${t('menu.diffAiPace', { pct: scalePct })}</p>
+                <p class="tune-help">${t(`diff.${pick.id}Blurb`)}</p>
+              </div>
+            </div>
+            <div class="atm-scene-panel" style="margin-top:18px">
+              <p class="atm-scene-title">${t('menu.opponents')}</p>
+              <p class="tune-help">${t('menu.opponentsBlurb')}</p>
+              <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+                <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} style="margin-top:4px" />
+                <span>
+                  <strong>${t('menu.opponentsRandomEach')}</strong>
+                  <span class="tune-help" style="display:block;margin-top:4px">${t('menu.opponentsRandomEachBlurb')}</span>
+                </span>
+              </label>
+              <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
+              ${[0, 1, 2]
+                .map((slot) => {
+                  const cur = opp[slot]!
+                  return `<div class="opp-row">
+                    <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
+                    <div class="opp-picks">
+                      ${pool
+                        .map((k) => {
+                          const active = k === cur ? 'active' : ''
+                          const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
+                          return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
+                          <strong>${this.vehicleLabel(k)}</strong>
+                        </button>`
+                        })
+                        .join('')}
+                    </div>
+                  </div>`
+                })
+                .join('')}
+              <button type="button" class="menu-start" data-opp-random style="margin-top:14px" ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
+              </div>
             </div>
           </div>
-          <div class="atm-scene-panel" style="margin-top:18px">
-            <p class="atm-scene-title">${t('menu.opponents')}</p>
-            <p class="tune-help">${t('menu.opponentsBlurb')}</p>
-            <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
-              <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} style="margin-top:4px" />
-              <span>
-                <strong>${t('menu.opponentsRandomEach')}</strong>
-                <span class="tune-help" style="display:block;margin-top:4px">${t('menu.opponentsRandomEachBlurb')}</span>
-              </span>
-            </label>
-            <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
-            ${[0, 1, 2]
-              .map((slot) => {
-                const cur = opp[slot]!
-                return `<div class="opp-row">
-                  <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
-                  <div class="opp-picks">
-                    ${pool
-                      .map((k) => {
-                        const active = k === cur ? 'active' : ''
-                        const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
-                        return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
-                        <strong>${this.vehicleLabel(k)}</strong>
-                      </button>`
-                      })
-                      .join('')}
-                  </div>
-                </div>`
-              })
-              .join('')}
-            <button type="button" class="menu-start" data-opp-random style="margin-top:14px" ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
-            </div>
-          </div>
-          ${this.backRow('settings')}
+          ${this.backRow(this.settingsSubBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('settings')
+      this.bindBack(this.settingsSubBack)
       this.root.querySelectorAll<HTMLButtonElement>('[data-diff]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.audioApi?.playClick?.()
@@ -1647,28 +1717,33 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <div class="tune-grid">
-            ${this.audioSlider('master', t('menu.audioMaster'), audio.master)}
-            ${this.audioSlider('music', t('menu.audioMusic'), audio.music)}
-            ${this.audioSlider('sfx', t('menu.audioSfx'), audio.sfx)}
-            ${this.audioSlider('menu', t('menu.audioMenu'), audio.menu)}
+        <div class="menu-shell menu-panel menu-audio menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules">${t('menu.audioTrack')}</p>
+            <div class="track-grid">
+              ${MUSIC_TRACKS.map((m) => {
+                const active = m.id === audio.track ? 'active' : ''
+                return `<button type="button" class="track-card ${active}" data-music="${m.id}">
+                  <strong>${t(m.labelKey)}</strong>
+                </button>`
+              }).join('')}
+            </div>
+            <div class="atm-scene-panel">
+              <p class="atm-scene-title">${t('menu.audioTitle')}</p>
+              <p class="tune-help">${t('menu.audioMenuBlurb')}</p>
+              <div class="tune-grid atm-scene-sliders">
+                ${this.audioSlider('master', t('menu.audioMaster'), audio.master)}
+                ${this.audioSlider('music', t('menu.audioMusic'), audio.music)}
+                ${this.audioSlider('sfx', t('menu.audioSfx'), audio.sfx)}
+                ${this.audioSlider('menu', t('menu.audioMenu'), audio.menu)}
+              </div>
+            </div>
           </div>
-          <p class="tune-help" style="margin-top:8px">${t('menu.audioMenuBlurb')}</p>
-          <p class="tune-rules" style="margin-top:16px">${t('menu.audioTrack')}</p>
-          <div class="track-grid">
-            ${MUSIC_TRACKS.map((m) => {
-              const active = m.id === audio.track ? 'active' : ''
-              return `<button type="button" class="track-card ${active}" data-music="${m.id}">
-                <strong>${t(m.labelKey)}</strong>
-              </button>`
-            }).join('')}
-          </div>
-          ${this.backRow('settings')}
+          ${this.backRow(this.settingsSubBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('settings')
+      this.bindBack(this.settingsSubBack)
       this.bindAudio()
       return
     }
@@ -1727,60 +1802,62 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules">${t('menu.atmTone')}</p>
-          <div class="track-grid">
-            ${toneCards}
-          </div>
-          ${calendarPacksHtml}
-          <p class="tune-rules" style="margin-top:18px">${t('menu.visualQuality')}</p>
-          <p class="tune-help">${t('menu.visualQualityBlurb')}</p>
-          <div class="track-grid">
-            ${VISUAL_QUALITIES.map((q) => {
-              const active = q === vis.quality ? 'active' : ''
-              return `<button type="button" class="track-card ${active}" data-visual-q="${q}">
-                <strong>${t(`menu.visual.${q}`)}</strong>
-                <span>${t(`menu.visual.${q}.blurb`)}</span>
-              </button>`
-            }).join('')}
-          </div>
-          <div class="atm-scene-panel">
-            <p class="atm-scene-title">${t('menu.atmScene')}</p>
-            <p class="tune-help">${t('menu.atmSceneBlurb')}</p>
-            <div class="atm-fx-toggles">
-              <button type="button" class="atm-fx-toggle ${vis.bloom ? 'active' : ''}" data-visual-bloom>
-                <strong>${t('menu.visualBloom')}</strong>
-                <span>${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-              </button>
-              <button type="button" class="atm-fx-toggle ${vis.shadows ? 'active' : ''}" data-visual-shadows>
-                <strong>${t('menu.visualShadows')}</strong>
-                <span>${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-              </button>
-              <button type="button" class="atm-fx-toggle ${vis.rearMirror ? 'active' : ''}" data-visual-mirror>
-                <strong>${t('menu.visualMirror')}</strong>
-                <span>${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-              </button>
+        <div class="menu-shell menu-panel menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="tune-rules">${t('menu.atmTone')}</p>
+            <div class="track-grid">
+              ${toneCards}
             </div>
-            <div class="tune-grid atm-scene-sliders">
-              <label class="tune-row">
-                <span class="tune-label">${t('menu.atmLight')} <span class="tune-val" data-atm-light-val>${t(`menu.atmLight.${atm.light}`)}</span></span>
-                <input type="range" min="0" max="3" step="1" value="${lightIdx}" data-atm-light />
-              </label>
-              <label class="tune-row">
-                <span class="tune-label">${t('menu.atmFog')} <span class="tune-val" data-atm-fog-val>${t(`menu.atmFog.${atm.fog}`)}</span></span>
-                <input type="range" min="0" max="2" step="1" value="${fogIdx}" data-atm-fog />
-              </label>
-              <label class="tune-row">
-                <span class="tune-label">${t('menu.atmDecor')} <span class="tune-val" data-atm-decor-val>${t(`menu.atmDecor.${atm.decor}`)}</span></span>
-                <input type="range" min="0" max="2" step="1" value="${decorIdx}" data-atm-decor />
-              </label>
+            ${calendarPacksHtml}
+            <p class="tune-rules" style="margin-top:18px">${t('menu.visualQuality')}</p>
+            <p class="tune-help">${t('menu.visualQualityBlurb')}</p>
+            <div class="track-grid">
+              ${VISUAL_QUALITIES.map((q) => {
+                const active = q === vis.quality ? 'active' : ''
+                return `<button type="button" class="track-card ${active}" data-visual-q="${q}">
+                  <strong>${t(`menu.visual.${q}`)}</strong>
+                  <span>${t(`menu.visual.${q}.blurb`)}</span>
+                </button>`
+              }).join('')}
+            </div>
+            <div class="atm-scene-panel">
+              <p class="atm-scene-title">${t('menu.atmScene')}</p>
+              <p class="tune-help">${t('menu.atmSceneBlurb')}</p>
+              <div class="atm-fx-toggles">
+                <button type="button" class="atm-fx-toggle ${vis.bloom ? 'active' : ''}" data-visual-bloom>
+                  <strong>${t('menu.visualBloom')}</strong>
+                  <span>${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </button>
+                <button type="button" class="atm-fx-toggle ${vis.shadows ? 'active' : ''}" data-visual-shadows>
+                  <strong>${t('menu.visualShadows')}</strong>
+                  <span>${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </button>
+                <button type="button" class="atm-fx-toggle ${vis.rearMirror ? 'active' : ''}" data-visual-mirror>
+                  <strong>${t('menu.visualMirror')}</strong>
+                  <span>${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </button>
+              </div>
+              <div class="tune-grid atm-scene-sliders">
+                <label class="tune-row">
+                  <span class="tune-label">${t('menu.atmLight')} <span class="tune-val" data-atm-light-val>${t(`menu.atmLight.${atm.light}`)}</span></span>
+                  <input type="range" min="0" max="3" step="1" value="${lightIdx}" data-atm-light />
+                </label>
+                <label class="tune-row">
+                  <span class="tune-label">${t('menu.atmFog')} <span class="tune-val" data-atm-fog-val>${t(`menu.atmFog.${atm.fog}`)}</span></span>
+                  <input type="range" min="0" max="2" step="1" value="${fogIdx}" data-atm-fog />
+                </label>
+                <label class="tune-row">
+                  <span class="tune-label">${t('menu.atmDecor')} <span class="tune-val" data-atm-decor-val>${t(`menu.atmDecor.${atm.decor}`)}</span></span>
+                  <input type="range" min="0" max="2" step="1" value="${decorIdx}" data-atm-decor />
+                </label>
+              </div>
             </div>
           </div>
-          ${this.backRow('settings')}
+          ${this.backRow(this.settingsSubBack, 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('settings')
+      this.bindBack(this.settingsSubBack)
       this.bindAtmosphere()
       this.bindVisual()
       return
@@ -1823,55 +1900,57 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-online">
-          <p class="menu-sub">${t('menu.onlineSub')}</p>
-          <p class="menu-sub online-status">${statusLine}</p>
-          <section class="menu-section">
-            <h2>${t('menu.name')}</h2>
-            <input class="text-input" id="player-name" maxlength="18" value="${this.escape(this.playerName)}" />
-          </section>
-          <section class="menu-section">
-            <h2>${t('menu.onlineRooms')}</h2>
-            ${roomCards}
-            ${racingLine}
-            ${browsing}
-          </section>
-          <section class="menu-section">
-            <h2>${t('menu.onlineCreate')}</h2>
-            <p class="tune-rules">${t('menu.track')}</p>
-            <div class="dir-grid online-track-pick">
-              ${TRACKS.filter((tr) => !tr.sandbox)
-                .slice(0, 8)
-                .map((tr) => {
-                  const active = tr.id === this.selectedTrackId ? 'active' : ''
-                  return `<button type="button" class="track-card ${active}" data-host-track="${tr.id}">
-                    <strong>${this.escape(this.trackName(tr))}</strong>
-                  </button>`
-                })
-                .join('')}
-            </div>
-            <p class="tune-rules" style="margin-top:10px">${t('menu.onlineLaps')}: <strong>${this.hostLaps}</strong></p>
-            <div class="dir-grid">
-              ${[1, 2, 3, 4, 5]
-                .map(
-                  (n) =>
-                    `<button type="button" class="track-card ${n === this.hostLaps ? 'active' : ''}" data-host-laps="${n}"><strong>${n}</strong></button>`,
-                )
-                .join('')}
-            </div>
-            <button type="button" class="menu-start" id="btn-host" style="margin-top:12px">${t('menu.onlineCreate')}</button>
-          </section>
-          <details class="online-advanced">
-            <summary>${t('menu.onlineConn')}</summary>
-            ${this.onlineBlock()}
-            <button type="button" class="btn-ghost" id="btn-join" style="margin-top:8px">${t('menu.join')} (${t('menu.roomCode')})</button>
-          </details>
-          ${this.backRow('raceMode')}
-          ${this.lobbyError || ob.error ? `<p class="menu-error">${this.escape(this.lobbyError || ob.error)}</p>` : ''}
+        <div class="menu-shell menu-panel menu-online menu-panel-dock">
+          <div class="menu-panel-body">
+            <p class="menu-sub">${t('menu.onlineSub')}</p>
+            <p class="menu-sub online-status">${statusLine}</p>
+            <section class="menu-section">
+              <h2>${t('menu.name')}</h2>
+              <input class="text-input" id="player-name" maxlength="18" value="${this.escape(this.playerName)}" />
+            </section>
+            <section class="menu-section">
+              <h2>${t('menu.onlineRooms')}</h2>
+              ${roomCards}
+              ${racingLine}
+              ${browsing}
+            </section>
+            <section class="menu-section">
+              <h2>${t('menu.onlineCreate')}</h2>
+              <p class="tune-rules">${t('menu.track')}</p>
+              <div class="dir-grid online-track-pick">
+                ${TRACKS.filter((tr) => !tr.sandbox)
+                  .slice(0, 8)
+                  .map((tr) => {
+                    const active = tr.id === this.selectedTrackId ? 'active' : ''
+                    return `<button type="button" class="track-card ${active}" data-host-track="${tr.id}">
+                      <strong>${this.escape(this.trackName(tr))}</strong>
+                    </button>`
+                  })
+                  .join('')}
+              </div>
+              <p class="tune-rules" style="margin-top:10px">${t('menu.onlineLaps')}: <strong>${this.hostLaps}</strong></p>
+              <div class="dir-grid">
+                ${[1, 2, 3, 4, 5]
+                  .map(
+                    (n) =>
+                      `<button type="button" class="track-card ${n === this.hostLaps ? 'active' : ''}" data-host-laps="${n}"><strong>${n}</strong></button>`,
+                  )
+                  .join('')}
+              </div>
+              <button type="button" class="menu-start" id="btn-host" style="margin-top:12px">${t('menu.onlineCreate')}</button>
+            </section>
+            <details class="online-advanced">
+              <summary>${t('menu.onlineConn')}</summary>
+              ${this.onlineBlock()}
+              <button type="button" class="btn-ghost" id="btn-join" style="margin-top:8px">${t('menu.join')} (${t('menu.roomCode')})</button>
+            </details>
+            ${this.lobbyError || ob.error ? `<p class="menu-error">${this.escape(this.lobbyError || ob.error)}</p>` : ''}
+          </div>
+          ${this.backRow('home', 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('raceMode')
+      this.bindBack('home')
       this.root.querySelector('#player-name')?.addEventListener('change', () => {
         this.readFields()
         this.onBrowseOnline?.()
@@ -2052,55 +2131,57 @@ export class Menu {
     this.root.innerHTML = `
       ${wm}
       ${this.muteBar()}
-      <div class="menu-shell menu-panel">
-        <p class="menu-sub">${t('menu.room')} ${room.code} · ${room.players.length}/${room.maxPlayers || 4} ${t('menu.playersOf')} · ${this.escape(trackLabel)} · ${room.laps} ${t('menu.onlineLaps').toLowerCase()}</p>
-        <section class="menu-section">
-          <h2>${t('menu.players')}</h2>
-          <ol class="lobby-list">${players}</ol>
-        </section>
-        ${
-          this.isHost
-            ? `<section class="menu-section">
-            <h2>${t('menu.onlineLaps')}</h2>
-            <div class="dir-grid">
-              ${[1, 2, 3, 4, 5]
-                .map(
-                  (n) =>
-                    `<button type="button" class="track-card ${n === room.laps ? 'active' : ''}" data-lobby-laps="${n}"><strong>${n}</strong></button>`,
-                )
-                .join('')}
-            </div>
-            <p class="tune-rules" style="margin-top:10px">${t('menu.track')}</p>
-            <div class="dir-grid online-track-pick">
-              ${TRACKS.filter((tr) => !tr.sandbox)
-                .slice(0, 8)
-                .map((tr) => {
-                  const active = tr.id === room.trackId ? 'active' : ''
-                  return `<button type="button" class="track-card ${active}" data-lobby-track="${tr.id}">
-                    <strong>${this.escape(this.trackName(tr))}</strong>
-                  </button>`
-                })
-                .join('')}
-            </div>
-            <section class="menu-section" style="margin-top:12px">
-              <h2>${t('menu.friendLink')}</h2>
-              <input class="text-input" id="lobby-link" readonly value="${this.escape(this.lobbyLink)}" />
-              <button type="button" class="btn-ghost" id="btn-copy" style="margin-top:10px">${t('menu.copyLink')}</button>
-            </section>
-          </section>`
-            : `<p class="tune-rules">${t('menu.waitHost')}</p>`
-        }
-        <button type="button" class="menu-start ${amReady ? 'is-ready-btn' : ''}" id="btn-ready">
-          ${amReady ? t('menu.onlineReady') : t('menu.onlineNotReady')} — ${t('menu.onlineReady')}
-        </button>
-        ${
-          this.isHost
-            ? `<button type="button" class="menu-start" id="btn-race" ${allReady ? '' : 'disabled'} style="margin-top:8px">${t('menu.lobbyStart')}</button>
-               ${allReady ? '' : `<p class="tune-rules">${t('menu.onlineStartNeedReady')}</p>`}`
-            : ''
-        }
-        <button type="button" class="btn-ghost" id="btn-leave" style="margin-top:12px">${t('menu.leaveLobby')}</button>
-        ${this.lobbyError ? `<p class="menu-error">${this.escape(this.lobbyError)}</p>` : ''}
+      <div class="menu-shell menu-panel menu-panel-dock">
+        <div class="menu-panel-body">
+          <p class="menu-sub">${t('menu.room')} ${room.code} · ${room.players.length}/${room.maxPlayers || 4} ${t('menu.playersOf')} · ${this.escape(trackLabel)} · ${room.laps} ${t('menu.onlineLaps').toLowerCase()}</p>
+          <section class="menu-section">
+            <h2>${t('menu.players')}</h2>
+            <ol class="lobby-list">${players}</ol>
+          </section>
+          ${
+            this.isHost
+              ? `<section class="menu-section">
+              <h2>${t('menu.onlineLaps')}</h2>
+              <div class="dir-grid">
+                ${[1, 2, 3, 4, 5]
+                  .map(
+                    (n) =>
+                      `<button type="button" class="track-card ${n === room.laps ? 'active' : ''}" data-lobby-laps="${n}"><strong>${n}</strong></button>`,
+                  )
+                  .join('')}
+              </div>
+              <p class="tune-rules" style="margin-top:10px">${t('menu.track')}</p>
+              <div class="dir-grid online-track-pick">
+                ${TRACKS.filter((tr) => !tr.sandbox)
+                  .slice(0, 8)
+                  .map((tr) => {
+                    const active = tr.id === room.trackId ? 'active' : ''
+                    return `<button type="button" class="track-card ${active}" data-lobby-track="${tr.id}">
+                      <strong>${this.escape(this.trackName(tr))}</strong>
+                    </button>`
+                  })
+                  .join('')}
+              </div>
+              <section class="menu-section" style="margin-top:12px">
+                <h2>${t('menu.friendLink')}</h2>
+                <input class="text-input" id="lobby-link" readonly value="${this.escape(this.lobbyLink)}" />
+                <button type="button" class="btn-ghost" id="btn-copy" style="margin-top:10px">${t('menu.copyLink')}</button>
+              </section>
+            </section>`
+              : `<p class="tune-rules">${t('menu.waitHost')}</p>`
+          }
+          <button type="button" class="menu-start ${amReady ? 'is-ready-btn' : ''}" id="btn-ready">
+            ${amReady ? t('menu.onlineReady') : t('menu.onlineNotReady')} — ${t('menu.onlineReady')}
+          </button>
+          ${
+            this.isHost
+              ? `<button type="button" class="menu-start" id="btn-race" ${allReady ? '' : 'disabled'} style="margin-top:8px">${t('menu.lobbyStart')}</button>
+                 ${allReady ? '' : `<p class="tune-rules">${t('menu.onlineStartNeedReady')}</p>`}`
+              : ''
+          }
+          <button type="button" class="btn-ghost" id="btn-leave" style="margin-top:12px">${t('menu.leaveLobby')}</button>
+          ${this.lobbyError ? `<p class="menu-error">${this.escape(this.lobbyError)}</p>` : ''}
+        </div>
       </div>
     `
     this.bindMuteBar()
@@ -2176,14 +2257,18 @@ export class Menu {
 
   private trackCard(tr: TrackDef): string {
     const active = tr.id === this.selectedTrackId ? 'active' : ''
-    const blurbKey = `track.${tr.id}.blurb`
-    const blurb = t(blurbKey)
-    return `
-      <button type="button" class="track-card ${active}" data-track="${tr.id}">
+    if (tr.sandbox) {
+      return `
+      <button type="button" class="track-card track-card-lite ${active}" data-track="${tr.id}">
         <strong>${this.escape(this.trackName(tr))}</strong>
-        <span>${blurb === blurbKey ? tr.blurb : blurb}</span>
-        ${tr.sandbox ? `<span class="track-card-est">${t('menu.sandboxTag')}</span>` : ''}
-        ${tr.id === 'kasarny' ? `<span class="track-card-est">${t('menu.skateTag')}</span>` : ''}
+        <span class="track-card-est">${t('menu.sandboxTag')}</span>
+      </button>`
+    }
+    const attr = tr.estTime ? `${t('menu.estTimeShort')} ${tr.estTime}` : ''
+    return `
+      <button type="button" class="track-card track-card-lite ${active}" data-track="${tr.id}">
+        <strong>${this.escape(this.trackName(tr))}</strong>
+        ${attr ? `<span>${attr}</span>` : ''}
       </button>
     `
   }
@@ -2305,6 +2390,11 @@ export class Menu {
         this.controlFeelApi?.set({ mobileScheme: scheme })
         this.render()
       })
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-allow-portrait]')?.addEventListener('click', () => {
+      const cur = this.controlFeelApi?.get() ?? DEFAULT_CONTROL_FEEL
+      this.controlFeelApi?.set({ allowPortraitRotation: !cur.allowPortraitRotation })
+      this.render()
     })
   }
 

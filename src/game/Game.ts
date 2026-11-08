@@ -50,6 +50,12 @@ import {
   saveControlFeel,
   type ControlFeelValues,
 } from '../input/ControlFeel'
+import {
+  requestLandscapeAfterGesture,
+  setAllowPortraitRotation,
+  startOrientationWatch,
+  updateRotateGateCopy,
+} from '../input/OrientationLock'
 import { Input } from '../input/Input'
 import { NetClient, roomLink, roomFromUrl, wsFromUrl, defaultWsUrl } from '../net/NetClient'
 import type { CarStateMsg, NetRoom } from '../net/protocol'
@@ -57,7 +63,7 @@ import { RaceManager } from '../race/RaceManager'
 import { Track } from '../track/Track'
 import { getTrackDef, resolveTrackDef, TRACKS, type VehicleKind } from '../track/TrackDefs'
 import { type PlayerTuningValues, DEFAULT_PLAYER_TUNING } from '../tuning/PlayerTuning'
-import { t } from '../i18n/i18n'
+import { onLocaleChange, t } from '../i18n/i18n'
 import { Entry } from '../ui/Entry'
 import { Hud } from '../ui/Hud'
 import { Menu, type MenuStartPayload } from '../ui/Menu'
@@ -96,7 +102,7 @@ export class Game {
   private mode: Mode = 'entry'
   private running = false
   private lastTrackId = TRACKS[0].id
-  private lastVehicle: VehicleKind = TRACKS[0].vehicle
+  private lastVehicle: VehicleKind = 'street'
   private lastColor = PLAYER_COLORS[0]!
   private lastNeon = 0x7a8fa8
   private lastTuning: PlayerTuningValues = { ...DEFAULT_PLAYER_TUNING }
@@ -177,6 +183,7 @@ export class Game {
     this.input.attachMobileUi(mobileEl)
     const unlock = () => {
       this.audio.unlock()
+      requestLandscapeAfterGesture()
       if (this.mode === 'menu') this.audio.setMusic(true)
     }
     this.menu.setAudioApi({
@@ -230,6 +237,14 @@ export class Game {
       },
     })
     this.applyControlFeel()
+    startOrientationWatch({
+      allowPortrait: this.controlFeel.allowPortraitRotation,
+      onChange: () => this.onResize(),
+    })
+    const syncRotateCopy = () =>
+      updateRotateGateCopy(t('menu.rotateTitle'), t('menu.rotateBlurb'))
+    syncRotateCopy()
+    onLocaleChange(syncRotateCopy)
     this.mirror.setEnabled(this.visual.rearMirror)
     this.hud.setMirrorFrame(false)
     installPaceDebugApi()
@@ -722,6 +737,7 @@ export class Game {
     this.input.setMobileScheme(this.controlFeel.mobileScheme)
     this.cams.followRate = camFollowRate(this.controlFeel.camFollow)
     applyHudScale(this.controlFeel.hudScale)
+    setAllowPortraitRotation(this.controlFeel.allowPortraitRotation)
     for (const v of this.vehicles) {
       v.physics.stabilityAssist = this.controlFeel.stabilityAssist
     }

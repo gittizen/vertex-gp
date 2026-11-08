@@ -31,8 +31,9 @@ jobs:
           git branch -f 0.2 54d764a || git branch 0.2 54d764a
           git branch -f 0.3 origin/0.3 2>/dev/null || git branch -f 0.3 9ef0ecc || true
           git branch -f 0.4 v0.4.0^{} 2>/dev/null || git branch -f 0.4 bb6d0e3 || true
+          git branch -f 0.5 v0.5.0^{} 2>/dev/null || git branch -f 0.5 origin/0.5 2>/dev/null || git branch -f 0.5 b5e9107 || true
       - run: npm ci
-      - name: Build version pages (0.1 … 0.5 + hub)
+      - name: Build version pages (0.1 … 0.6 + hub)
         run: node scripts/build-version-pages.mjs
       - uses: actions/upload-pages-artifact@v3
         with:

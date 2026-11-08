@@ -15,6 +15,50 @@ body,
   color: #e6eaef;
 }
 
+/* Portrait gate — default na telefonu/tabletu jen landscape */
+.rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(40, 36, 48, 0.92), rgba(8, 10, 14, 0.96)),
+    #0a0c10;
+  color: #eef2f6;
+  text-align: center;
+}
+
+.rotate-gate[hidden] {
+  display: none !important;
+}
+
+.rotate-gate-card {
+  max-width: 28rem;
+}
+
+.rotate-gate-title {
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: clamp(28px, 8vw, 42px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.rotate-gate-blurb {
+  font-size: 15px;
+  line-height: 1.45;
+  opacity: 0.78;
+}
+
+html.portrait-blocked #app {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 #game-canvas {
   display: block;
   width: 100%;
@@ -498,14 +542,95 @@ body,
   padding-right: 2px;
 }
 
-.menu-controls {
-  max-height: min(94vh, 960px);
+/*
+ * Dock panel: scrolluje tělo, Zpět zůstává dole v černém poli (jako Zvuk).
+ */
+.menu-panel.menu-panel-dock {
+  height: min(88vh, 720px);
+  max-height: min(88vh, 720px);
+  min-height: min(64vh, 560px);
+  width: min(1120px, 96vw);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.menu-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 28px;
+  scrollbar-width: none;
+}
+
+.menu-panel-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.menu-panel-dock > .menu-nav-back {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 4px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.42));
+  border-radius: 0 0 12px 12px;
+}
+
+.menu-panel-dock > .menu-nav-back--flow {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+@media (orientation: landscape) {
+  .menu-panel.menu-panel-dock {
+    height: min(90vh, 640px);
+    max-height: min(90vh, 640px);
+    min-height: min(70vh, 520px);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .menu-panel.menu-panel-dock {
+    height: 94vh;
+    max-height: 94vh;
+    min-height: 0;
+    width: min(96vw, 1100px);
+  }
+}
+
+/* Ovládání — dlaždice na plnou šířku */
+.menu-controls .dir-grid,
+.menu-controls .mobile-scheme-grid,
+.menu-controls .manual-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.menu-controls .bind-section {
+  width: 100%;
+  max-width: none;
+  margin: 0 0 4px;
+}
+
+.menu-controls .bind-list {
+  width: 100%;
+}
+
+.menu-controls .track-card {
+  width: 100%;
+}
+
+.menu-controls .ctrl-overview {
+  width: 100%;
 }
 
 .menu-controls .menu-header {
@@ -1313,6 +1438,106 @@ body,
   margin-top: 18px !important;
 }
 
+.home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.home-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 120px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 10, 14, 0.55);
+  color: var(--menu-text, #f7f1ea);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.home-chip:hover {
+  border-color: color-mix(in srgb, var(--menu-accent, #c4a574) 55%, transparent);
+  background: rgba(12, 14, 18, 0.72);
+}
+
+.home-chip-k {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.home-chip strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-group-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.5;
+  text-align: center;
+}
+
+.settings-advanced {
+  margin-top: 8px;
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 10px;
+}
+
+.settings-advanced > summary {
+  list-style: none;
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  padding: 8px 4px;
+}
+
+.settings-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-advanced-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.vehicle-more {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.vehicle-more > summary {
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.7;
+  padding: 6px 0;
+}
+
+.tracks-list .track-card-lite {
+  gap: 4px;
+}
+
+.tracks-list .track-card-lite span {
+  font-size: 12px;
+  opacity: 0.65;
+}
+
 .menu-esc-hint {
   text-align: center;
   margin-top: 14px;
@@ -1320,31 +1545,76 @@ body,
   opacity: 0.45;
 }
 
+.menu-esc-hint-home {
+  margin-top: 18px;
+}
+
+/* Společný řádek: Esc uprostřed, Zpět vpravo */
 .menu-nav-back {
+  position: relative;
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
   align-items: center;
-  gap: 6px;
   margin-top: 16px;
   width: 100%;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+
+.menu-nav-back .menu-esc-hint {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  text-align: center;
+  pointer-events: none;
 }
 
 .menu-nav-back .menu-back-btn {
-  min-width: min(100%, 220px);
+  position: relative;
+  z-index: 1;
+  min-width: 120px;
   min-height: 44px;
   padding: 12px 18px;
   font-size: 15px;
   touch-action: manipulation;
+  pointer-events: auto;
 }
 
-.menu-nav-back .menu-esc-hint {
-  margin-top: 0;
+/* Závod / Žebříček / hub: Zpět fixed vpravo dole obrazovky */
+.menu-shell:has(.menu-nav-back--dock),
+.menu-panel:has(.menu-nav-back--dock) {
+  padding-bottom: 72px;
+}
+
+.menu-nav-back--dock .menu-back-btn {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 55;
+}
+
+#menu:has(.settings-thanks) .menu-nav-back--dock .menu-back-btn {
+  bottom: max(52px, calc(env(safe-area-inset-bottom) + 36px));
+}
+
+/* Scrollovací okna: Zpět na konci / u krátkých panelů dole (flex) */
+.menu-nav-back--flow {
+  margin-top: auto;
+  margin-bottom: 8px;
+  padding-top: 20px;
+  padding-bottom: max(4px, env(safe-area-inset-bottom));
+}
+
+.menu-nav-back--flow .menu-back-btn {
+  position: relative;
+  right: auto;
+  bottom: auto;
 }
 
 @media (max-width: 720px) {
   .menu-nav-back .menu-back-btn {
-    width: 100%;
-    max-width: 320px;
+    min-width: 112px;
     min-height: 48px;
     font-size: 16px;
   }
@@ -1926,6 +2196,20 @@ button.menu-start:disabled {
   }
 }
 
+@media (orientation: landscape) and (max-height: 520px) {
+  .gta-tile-hero {
+    min-height: 120px;
+  }
+
+  .gta-home {
+    padding: 16px 18px 20px;
+  }
+
+  .gta-home-hero {
+    margin-bottom: 12px;
+  }
+}
+
 .menu-header {
   text-align: center;
   margin-bottom: 22px;
@@ -1940,8 +2224,9 @@ button.menu-start:disabled {
   flex-direction: column;
   justify-content: flex-start;
   width: min(1120px, 96vw);
-  min-height: min(78vh, 720px);
-  max-height: min(92vh, 920px);
+  /* Landscape-first: neprotahovat menu do výšky jako portrait app */
+  min-height: min(64vh, 560px);
+  max-height: min(88vh, 720px);
   overflow: auto;
   scrollbar-width: none;
   background:
@@ -1950,19 +2235,88 @@ button.menu-start:disabled {
     var(--menu-photo) center / cover no-repeat;
 }
 
-/* Hub nastavení — dlaždice na střed výšky */
+@media (orientation: landscape) {
+  .menu-panel {
+    min-height: min(70vh, 520px);
+    max-height: min(90vh, 640px);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .menu-panel {
+    min-height: 0;
+    max-height: 94vh;
+    width: min(96vw, 1100px);
+  }
+}
+
+/* Zvuk — obsah specificky */
+.menu-audio .track-grid {
+  width: 100%;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 720px) {
+  .menu-audio .track-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.menu-audio .track-card {
+  width: 100%;
+  padding: 12px 14px;
+  min-height: 48px;
+}
+
+.menu-audio .atm-scene-panel {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px 14px 14px;
+}
+
+.menu-audio .atm-scene-sliders {
+  grid-template-columns: 1fr;
+  max-width: none;
+  gap: 10px;
+}
+
+.menu-audio .tune-rules {
+  margin-bottom: 8px;
+}
+
+/* Hub nastavení — dlaždice pod sebou, na střed; Zpět v dock footeru */
 .menu-panel.menu-settings-hub {
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.menu-panel.menu-settings-hub .menu-panel-body {
+  display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
 }
 
 .menu-panel.menu-settings-hub .home-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
   margin: 0 auto;
-  max-width: 460px;
+  max-width: 420px;
+  width: 100%;
+  align-self: center;
+}
+
+.menu-panel.menu-settings-hub .home-actions .home-panel {
+  width: 100%;
+  margin: 0;
+  min-height: 52px;
+  text-align: center;
 }
 
 .menu-panel.menu-settings-hub .menu-esc-hint {
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 .menu-panel::-webkit-scrollbar {
@@ -2032,13 +2386,19 @@ button.menu-start:disabled {
 .menu-flow-actions {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
   margin-top: 16px;
+  width: 100%;
 }
 
 .menu-flow-actions .menu-start {
   min-width: 180px;
+  align-self: center;
+}
+
+.menu-flow-actions .menu-nav-back {
+  width: 100%;
 }
 
 .overlay-actions .menu-start,

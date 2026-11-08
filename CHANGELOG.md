@@ -4,6 +4,34 @@ Formát: co hráč a návštěvník pozná. Technické detaily jsou ve zdroják�
 
 ---
 
+## [0.6.0] — 2026-11-09 · *UX menu, zvuk, landscape*
+
+### Proč tahle verze existuje
+Rychlejší start závodu, méně chaosu v nastavení, jednotné panely a čitelnější audio/ovládání.
+
+### Domů & navigace
+- Primární CTA **Jet** spustí klasiku hned (trať · vůz v podtitulu).
+- Chipy: trať / peklostroj / obtížnost / rekordy — bez debug status řádku.
+- Online jako vlastní dlaždice; Zpět z online vede Domů.
+
+### Nastavení
+- **Hráčské:** Ovládání, Obtížnost, Zvuk, Atmosféra.
+- **Pokročilé** (sbalené): Soutěže, AI učení, Rekordy.
+
+### Panely & UX
+- Všechny menu panely: scrolluje tělo, **Zpět** zůstává v černém dock pásu.
+- Karty tratí v seznamu jen název + `~čas` / sandbox; detail vpravo.
+- Peklostroj: lore a nápověda ovládání pod „Více…“.
+
+### Zvuk & mobil
+- Engine samply podle typu peklostroje; freestyle tišší.
+- Landscape-first; portrait jen když ho zapneš v Ovládání.
+
+### Tag & copy
+- Kasárny bez tagu „skate“; Plácek jen „sandbox“.
+
+---
+
 ## [0.5.0] — 2026-11-08 · *AI tempo, atmosféra, produktový polish*
 
 ### Proč tahle verze existuje

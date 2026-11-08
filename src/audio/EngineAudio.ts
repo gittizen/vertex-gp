@@ -7,13 +7,9 @@ import {
   type MusicId,
 } from './AudioSettings'
 
-type SampleBank = {
-  idle: AudioBuffer
-  mid: AudioBuffer
-  high: AudioBuffer
-  top: AudioBuffer
-  heavy: AudioBuffer
-  bass: AudioBuffer | null
+type SampleKey = 'idle' | 'mid' | 'high' | 'top' | 'heavy' | 'bass' | 'loop1' | 'loop3' | 'sport'
+
+type SampleBank = Record<SampleKey, AudioBuffer> & {
   start: AudioBuffer | null
 }
 
@@ -40,15 +36,23 @@ type Voice = {
   gain: GainNode
   panner: StereoPannerNode
   rateBase: number
-  useHeavy: boolean
+  /** Aktuální profil sampů (pro výměnu bufferů) */
+  profileId: string
 }
 
+/** Profil motoru — každý peklostroj jiná sada smyček + charakter. */
 type KindSample = {
+  id: string
+  low: SampleKey
+  mid: SampleKey
+  high: SampleKey
   rate: number
-  heavy: boolean
   noise: number
   cutoff: number
   amp: number
+  bassMul: number
+  /** Freestyle = žádný motor */
+  silent?: boolean
 }
 
 type MusicBed = {
@@ -64,29 +68,134 @@ type BeatStyle = {
   padMul: number
 }
 
-/** Mapování vozidla → pitch / heavy loop / šum */
+/** Mapování vozidla → vlastní smyčky + pitch (CC0/CC-BY samply v /public/audio/engines). */
 const KIND_SAMPLE: Record<VehicleKind, KindSample> = {
-  moto: { rate: 1.45, heavy: false, noise: 0.22, cutoff: 3400, amp: 1.05 },
-  formula: { rate: 1.35, heavy: false, noise: 0.14, cutoff: 3800, amp: 1.0 },
-  monster: { rate: 0.72, heavy: true, noise: 0.28, cutoff: 720, amp: 1.15 },
-  street: { rate: 1.0, heavy: false, noise: 0.06, cutoff: 2200, amp: 0.95 },
-  skate: { rate: 0.55, heavy: false, noise: 0.42, cutoff: 1600, amp: 0.55 },
-  bike: { rate: 0.7, heavy: false, noise: 0.32, cutoff: 1800, amp: 0.6 },
-  truck: { rate: 0.68, heavy: true, noise: 0.3, cutoff: 600, amp: 1.1 },
-  tank: { rate: 0.55, heavy: true, noise: 0.36, cutoff: 480, amp: 1.12 },
-  limo: { rate: 0.92, heavy: false, noise: 0.05, cutoff: 1800, amp: 0.9 },
-  scooter: { rate: 1.55, heavy: false, noise: 0.12, cutoff: 2800, amp: 0.75 },
+  street: {
+    id: 'street',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1.0,
+    noise: 0.06,
+    cutoff: 2200,
+    amp: 0.95,
+    bassMul: 1,
+  },
+  formula: {
+    id: 'formula',
+    low: 'mid',
+    mid: 'high',
+    high: 'top',
+    rate: 1.42,
+    noise: 0.16,
+    cutoff: 4200,
+    amp: 1.05,
+    bassMul: 0.55,
+  },
+  moto: {
+    id: 'moto',
+    low: 'loop1',
+    mid: 'sport',
+    high: 'top',
+    rate: 1.58,
+    noise: 0.24,
+    cutoff: 3600,
+    amp: 1.08,
+    bassMul: 0.45,
+  },
+  monster: {
+    id: 'monster',
+    low: 'heavy',
+    mid: 'heavy',
+    high: 'bass',
+    rate: 0.7,
+    noise: 0.3,
+    cutoff: 700,
+    amp: 1.18,
+    bassMul: 1.35,
+  },
+  truck: {
+    id: 'truck',
+    low: 'heavy',
+    mid: 'loop3',
+    high: 'mid',
+    rate: 0.66,
+    noise: 0.28,
+    cutoff: 580,
+    amp: 1.12,
+    bassMul: 1.25,
+  },
+  tank: {
+    id: 'tank',
+    low: 'bass',
+    mid: 'heavy',
+    high: 'loop3',
+    rate: 0.52,
+    noise: 0.38,
+    cutoff: 420,
+    amp: 1.15,
+    bassMul: 1.45,
+  },
+  limo: {
+    id: 'limo',
+    low: 'idle',
+    mid: 'idle',
+    high: 'mid',
+    rate: 0.86,
+    noise: 0.04,
+    cutoff: 1600,
+    amp: 0.88,
+    bassMul: 1.1,
+  },
+  scooter: {
+    id: 'scooter',
+    low: 'loop1',
+    mid: 'loop1',
+    high: 'sport',
+    rate: 1.72,
+    noise: 0.14,
+    cutoff: 3000,
+    amp: 0.72,
+    bassMul: 0.35,
+  },
+  skate: {
+    id: 'skate',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
+  bike: {
+    id: 'bike',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
 }
 
-const SAMPLE_URLS = {
+const SAMPLE_URLS: Record<SampleKey | 'start', string> = {
   idle: '/audio/engines/car-idle.wav',
   mid: '/audio/engines/car-mid.wav',
   high: '/audio/engines/car-high.wav',
   top: '/audio/engines/car-top.wav',
   heavy: '/audio/engines/heavy.wav',
   bass: '/audio/engines/bass-rumble.ogg',
+  loop1: '/audio/engines/loop1.wav',
+  loop3: '/audio/engines/loop3.wav',
+  sport: '/audio/engines/qubodup-preview.ogg',
   start: '/audio/engines/car-start.wav',
-} as const
+}
 
 /** Amp player engines — výrazně slyšitelnější než dřív */
 const ENGINE_VOICE_CAP = 1.35
@@ -208,9 +317,10 @@ export class EngineAudio {
     const now = this.ctx.currentTime
     const sfxMul = this.settings.sfx / 100
 
+    const playerKind = KIND_SAMPLE[player.kind] ?? KIND_SAMPLE.street
     if (racing && !this.startPlayed) {
       this.startPlayed = true
-      this.playStart()
+      if (!playerKind.silent) this.playStart()
     }
 
     for (let i = 0; i < vehicles.length; i++) {
@@ -219,7 +329,17 @@ export class EngineAudio {
       if (!voice) continue
 
       const kind = KIND_SAMPLE[v.kind] ?? KIND_SAMPLE.street
-      this.applyHeavyBuffers(voice, kind.heavy, this.bank)
+      if (kind.silent) {
+        voice.gain.gain.setTargetAtTime(0, now, 0.06)
+        voice.gBass.gain.setTargetAtTime(0, now, 0.06)
+        voice.subGain.gain.setTargetAtTime(0, now, 0.06)
+        voice.noiseGain.gain.setTargetAtTime(0, now, 0.06)
+        voice.overGain.gain.setTargetAtTime(0, now, 0.06)
+        this.lastSpeeds[i] = Math.abs(v.physics.speed)
+        continue
+      }
+
+      this.applyKindBuffers(voice, kind, this.bank)
       const speed = Math.abs(v.physics.speed)
       const kmh = v.physics.speedKmh
       const gear = Math.max(1, Math.abs(v.physics.gear))
@@ -271,9 +391,9 @@ export class EngineAudio {
         voice.srcBass.playbackRate.setTargetAtTime(0.55 + rpm * 0.55, now, 0.06)
       }
       // Bass: silný na idle/nízké otáčky, slábne nahoře
-      const bassAmt = (0.55 + low * 0.7 + mid * 0.25) * (kind.heavy ? 1.15 : 0.95)
+      const bassAmt = (0.55 + low * 0.7 + mid * 0.25) * kind.bassMul
       voice.gBass.gain.setTargetAtTime(bassAmt * 0.7, now, 0.06)
-      voice.bassShelf.gain.setTargetAtTime(6 + low * 5 + (kind.heavy ? 3 : 0), now, 0.08)
+      voice.bassShelf.gain.setTargetAtTime(6 + low * 5 + kind.bassMul * 2, now, 0.08)
       voice.sub.frequency.setTargetAtTime(38 + rpm * 55 + overrev * 40, now, 0.05)
       voice.subGain.gain.setTargetAtTime((0.14 + low * 0.18 + mid * 0.06) * kind.amp, now, 0.06)
 
@@ -321,26 +441,43 @@ export class EngineAudio {
           const ab = await res.arrayBuffer()
           return await ctx.decodeAudioData(ab.slice(0))
         }
-        const [idle, mid, high, top, heavy] = await Promise.all([
-          decode(SAMPLE_URLS.idle),
-          decode(SAMPLE_URLS.mid),
-          decode(SAMPLE_URLS.high),
-          decode(SAMPLE_URLS.top),
-          decode(SAMPLE_URLS.heavy),
-        ])
+        const keys: SampleKey[] = [
+          'idle',
+          'mid',
+          'high',
+          'top',
+          'heavy',
+          'bass',
+          'loop1',
+          'loop3',
+          'sport',
+        ]
+        const decoded = await Promise.all(
+          keys.map(async (k) => {
+            try {
+              return await decode(SAMPLE_URLS[k])
+            } catch {
+              return null
+            }
+          }),
+        )
+        const idle = decoded[0]
+        const mid = decoded[1]
+        const high = decoded[2]
+        const top = decoded[3]
+        const heavy = decoded[4]
+        if (!idle || !mid || !high || !top || !heavy) throw new Error('core engine samples missing')
+        const bass = decoded[5] ?? heavy
+        const loop1 = decoded[6] ?? mid
+        const loop3 = decoded[7] ?? heavy
+        const sport = decoded[8] ?? high
         let start: AudioBuffer | null = null
-        let bass: AudioBuffer | null = null
         try {
           start = await decode(SAMPLE_URLS.start)
         } catch {
           start = null
         }
-        try {
-          bass = await decode(SAMPLE_URLS.bass)
-        } catch {
-          bass = heavy
-        }
-        this.bank = { idle, mid, high, top, heavy, bass, start }
+        this.bank = { idle, mid, high, top, heavy, bass, loop1, loop3, sport, start }
         return this.bank
       } catch {
         this.bank = null
@@ -414,7 +551,6 @@ export class EngineAudio {
       return src
     }
 
-    const useHeavy = false
     const srcLow = makeLoop(bank.idle, 1)
     const srcMid = makeLoop(bank.mid, 1)
     const srcHigh = makeLoop(bank.high, 1)
@@ -519,21 +655,16 @@ export class EngineAudio {
       gain,
       panner,
       rateBase: 1,
-      useHeavy,
+      profileId: 'street',
     }
   }
 
-  /** Po vytvoření hlasů přepnout heavy banku podle kind — voláno při update přes rate; buffer swap jednorázově */
-  private applyHeavyBuffers(voice: Voice, heavy: boolean, bank: SampleBank): void {
-    if (voice.useHeavy === heavy) return
-    // Nelze bezpečně vyměnit buffer u běžícího source — restart layers
-    // Pro jednoduchost: heavy vozidla už mají rate < 1; heavy buffer nastavíme při make podle indexu nelze.
-    // Místo swapu: při ensureVoices nevíme kind. Přemapujeme přes playbackRate + lowpass.
-    // Heavy buffer: vytvořit nové source jen když se kind změní — stop staré.
-    voice.useHeavy = heavy
+  /** Výměna smyček při změně typu peklostroje. */
+  private applyKindBuffers(voice: Voice, kind: KindSample, bank: SampleBank): void {
+    if (voice.profileId === kind.id) return
+    voice.profileId = kind.id
     const ctx = this.ctx
-    const bus = this.sfxBus
-    if (!ctx || !bus) return
+    if (!ctx) return
     try {
       voice.srcLow.stop()
       voice.srcMid.stop()
@@ -547,12 +678,9 @@ export class EngineAudio {
       s.loop = true
       return s
     }
-    const lowBuf = heavy ? bank.heavy : bank.idle
-    const midBuf = heavy ? bank.heavy : bank.mid
-    const highBuf = heavy ? bank.top : bank.high
-    voice.srcLow = mk(lowBuf)
-    voice.srcMid = mk(midBuf)
-    voice.srcHigh = mk(highBuf)
+    voice.srcLow = mk(bank[kind.low])
+    voice.srcMid = mk(bank[kind.mid])
+    voice.srcHigh = mk(bank[kind.high])
     voice.srcLow.connect(voice.gLow)
     voice.srcMid.connect(voice.gMid)
     voice.srcHigh.connect(voice.gHigh)

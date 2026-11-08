@@ -1,4 +1,4 @@
-# Prompt: znovu vytvoř Klec GP tak, jak je (v0.5)
+# Prompt: znovu vytvoř Klec GP tak, jak je (v0.6)
 
 Zkopíruj blok níže do Cursoru / jiného agenta, pokud chceš **znovu postavit tutu hru** (ne klon jiného racing template).
 
@@ -50,9 +50,9 @@ POLISH / PRODUKT
 - CHANGELOG lidsky; README pro laiky (co, proč, jak testovat).
 - Easter eggy: koloběžka dialogy, soutěže, watermark tratí, atmosférické fotky.
 
-Výstup: hratelný npm run dev:all, české UI default, verze 0.5.0 v GameVersion.ts + package.json.
+Výstup: hratelný npm run dev:all, české UI default, verze 0.6.0 v GameVersion.ts + package.json.
 ```
 
 ---
 
-Tento prompt **není** záruka bit-identical klonu — popisuje záměr, architekturu a pasti, které v 0.5 opravdu řešíme.
+Tento prompt **není** záruka bit-identical klonu — popisuje záměr, architekturu a pasti, které v 0.6 opravdu řešíme.

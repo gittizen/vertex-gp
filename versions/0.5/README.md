@@ -1,10 +1,9 @@
-# 0.5 — AI tempo, atmosféra, demo polish *(současná)*
+# 0.5 — AI tempo, atmosféra, demo polish
 
-Aktuální produkční větev Klec GP.
+Archiv Klec GP 0.5.
 
 ## Hrát
 - GitHub Pages: https://gittizen.github.io/vertex-gp/0.5/
-- Netlify (produkce): https://tourmaline-gingersnap-268fa6.netlify.app/
 
 ## Patří sem
 - Live kalibrace AI z dat závodů + náhodní soupeři každý solo race
@@ -16,5 +15,5 @@ Aktuální produkční větev Klec GP.
 ![Gameplay 0.5](./screenshot.png)
 
 ## Git
-- větev / ref: `master` (aktuální)
+- větev / ref: `0.5`
 - tag: `v0.5.0`

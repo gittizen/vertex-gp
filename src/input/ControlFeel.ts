@@ -18,6 +18,8 @@ export type ControlFeelValues = {
   hudScale: number
   /** Dotykové řízení — platí jen na telefonu / tabletu. */
   mobileScheme: MobileDriveScheme
+  /** Povolit portrait na telefonu/tabletu. Default false = jen šířka. */
+  allowPortraitRotation: boolean
 }
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.control-feel`
@@ -30,6 +32,7 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
   driftMode: false,
   hudScale: 1,
   mobileScheme: 'pads',
+  allowPortraitRotation: false,
 }
 
 const CAM_FOLLOWS: CamFollow[] = ['soft', 'normal', 'tight']
@@ -65,6 +68,7 @@ export function loadControlFeel(): ControlFeelValues {
       driftMode: !!p.driftMode,
       hudScale,
       mobileScheme: migrateMobileScheme(p.mobileScheme),
+      allowPortraitRotation: !!p.allowPortraitRotation,
     }
   } catch {
     return { ...DEFAULT_CONTROL_FEEL }
