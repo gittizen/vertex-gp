@@ -1,16 +1,20 @@
-# 0.3 — mobil + hosting + polish
+# 0.3 — mobil, hosting, polish
 
-Dříve **1.1** + polish. Archiv — produkce je teď **0.4**.
+Dříve **1.1** + polish. Oproti 0.2: telefon, Netlify, první AI data.
 
 ## Hrát
-- GitHub Pages: https://gittizen.github.io/vertex-gp/0.3/
+https://gittizen.github.io/vertex-gp/0.3/
 
-## Patří sem
-- Mobilní řízení (volant, stick, náklon, ťukání)
-- Community AI learning po dojetí
-- Šampionát, Serpentiny, pace kalibrace
-- Menu vozidlo → tuning, watermark, Esc/restart polish
-- UI `v0.3` / `package.json` `0.3.0`
+## Co se změnilo oproti 0.2
+- Dotyk: volant, stick, náklon, ťukání  
+- Netlify produkce + Pages archivy; `base: /`  
+- Community / pace learning po dojetí; šampionát  
+- Serpentiny a další obsah; vozidlo → tuning; Esc/restart polish  
+- Přečíslování historie na 0.1 / 0.2 / 0.3  
+
+**Řešilo se:** touch vs klávesnice, správný hosting base, první „AI z jízd“.
+
+Celý příběh verzí: [../../VERSIONS.md](../../VERSIONS.md)
 
 ## Screenshot
 ![Gameplay 0.3](./screenshot.png)

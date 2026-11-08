@@ -1,19 +1,22 @@
-# 0.4 — reálnější svět (současná)
+# 0.4 — reálnější svět
 
-Okolí, terén a světlo — mapy už nevypadají stejně „nad vodou“.
+Oproti 0.3: okolí, terén, stíny — mapy už nejsou „auto nad deskou“.
 
 ## Hrát
-- GitHub Pages: https://gittizen.github.io/vertex-gp/0.4/
-- Netlify (produkce): https://klecgp.netlify.app/
+https://gittizen.github.io/vertex-gp/0.4/
 
-## Patří sem
-- Hustší okolí silnice (berm/apron/blanket), usazené budovy
-- Stíny bez mizícího asfaltu (Hrubý), contact stín pod autem
-- Unikátní podklady map (Námko, Noční Klecany, rally, …)
-- UI `v0.4` / `package.json` `0.4.0`
+## Co se změnilo oproti 0.3
+- Berm / apron / blanket, usazené budovy, hustší roadside  
+- Unikátní podklady map (Námko, noc, rally…)  
+- Stíny bez mizícího asfaltu; contact stín pod autem  
+- Hub verzí se screenshoty; Netlify + Pages jako standard  
+
+**Řešilo se:** fog „jezera“, z-fight, blanket přes asfalt, FPS u velkého groundu.
+
+Celý příběh verzí: [../../VERSIONS.md](../../VERSIONS.md)
 
 ## Screenshot
 ![Gameplay 0.4](./screenshot.png)
 
 ## Git
-- větev / ref: `master` (aktuální)
+- větev / ref: `0.4` · tag `v0.4.0`

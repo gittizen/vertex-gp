@@ -19,42 +19,42 @@ const VERSIONS = [
     ref: '0.1',
     base: '/vertex-gp/0.1/',
     title: '0.1 — Vertex GP',
-    blurb: 'Základ: Vite/TS/Three, tratě, AI, online WS, tuning.',
+    blurb: 'Začátek: engine, tratě z dat, AI, online WS, tuning.',
   },
   {
     id: '0.2',
     ref: '0.2',
     base: '/vertex-gp/0.2/',
     title: '0.2 — Klec GP',
-    blurb: 'Rebrand, freestyle, atmosféra menu, online hub.',
+    blurb: 'Značka Klecany, freestyle/Plácek, atmosféry, online hub.',
   },
   {
     id: '0.3',
     ref: '0.3',
     base: '/vertex-gp/0.3/',
     title: '0.3 — mobil + polish',
-    blurb: 'Mobilní řízení, Netlify éra, community AI, šampionát.',
+    blurb: 'Dotyk, Netlify, pace learning, šampionát, archivy verzí.',
   },
   {
     id: '0.4',
     ref: '0.4',
     base: '/vertex-gp/0.4/',
     title: '0.4 — reálnější svět',
-    blurb: 'Okolí, terén, unikátní mapy, stíny bez děr v asfaltu.',
+    blurb: 'Okolí silnice, terén, unikátní mapy, stíny bez děr.',
   },
   {
     id: '0.5',
     ref: '0.5',
     base: '/vertex-gp/0.5/',
     title: '0.5 — AI + demo polish',
-    blurb: 'Live tempo AI, náhodní soupeři, atmosféra, dokumentace pro pohovor.',
+    blurb: 'Live tempo AI, náhodní soupeři, kalendář, lidské docs.',
   },
   {
     id: '0.6',
     ref: 'HEAD',
     base: '/vertex-gp/0.6/',
     title: '0.6 — UX + zvuk',
-    blurb: 'Jet CTA, dock Zpět, hráčské/pokročilé nastavení, engine SFX, landscape.',
+    blurb: 'Jet CTA, dock Zpět, engine SFX, landscape-first.',
     current: true,
   },
 ]
@@ -201,7 +201,7 @@ function writeHub() {
 <body>
   <main>
     <h1>Klec GP</h1>
-    <p class="sub">Hratelné archivy verzí na GitHub Pages — každá s screenshotem ze hry. Aktuální produkce je 0.6.</p>
+    <p class="sub">Hratelné archivy od 0.1 nahoru — u každé verze screenshot. Příběh změn je ve VERSIONS.md v repu. Aktuální produkce: 0.6.</p>
     <div class="grid">
 ${cards}
     </div>

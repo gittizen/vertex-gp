@@ -11,6 +11,7 @@ Studentský produkt s vlastní značkou, tratěmi podle reálných míst, pečli
 | **Hrát** | https://klecgp.netlify.app/ |
 | **Historie verzí** | https://gittizen.github.io/vertex-gp/ |
 | **Archivy** | [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) · [0.6](https://gittizen.github.io/vertex-gp/0.6/) |
+| **Příběh verzí** | [VERSIONS.md](./VERSIONS.md) — od 0.1 nahoru, co se měnilo a řešilo |
 | **Changelog** | [CHANGELOG.md](./CHANGELOG.md) |
 | **Rebuild prompt** | [RECREATE_PROMPT.md](./RECREATE_PROMPT.md) |
 
@@ -58,7 +59,7 @@ Po závodě hra umí zaznamenat tempo a použít ho při kalibraci soupeřů. AI
 5. Ovládání a navigace na telefonu  
 6. Verze jako produkt (Netlify produkce + Pages archivy)
 
-Více: **[VERSIONS.md](./VERSIONS.md)** · **[CHANGELOG.md](./CHANGELOG.md)**
+Jak verze rostly (0.1 → 0.6) a co se u každé řešilo: **[VERSIONS.md](./VERSIONS.md)** · **[CHANGELOG.md](./CHANGELOG.md)**
 
 ---
 

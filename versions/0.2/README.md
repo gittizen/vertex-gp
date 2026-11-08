@@ -1,15 +1,19 @@
-# 0.2 — Klec GP (identita)
+# 0.2 — Klec GP *(identita)*
 
-Dříve označeno jako **1.0**.
+Dříve označeno jako **1.0**. Oproti 0.1: značka, freestyle, online hub.
 
 ## Hrát
 https://gittizen.github.io/vertex-gp/0.2/
 
-## Patří sem
-- Rebrand **Klec GP** (logo, intro, watermark)
-- Freestyle / skate / Plácek + triky
-- Atmosféra menu
-- Online hub (presence, rooms, ready, laps)
+## Co se změnilo oproti 0.1
+- Rebrand **Klec GP** (logo, intro, watermark)  
+- Freestyle / skate / Plácek + triky  
+- Atmosféry menu; online hub (presence, rooms, Ready, laps)  
+- Víc tratí a lokálního lore  
+
+**Řešilo se:** oddělit závod od freestyle skóre; lobby bez dedicated serveru.
+
+Celý příběh verzí: [../../VERSIONS.md](../../VERSIONS.md)
 
 ## Screenshot
 ![Gameplay 0.2](./screenshot.png)

@@ -1,6 +1,6 @@
 # Changelog — Klec GP
 
-Formát: co hráč a návštěvník pozná. Technické detaily jsou ve zdrojákách.
+Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nahoru): **[VERSIONS.md](./VERSIONS.md)**.
 
 ---
 
@@ -29,6 +29,12 @@ Rychlejší start závodu, méně chaosu v nastavení, jednotné panely a čitel
 
 ### Tag & copy
 - Kasárny bez tagu „skate“; Plácek jen „sandbox“.
+- Produkce: https://klecgp.netlify.app/
+
+### Co jsme řešili
+- Zpět ujíždějící se scrollem → dock footer.
+- Stejně důležité dlaždice v nastavení → hráčské / pokročilé.
+- Time-to-fun: jeden Jet místo zbytečného kroku režimu u klasiky.
 
 ---
 
@@ -56,6 +62,7 @@ Rychlejší start závodu, méně chaosu v nastavení, jednotné panely a čitel
 - **Koloběžka** — easter egg v garáži (nejezdí; dialogy).
 - **Soutěže / šampionát**, žebříčky, freestyle body na skate/kole.
 - Atmosférické styly menu (neon, mech, led, kalendář…).
+- README / CHANGELOG / RECREATE_PROMPT — lidsky, portfolio-friendly.
 
 ### Co jsme dlouho řešili
 - Z-fight a „voda“ místo země (Standard + fog na flat meshích).
@@ -65,14 +72,72 @@ Rychlejší start závodu, méně chaosu v nastavení, jednotné panely a čitel
 
 ---
 
-## [0.4.0] — reálnější svět
-Okolí silnice, berm/apron/blanket, unikátní podklady map, stíny bez mizícího asfaltu, Netlify produkce + hub verzí.
+## [0.4.0] — *reálnější svět*
 
-## [0.3.0] — mobil + polish
-Schémata řízení (volant / joystick / náklon / ťukání), Netlify `base: /`, community learning, šampionát UX.
+### Proč
+Mapy už nemají vypadat jako auto nad jednou zelenou deskou — okolí, terén, stíny.
 
-## [0.2.0] — Klec GP
-Rebrand, freestyle, atmosféra menu, online hub.
+### Co přibylo
+- Berm / apron / terrain blanket, usazené budovy a hustší roadside dekor.
+- Unikátní podklady a nálada map (Námko, noc, rally, climb…).
+- Stíny bez mizícího asfaltu; contact stín pod autem.
+- Version hub se screenshoty; Netlify produkce + Pages archivy jako standard.
 
-## [0.1.0] — Vertex GP
-Vite + TS + Three.js, tratě, AI, online WS, tuning rozpočet.
+### Co jsme řešili
+- Fog „jezera“, z-fight, blanket přes cizí asfalt.
+- FPS při velkém groundu a stínech.
+- Aby každá trať měla vlastní vizuální identitu.
+
+---
+
+## [0.3.0] — *mobil + hosting + polish*
+
+### Proč
+Hrát na telefonu, poslat odkaz kamarádům, začít sbírat data pro AI.
+
+### Co přibylo
+- Dotyková schémata: volant, joystick, náklon, ťukání.
+- Netlify `base: /`, GitHub Pages archivy verzí.
+- Community / pace learning po dojetí; šampionát UX.
+- Serpentiny a další obsah; vozidlo → tuning flow; Esc/restart polish.
+- Lineární číslování verzí 0.1 → 0.2 → 0.3 (místo starých 0.4 / 1.0 / 1.1).
+
+### Co jsme řešili
+- Touch vs klávesnice, landscape, správný `base` na hostingu.
+- První verze „AI se učí z jízd“ bez mid-race cheatů.
+- Šampionát, který nekončí mrtvým menu.
+
+---
+
+## [0.2.0] — *Klec GP — identita*
+
+### Proč
+Z technického Vertex GP udělat hru s místem a značkou.
+
+### Co přibylo
+- Rebrand Klec GP (logo, entry, watermark).
+- Freestyle (skate/kolo, triky), Plácek jako sandbox.
+- Atmosféry menu; online hub (presence, rooms, Ready, laps).
+- Víc tratí a lore kolem Klecan a okolí.
+
+### Co jsme řešili
+- Oddělit závodní smyčku od freestyle skóre.
+- Lobby bez placeného dedicated serveru (WS + tunnel u hostitele).
+
+---
+
+## [0.1.0] — *Vertex GP — základ*
+
+### Proč
+První hratelný browser semi-sim: tratě, AI, online, tuning.
+
+### Co bylo ve hře
+- Vite + TypeScript + Three.js.
+- Tratě z dat → mesh; AI obtížnosti; HUD.
+- Solo + online WS (max 4); tuning rozpočet a barvy.
+- Základní menu trati / vozu / obtížnosti; CS UI.
+
+### Co jsme řešili
+- Fyzika a řízení „formula feel“ na klávesnici.
+- Generování silnice z křivky.
+- První net sync a game loop, který drží pohromadě.

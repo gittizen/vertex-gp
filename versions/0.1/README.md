@@ -1,16 +1,21 @@
-# 0.1 — Vertex GP (základ)
+# 0.1 — Vertex GP *(začátek)*
 
-Dříve označeno jako **0.4**.
+Dříve označeno jako **0.4**. První hratelný build.
 
 ## Hrát
 https://gittizen.github.io/vertex-gp/0.1/
 
-## Patří sem
-- Vite + TypeScript + Three.js
-- Tratě jako data (`TrackDefs`) + mesh generátor
-- AI Lehká / Střední / Těžká
-- Solo + online WS (max 4)
-- Tuning rozpočet + barvy
+## Co tuhle verzi dělá jinou
+Je to **základ engine** — ještě bez silné značky Klec GP, ale už s kompletní smyčkou závodu.
+
+- Vite + TypeScript + Three.js od nuly  
+- Tratě jako data → mesh silnice, AI Lehká/Střední/Těžká  
+- Solo + online WS (max 4), tuning s rozpočtem, barvy  
+- Základní menu a české UI  
+
+**Řešilo se:** fyzika / grip, generování trati, první net sync.
+
+Celý příběh verzí: [../../VERSIONS.md](../../VERSIONS.md)
 
 ## Screenshot
 ![Gameplay 0.1](./screenshot.png)
