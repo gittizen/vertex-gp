@@ -1,12 +1,14 @@
-# Klec GP · v1.0
+# Klec GP · v1.1
 
 Noční město. Ulice Klecan. Horské rallye. Stoupání Do Klecánek. Freestyle na Plácku.
 
-Prohlížečová 2.5D semi-sim hra. Solo s AI, freestyle triky, nebo **online až 4 hráči**.
+Prohlížečová 2.5D semi-sim hra. Solo s AI, freestyle triky (PC), nebo **online až 4 hráči**.
 
-> Předchozí veřejná verze: **0.4** (Vertex GP). Tahle větev je **Klec GP 1.0** — update, historie zůstává.
+> Historie: **0.4** Vertex GP → **1.0** Klec GP → **1.1** mobilní řízení + Netlify.  
+> Podrobný postup a úvahy: **[VERSIONS.md](./VERSIONS.md)**. Staré verze v gitu zůstávají.
 
-**Web (GitHub Pages):** https://gittizen.github.io/vertex-gp/
+**Web (Netlify):** https://tourmaline-gingersnap-268fa6.netlify.app/  
+**Zdroják / Pages mirror:** https://gittizen.github.io/vertex-gp/
 
 ---
 
@@ -42,6 +44,11 @@ Otevři **http://localhost:5173** → stiskni klávesu (entry) → **Závod** / 
 | R | Restart (solo) |
 | Esc | Pauza → menu |
 
+### Telefon / tablet (1.1)
+
+V **Nastavení → Ovládání** přepni režim: volant+pedály · joystick · náklon · ťukání stran.  
+Na mobilu jen **klasická jízda** (+ boost na displeji) — freestyle triky nejsou.
+
 ---
 
 ## Multiplayer
@@ -72,7 +79,7 @@ Vite · TypeScript · Three.js · `ws` server (port 8787)
 npm run dev      # frontend
 npm run server   # multiplayer
 npm run dev:all  # obojí
-npm run build    # produkce → dist/ (base /vertex-gp/)
+npm run build    # produkce → dist/ (base / ; pro GH Pages: VITE_BASE=/vertex-gp/)
 ```
 
 ---

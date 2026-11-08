@@ -2,6 +2,9 @@ import { GAME_STORAGE_NS } from './KeyBindings'
 
 export type CamFollow = 'soft' | 'normal' | 'tight'
 
+/** Režimy řízení na telefonu / tabletu (ve hrách formulí běžné). */
+export type MobileDriveScheme = 'joystick' | 'tilt' | 'tap' | 'pads'
+
 export type ControlFeelValues = {
   /** 0.55–1.45 — násobitel řízení */
   steerSens: number
@@ -11,6 +14,8 @@ export type ControlFeelValues = {
   stabilityAssist: boolean
   /** 0.75–1.35 — velikost HUD */
   hudScale: number
+  /** Dotykové řízení — platí jen na telefonu / tabletu. */
+  mobileScheme: MobileDriveScheme
 }
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.control-feel`
@@ -21,9 +26,18 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
   camFollow: 'normal',
   stabilityAssist: false,
   hudScale: 1,
+  mobileScheme: 'pads',
 }
 
 const CAM_FOLLOWS: CamFollow[] = ['soft', 'normal', 'tight']
+export const MOBILE_DRIVE_SCHEMES: MobileDriveScheme[] = ['pads', 'joystick', 'tilt', 'tap']
+
+function migrateMobileScheme(raw: unknown): MobileDriveScheme {
+  if (typeof raw === 'string' && MOBILE_DRIVE_SCHEMES.includes(raw as MobileDriveScheme)) {
+    return raw as MobileDriveScheme
+  }
+  return DEFAULT_CONTROL_FEEL.mobileScheme
+}
 
 export function loadControlFeel(): ControlFeelValues {
   try {
@@ -46,6 +60,7 @@ export function loadControlFeel(): ControlFeelValues {
         : DEFAULT_CONTROL_FEEL.camFollow,
       stabilityAssist: !!p.stabilityAssist,
       hudScale,
+      mobileScheme: migrateMobileScheme(p.mobileScheme),
     }
   } catch {
     return { ...DEFAULT_CONTROL_FEEL }

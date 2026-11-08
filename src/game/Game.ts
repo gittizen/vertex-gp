@@ -584,6 +584,7 @@ export class Game {
   private applyControlFeel(): void {
     this.input.steerSens = this.controlFeel.steerSens
     this.input.invertSteer = this.controlFeel.invertSteer
+    this.input.setMobileScheme(this.controlFeel.mobileScheme)
     this.cams.followRate = camFollowRate(this.controlFeel.camFollow)
     applyHudScale(this.controlFeel.hudScale)
     for (const v of this.vehicles) {
@@ -943,10 +944,12 @@ export class Game {
         const sandboxFs = !!this.track.def.sandbox
         const trickHunt = this.activeCompetition === 'trickHunt'
         const freestyleMode = sandboxFs || this.raceSettings.freestyle || trickHunt
+        // Telefon / tablet: jen klasická jízda — žádné freestyle triky
+        const mobileClassic = this.input.mobile
         v.freestyleOn =
-          freestyleMode && (v.kind === 'skate' || v.kind === 'bike')
+          !mobileClassic && freestyleMode && (v.kind === 'skate' || v.kind === 'bike')
         // Drift e-brake jen na drift mapě a mimo freestyle (klasické řízení)
-        v.physics.driftMode = !!this.track.def.drift && !freestyleMode
+        v.physics.driftMode = !!this.track.def.drift && !freestyleMode && !mobileClassic
         const controls =
           this.race.phase === 'racing'
             ? {

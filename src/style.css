@@ -398,12 +398,9 @@ body,
 }
 
 .menu-controls .menu-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  margin-bottom: 14px;
-  padding: 4px 0 12px;
-  background: linear-gradient(180deg, rgba(8, 10, 14, 0.92), rgba(8, 10, 14, 0.72) 70%, transparent);
+  margin-bottom: 10px;
+  padding: 0;
+  background: none;
 }
 
 .ctrl-overview {
@@ -2473,6 +2470,21 @@ body,
   padding: 4px 0;
 }
 
+.menu-mobile-warn {
+  color: #ffc98a !important;
+  opacity: 1 !important;
+  border: 1px solid rgba(255, 180, 90, 0.35);
+  background: rgba(40, 24, 10, 0.45);
+  border-radius: 10px;
+  padding: 10px 12px;
+  line-height: 1.4;
+}
+
+.mobile-scheme-grid .track-card span {
+  font-size: 12px;
+  opacity: 0.78;
+}
+
 /* —— Mobilní ovládání —— */
 #mobile-controls {
   display: none;
@@ -2513,6 +2525,48 @@ body,
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
+.mc-wheel {
+  pointer-events: auto;
+  position: absolute;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: min(52vw, 220px);
+  height: 72px;
+  touch-action: none;
+}
+
+.mc-wheel-track {
+  position: relative;
+  width: 100%;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(12, 16, 24, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+}
+
+.mc-wheel-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.38);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.mc-wheel-label {
+  display: block;
+  margin-top: 4px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
 .mc-buttons {
   pointer-events: auto;
   position: absolute;
@@ -2522,6 +2576,15 @@ body,
   flex-direction: column;
   gap: 12px;
   width: min(28vw, 110px);
+}
+
+.mc-buttons-tilt {
+  width: min(42vw, 160px);
+}
+
+.mc-buttons-float {
+  bottom: max(88px, env(safe-area-inset-bottom));
+  width: min(26vw, 100px);
 }
 
 .mc-btn {
@@ -2549,8 +2612,20 @@ body,
   border-color: rgba(255, 120, 130, 0.4);
 }
 
+.mc-brake-wide {
+  min-height: 72px;
+}
+
+.mc-boost {
+  background: rgba(40, 90, 160, 0.55);
+  border-color: rgba(120, 190, 255, 0.45);
+  padding: 14px 10px;
+  font-size: 13px;
+}
+
 .mc-btn.mc-active,
-.mc-tilt.mc-active {
+.mc-tilt.mc-active,
+.mc-tap-zone.mc-active {
   filter: brightness(1.25);
   transform: scale(0.97);
 }
@@ -2569,6 +2644,72 @@ body,
   font-size: 12px;
   color: #eef3f8;
   background: rgba(12, 16, 24, 0.6);
+}
+
+.mc-tilt-hint {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: max(72px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  max-width: min(90vw, 360px);
+  text-align: center;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(8, 12, 18, 0.55);
+  color: #eef3f8;
+}
+
+.mc-tap-layer {
+  pointer-events: auto;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 0.85fr 1fr;
+  touch-action: none;
+}
+
+.mc-tap-zone {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
+  background: transparent;
+}
+
+.mc-tap-zone span {
+  pointer-events: none;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.35;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.mc-tap-zone.mc-active span {
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.mc-tap-brake span {
+  color: #ffb4bc;
+}
+
+.mc-tap-legend {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: max(64px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  max-width: min(92vw, 420px);
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 0;
 }
 
 @media (min-width: 900px) and (pointer: fine) {

@@ -43,8 +43,10 @@ import {
 import { brandLockupHtml } from './Brand'
 import {
   DEFAULT_CONTROL_FEEL,
+  MOBILE_DRIVE_SCHEMES,
   type CamFollow,
   type ControlFeelValues,
+  type MobileDriveScheme,
 } from '../input/ControlFeel'
 import {
   COMPETITIONS,
@@ -586,9 +588,19 @@ export class Menu {
     }
 
     if (this.screen === 'raceMode') {
+      const onPhone = isMobileClient()
+      if (onPhone && this.raceModePick === 'freestyle') this.raceModePick = 'classic'
       const modes: { id: RaceModeId; title: string; blurb: string; online?: boolean }[] = [
         { id: 'classic', title: t('menu.raceClassic'), blurb: t('menu.raceClassicBlurb') },
-        { id: 'freestyle', title: t('menu.raceFreestyle'), blurb: t('menu.raceFreestyleBlurb') },
+        ...(onPhone
+          ? []
+          : [
+              {
+                id: 'freestyle' as const,
+                title: t('menu.raceFreestyle'),
+                blurb: t('menu.raceFreestyleBlurb'),
+              },
+            ]),
         {
           id: 'online',
           title: t('menu.online'),
@@ -626,6 +638,11 @@ export class Menu {
               <div class="hold-track ${pick.id === 'online' ? '' : 'is-hidden'}" aria-hidden="true"><div class="hold-bar" data-hold-fill></div></div>
             </div>
           </div>
+          ${
+            onPhone
+              ? `<p class="tune-rules menu-mobile-warn">${t('menu.mobileLimits')}</p>`
+              : ''
+          }
           <button type="button" class="btn-ghost" data-back style="margin-top:14px">${t('menu.back')}</button>
         </div>
       `
@@ -636,6 +653,7 @@ export class Menu {
       const blurbEl = this.root.querySelector<HTMLElement>('[data-race-blurb]')
       const hintEl = this.root.querySelector<HTMLElement>('[data-race-hint]')
       const setPick = (id: RaceModeId) => {
+        if (onPhone && id === 'freestyle') id = 'classic'
         this.clearRaceHold()
         this.clearRaceEnterHits()
         this.raceModePick = id
@@ -1051,16 +1069,34 @@ export class Menu {
       const sensPct = Math.round(feel.steerSens * 100)
       const hudPct = Math.round(feel.hudScale * 100)
       const camFollows: CamFollow[] = ['soft', 'normal', 'tight']
+      const onPhone = isMobileClient()
+      const mobileSchemeHtml = `
+            <div class="bind-section">
+              <h3 class="bind-section-title">${t('menu.ctrlMobileTitle')}</h3>
+              <p class="tune-rules menu-mobile-warn">${t('menu.mobileLimits')}</p>
+              <p class="tune-rules">${t('menu.ctrlMobileBlurb')}</p>
+              <div class="dir-grid mobile-scheme-grid">
+                ${MOBILE_DRIVE_SCHEMES.map((s) => {
+                  const active = s === feel.mobileScheme ? 'active' : ''
+                  return `<button type="button" class="track-card ${active}" data-mobile-scheme="${s}">
+                    <strong>${t(`menu.ctrlMobile.${s}`)}</strong>
+                    <span>${t(`menu.ctrlMobile.${s}.blurb`)}</span>
+                  </button>`
+                }).join('')}
+              </div>
+            </div>`
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel menu-controls">
           <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.ctrlEyebrow')}</p>
             <h1>${t('menu.ctrlTitle')}</h1>
           </header>
-          <p class="tune-rules">${t('menu.ctrlBlurb')}</p>
-          <div class="ctrl-overview" aria-label="${t('menu.ctrlTitle')}">
+          <p class="tune-rules">${onPhone ? t('menu.ctrlBlurbMobile') : t('menu.ctrlBlurb')}</p>
+          ${
+            onPhone
+              ? ''
+              : `<div class="ctrl-overview" aria-label="${t('menu.ctrlTitle')}">
             <div class="ctrl-overview-item">
               <strong>${t('menu.ctrlOverviewSteer')}</strong>
               <span>${t('menu.ctrlOverviewSteerVal')}</span>
@@ -1077,8 +1113,10 @@ export class Menu {
               <strong>${t('menu.ctrlOverviewMenu')}</strong>
               <span>${t('menu.ctrlOverviewMenuVal')}</span>
             </div>
-          </div>
+          </div>`
+          }
           <div class="bind-list">
+            ${mobileSchemeHtml}
             <div class="bind-section">
               <h3 class="bind-section-title">${t('menu.ctrlFeelTitle')}</h3>
               <p class="tune-rules">${t('menu.ctrlFeelBlurb')}</p>
@@ -1116,7 +1154,13 @@ export class Menu {
                   .join('')}
               </div>
             </div>
-            ${section(t('menu.ctrlSectionDrive'), drive)}
+            ${
+              onPhone
+                ? `<div class="bind-section">
+              <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
+              <p class="tune-rules menu-mobile-warn">${t('menu.ctrlTricksMobileOff')}</p>
+            </div>`
+                : `${section(t('menu.ctrlSectionDrive'), drive)}
             ${section(t('menu.ctrlSectionSpecial'), special)}
             ${section(t('menu.ctrlSectionSystem'), system)}
             <div class="bind-section">
@@ -1131,7 +1175,8 @@ export class Menu {
                 </button>
               </div>
               <div class="trick-bind-list">${trickRows}</div>
-            </div>
+            </div>`
+            }
             <button type="button" class="btn-ghost" data-reset-binds style="margin-top:6px">${t('menu.ctrlReset')}</button>
             ${this.settingsEscHint()}
           </div>
@@ -1698,7 +1743,8 @@ export class Menu {
   }
 
   private confirmRaceMode(): void {
-    const mode = this.raceModePick
+    let mode = this.raceModePick
+    if (isMobileClient() && mode === 'freestyle') mode = 'classic'
     if (mode === 'online') {
       this.screen = 'online'
       this.render()
@@ -2039,6 +2085,14 @@ export class Menu {
         const cam = btn.dataset.feelCam as CamFollow
         if (cam !== 'soft' && cam !== 'normal' && cam !== 'tight') return
         this.controlFeelApi?.set({ camFollow: cam })
+        this.render()
+      })
+    })
+    this.root.querySelectorAll<HTMLButtonElement>('[data-mobile-scheme]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const scheme = btn.dataset.mobileScheme as MobileDriveScheme
+        if (!MOBILE_DRIVE_SCHEMES.includes(scheme)) return
+        this.controlFeelApi?.set({ mobileScheme: scheme })
         this.render()
       })
     })
