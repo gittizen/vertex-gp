@@ -4,7 +4,7 @@ Okolí, terén a světlo — mapy už nevypadají stejně „nad vodou“.
 
 ## Hrát
 - GitHub Pages: https://gittizen.github.io/vertex-gp/0.4/
-- Netlify (produkce): https://tourmaline-gingersnap-268fa6.netlify.app/
+- Netlify (produkce): https://klecgp.netlify.app/
 
 ## Patří sem
 - Hustší okolí silnice (berm/apron/blanket), usazené budovy

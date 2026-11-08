@@ -207,7 +207,7 @@ ${cards}
     </div>
     <p class="note">
       Aktuální produkce (Netlify):
-      <a href="https://tourmaline-gingersnap-268fa6.netlify.app/">tourmaline-gingersnap-268fa6.netlify.app</a>
+      <a href="https://klecgp.netlify.app/">klecgp.netlify.app</a>
       · zdroj:
       <a href="https://github.com/gittizen/vertex-gp">gittizen/vertex-gp</a>
     </p>

@@ -8,7 +8,7 @@ Studentský produkt s vlastní značkou, tratěmi podle reálných míst, pečli
 
 | | |
 |--|--|
-| **Hrát** | https://tourmaline-gingersnap-268fa6.netlify.app/ |
+| **Hrát** | https://klecgp.netlify.app/ |
 | **Historie verzí** | https://gittizen.github.io/vertex-gp/ |
 | **Archivy** | [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) · [0.6](https://gittizen.github.io/vertex-gp/0.6/) |
 | **Changelog** | [CHANGELOG.md](./CHANGELOG.md) |

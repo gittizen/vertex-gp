@@ -4,7 +4,7 @@ Aktuální produkční větev Klec GP.
 
 ## Hrát
 - GitHub Pages: https://gittizen.github.io/vertex-gp/0.6/
-- Netlify (produkce): https://tourmaline-gingersnap-268fa6.netlify.app/
+- Netlify (produkce): https://klecgp.netlify.app/
 
 ## Patří sem
 - Domů: CTA **Jet** (1 klik do klasiky), chipy trať / vůz / obtíž

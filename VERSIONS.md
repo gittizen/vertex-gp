@@ -12,7 +12,7 @@ Historie commitů v gitu zůstává; staré tagy se nemažou.
 
 | **0.1** Vertex GP | **0.2** Klec GP | **0.3** mobil | **0.4** svět | **0.5** AI + demo | **0.6** UX + zvuk |
 | --- | --- | --- | --- | --- | --- |
-| [Hrát](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) · [Netlify](https://tourmaline-gingersnap-268fa6.netlify.app/) |
+| [Hrát](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) · [Netlify](https://klecgp.netlify.app/) |
 | Základ engine | Identita | Dotyk + hosting | Okolí tratí | Live AI + atmosféra | Jet CTA, dock Zpět, engine SFX |
 
 ---
