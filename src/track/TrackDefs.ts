@@ -13,8 +13,8 @@ export type WorldKind = 'city' | 'town' | 'rally' | 'climb' | 'plaza'
 export type SkyBody = 'sun' | 'moon'
 
 /**
- * Sytá střední šedá asfaltu — čitelná proti trávě, noci i horám.
- * Render přes MeshBasicMaterial (bez zatemnění světlem).
+ * Sytá střední šedá — Tourmaline / v0.3.
+ * MeshBasic + fog:false; lehké per-mapa varianty v theme.road.
  */
 export const ASPHALT_GREY = 0x9a9aa4
 
@@ -45,11 +45,16 @@ export type TrackDef = {
   aiSpeedMult: number
   /** Násobitel stropu rychlosti všech jezdců na této trati (1 = beze změny). */
   playerSpeedMult?: number
+  /**
+   * Kalibrované tempo hráče (street, střední) — 1 kolo / 1 etapa v ms.
+   * AI #2 jede na toto tempo; ostatní peklostroje přes poměr stropů.
+   */
+  targetPaceMs?: number
   skyBody: SkyBody
   heights?: number[]
   points: [number, number][]
   theme: TrackTheme
-  /** Předpokládaný čas závodu (2 kola / etapa) */
+  /** Předpokládaný čas (orientačně z kalibrace / 2 kola u okruhu) */
   estTime: string
   /**
    * Volná plocha (ne závod) — Plácek apod.
@@ -57,11 +62,6 @@ export type TrackDef = {
    */
   sandbox?: boolean
   sandboxBounds?: { halfX: number; halfZ: number }
-  /**
-   * Drift mapa (NFS Carbon): Space = e-brake, body za smyk.
-   * Freestyle režim na této mapě = klasické řízení.
-   */
-  drift?: boolean
 }
 
 /**
@@ -95,9 +95,10 @@ export const TRACKS: TrackDef[] = [
     world: 'climb',
     loop: false,
     surfaceGrip: 1,
-    aiSpeedMult: 1.15,
+    aiSpeedMult: 1,
+    targetPaceMs: 15518,
     skyBody: 'sun',
-    estTime: '0:20',
+    estTime: '0:16',
     // OSRM: Klecánky → ostrá Povltavská → Do Klecánek (serpentiny) → Čsl. armády → U Hřbitova
     points: [
       [0, 0],
@@ -149,7 +150,7 @@ export const TRACKS: TrackDef[] = [
       41.2, 41.4, 41.7, 42, 42.2, 42.5, 42.7, 43,
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x9a968c,
       ground: 0x3a4e2c,
       barrierL: 0xb8a078,
       barrierR: 0xb8a078,
@@ -171,9 +172,10 @@ export const TRACKS: TrackDef[] = [
     world: 'city',
     loop: true,
     surfaceGrip: 1,
-    aiSpeedMult: 0.9 * 1.15,
+    aiSpeedMult: 1,
+    targetPaceMs: 15034,
     skyBody: 'moon',
-    estTime: '0:26',
+    estTime: '0:30',
     points: [
       [0, -120],
       [40, -145],
@@ -193,7 +195,7 @@ export const TRACKS: TrackDef[] = [
       [-20, -125],
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x9498a0,
       ground: 0x0c0c14,
       barrierL: 0xff2bd6,
       barrierR: 0x2de2e6,
@@ -215,9 +217,10 @@ export const TRACKS: TrackDef[] = [
     world: 'town',
     loop: true,
     surfaceGrip: 1,
-    aiSpeedMult: 1,
+    aiSpeedMult: 1.22,
+    targetPaceMs: 17018,
     skyBody: 'sun',
-    estTime: '0:33',
+    estTime: '0:34',
     // Okruh podle ulic Klecan: Do Klecánek → náměstí → Čsl. armády / zámek
     // → Topolová / NUDZ → sídliště → Přemyšlenská → zpět
     points: [
@@ -255,7 +258,7 @@ export const TRACKS: TrackDef[] = [
       [-8, -132],
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x9a968e,
       ground: 0x3d522c,
       barrierL: 0xc4a574,
       barrierR: 0xc4a574,
@@ -276,11 +279,12 @@ export const TRACKS: TrackDef[] = [
     vehicle: 'monster',
     world: 'rally',
     loop: false,
-    surfaceGrip: 0.82,
-    // Est. 0:17 (dřív 0:28) → AI tempo ×28/17 vůči původnímu 1.15
-    aiSpeedMult: 1.15 * (28 / 17),
+    // Stejný grip jako Do Klecánek / Noční Klecany — bez „icy“ režimu (<0.85)
+    surfaceGrip: 1,
+    aiSpeedMult: 0.76,
+    targetPaceMs: 26435,
     skyBody: 'sun',
-    estTime: '0:17',
+    estTime: '0:26',
     // Stejná trasa — monstertruck aréna
     points: [
       [0, 0],
@@ -320,7 +324,7 @@ export const TRACKS: TrackDef[] = [
       10, 8, 7, 8, 9,
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x9a9084,
       ground: 0x3a2a18,
       barrierL: 0xff8a00,
       barrierR: 0xff8a00,
@@ -342,12 +346,12 @@ export const TRACKS: TrackDef[] = [
     vehicle: 'skate',
     world: 'climb',
     loop: false,
-    surfaceGrip: 0.94,
-    // −50 % dříve, teď ještě −30 % AI
-    aiSpeedMult: 1.2 * 1.3 * 0.5 * 0.7,
+    surfaceGrip: 1,
+    aiSpeedMult: 0.1365,
+    targetPaceMs: 61805,
     playerSpeedMult: 0.5,
     skyBody: 'sun',
-    estTime: '0:55',
+    estTime: '1:02',
     // Sídliště V Mexiku: střídavé 90° L/R (bloky), Brooklyn úplně nahoře, jedna dlouhá zatáčka uprostřed
     points: [
       // ——— Brooklyn (nejvyšší) ———
@@ -401,7 +405,7 @@ export const TRACKS: TrackDef[] = [
       8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5,
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x9e9088,
       ground: 0x2a3820,
       barrierL: 0xe8a020,
       barrierR: 0xe8a020,
@@ -423,9 +427,10 @@ export const TRACKS: TrackDef[] = [
     world: 'town',
     loop: true,
     surfaceGrip: 1,
-    aiSpeedMult: 1.05,
+    aiSpeedMult: 1,
+    targetPaceMs: 30519,
     skyBody: 'sun',
-    estTime: '0:34',
+    estTime: '1:01',
     // Sedlec → podjezd → 3× kruháč (~300°, reverse = opačný směr) → Hrubý → Zdibsko → Sedlec
     points: [
       // Sedlec — jih (ne Líbeznice)
@@ -458,7 +463,7 @@ export const TRACKS: TrackDef[] = [
       [8, 10],
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x989aa2,
       ground: 0x3d522c,
       barrierL: 0xc4a574,
       barrierR: 0xc4a574,
@@ -480,10 +485,11 @@ export const TRACKS: TrackDef[] = [
     vehicle: 'street',
     world: 'climb',
     loop: false,
-    surfaceGrip: 0.96,
-    aiSpeedMult: 1.12,
+    surfaceGrip: 1,
+    aiSpeedMult: 1,
+    targetPaceMs: 19868,
     skyBody: 'sun',
-    estTime: '0:24',
+    estTime: '0:20',
     // Mírný výšlap (jako Do Klecánek) — bez utopení v terénu
     points: [
       [0, 0],
@@ -514,7 +520,7 @@ export const TRACKS: TrackDef[] = [
       47,
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0xa09888,
       ground: 0x4a3a1a,
       barrierL: 0xd4a017,
       barrierR: 0xd4a017,
@@ -536,53 +542,41 @@ export const TRACKS: TrackDef[] = [
     vehicle: 'moto',
     world: 'climb',
     loop: false,
-    surfaceGrip: 0.92,
-    aiSpeedMult: 1.08,
+    surfaceGrip: 1,
+    aiSpeedMult: 1,
+    targetPaceMs: 36769,
     skyBody: 'sun',
-    estTime: '0:26',
-    // Širší vlásenky + jemný výšlap (bez vertikálního vystřelení křivky)
+    estTime: '0:37',
+    // Vlásenky bez překryvu: střídavé L/R legy, rozestup ≥ ~36 m (2× halfWidth + rezerva)
     points: [
       [0, 0],
-      [60, 80],
-      [130, 130],
-      [200, 150],
-      [250, 100],
-      [240, 20],
-      [180, -40],
-      [100, -50],
-      [40, 10],
-      [50, 100],
-      [120, 170],
-      [200, 210],
-      [280, 200],
-      [320, 130],
-      [290, 50],
-      [210, 40],
-      [160, 120],
-      [200, 210],
-      [280, 270],
-      [360, 280],
-      [410, 220],
-      [390, 140],
-      [310, 130],
-      [280, 220],
-      [340, 300],
-      [420, 340],
-      [500, 350],
-      [560, 300],
-      [540, 220],
-      [460, 230],
-      [450, 330],
-      [520, 410],
-      [600, 460],
-      [680, 520],
+      [180, 30],
+      [220, 70], // hairpin 1
+      [40, 110],
+      [0, 150], // hairpin 2
+      [180, 190],
+      [220, 230], // hairpin 3
+      [40, 270],
+      [0, 310], // hairpin 4
+      [180, 350],
+      [220, 390], // hairpin 5
+      [40, 430],
+      [0, 470], // hairpin 6
+      [180, 510],
+      [220, 550], // hairpin 7
+      [40, 590],
+      [20, 640],
+      [80, 700],
+      [160, 760],
+      [240, 820],
+      [300, 880],
+      [340, 960],
     ],
     heights: [
-      0, 1.2, 2.5, 3.8, 5, 6.3, 7.6, 9, 10.3, 11.6, 13, 14.4, 15.8, 17.2, 18.6, 20, 21.4, 22.8, 24.2,
-      25.6, 27, 28.4, 29.8, 31.2, 32.6, 34, 35.4, 36.8, 38, 39.2, 40.4, 41.6, 42.8, 44,
+      0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42,
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x989288,
       ground: 0x3a4a28,
       barrierL: 0xc45c3a,
       barrierR: 0xc45c3a,
@@ -617,7 +611,7 @@ export const TRACKS: TrackDef[] = [
       [-170, 110],
     ],
     theme: {
-      road: ASPHALT_GREY,
+      road: 0x9c9890,
       ground: 0x3e5a32,
       barrierL: 0xd0c8b0,
       barrierR: 0xd0c8b0,
@@ -630,67 +624,66 @@ export const TRACKS: TrackDef[] = [
     },
   },
   {
-    // Mapy / ÚP: Dolní + Horní kasárny Klecany (~50.18, 14.42) — zimní drift okruh
+    // OSM / ÚP Klecany: Dolní (~západ, větší) + Horní (~východ) kasárny + E–W spojka
     id: 'kasarny',
     name: 'Kasárny',
-    blurb: 'Zimní drift po areálu kasáren — Space = e-brake, body za smyk',
-    halfWidth: 8.8,
-    tension: 0.38,
-    vehicle: 'street',
+    blurb: 'Dolní × Horní kasárny Klecany — beton, rampy a skate po bývalém areálu',
+    halfWidth: 7.6,
+    tension: 0.22,
+    vehicle: 'skate',
     world: 'town',
     loop: true,
-    drift: true,
-    surfaceGrip: 0.58,
-    aiSpeedMult: 0.92,
-    playerSpeedMult: 0.96,
-    skyBody: 'moon',
-    estTime: '0:40',
-    // Parade ground: jih → východ → sever → západ, ostré rohy + střední kink
+    surfaceGrip: 1,
+    aiSpeedMult: 0.1365,
+    targetPaceMs: 15785,
+    skyBody: 'sun',
+    estTime: '0:32',
+    // Okruh: parade Dolní (Z) → spojka → parade Horní (V) → zpět
     points: [
-      [0, 0],
-      [70, -4],
-      [130, 8],
-      [175, 35],
-      [195, 85],
-      [200, 140],
-      [185, 190],
-      [145, 225],
-      [85, 240],
-      [20, 245],
-      [-45, 235],
-      [-100, 210],
-      [-140, 165],
-      [-160, 110],
-      [-165, 55],
-      [-145, 10],
-      [-100, -15],
-      [-40, -18],
-      [15, -8],
-      // vnitřní kink (bývalá spojka Horní/Dolní)
-      [55, 40],
-      [95, 70],
-      [90, 115],
-      [50, 145],
-      [5, 150],
-      [-35, 125],
-      [-50, 80],
-      [-25, 45],
-      [20, 35],
-      [55, 20],
-      [40, 5],
-      [0, 0],
+      // Dolní — jih (směr zámek / výjezd)
+      [-130, -95],
+      [-130, -40],
+      [-130, 20],
+      [-130, 85],
+      // Dolní — severní parade
+      [-85, 115],
+      [-35, 120],
+      [5, 105],
+      // Spojka Dolní → Horní (E–W páteř)
+      [45, 70],
+      [85, 35],
+      [120, 10],
+      // Horní — západní vjezd → jih
+      [155, -15],
+      [185, -55],
+      [215, -40],
+      // Horní — východ (směr Astrapark / D8)
+      [235, 5],
+      [240, 55],
+      [220, 100],
+      // Horní — sever → zpět na spojku
+      [175, 115],
+      [135, 95],
+      [100, 55],
+      [70, 20],
+      // Střední kink (bývalá spojka Horní/Dolní)
+      [35, -15],
+      [0, -45],
+      [-45, -75],
+      [-90, -100],
+      [-130, -95],
     ],
     theme: {
-      road: 0xb8c4d0,
-      ground: 0xe8eef4,
-      barrierL: 0x8a9aaa,
-      barrierR: 0x8a9aaa,
+      road: 0x9a9a98,
+      ground: 0x3a4238,
+      barrierL: 0xff6a3d,
+      barrierR: 0x2de2e6,
       edge: 0xffffff,
-      sky: 0x6a8498,
-      fog: 0xc8d4e0,
-      building: 0x9aa4ae,
-      accent: 0x5eb0e0,
-      detail: 0xd0d8e0,
+      sky: 0x7a9ab0,
+      fog: 0xa8b8c4,
+      building: 0x8a9098,
+      accent: 0xff2bd6,
+      detail: 0xffe08a,
     },
   },
 ]

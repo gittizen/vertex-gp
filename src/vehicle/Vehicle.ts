@@ -84,12 +84,19 @@ export class Vehicle {
   /** Freestyle: musí udělat trik před dopadem, jinak pád */
   private rampNeedTrick = false
   private rampDidTrick = false
+  /**
+   * Hood kamera ve stylu Forza — na kapotě (ne ve vzduchu před autem):
+   * `hoodZ` / `hoodY` v lokálním prostoru meshe (+Z dopředu).
+   */
+  hoodCam = { hoodZ: 1.2, hoodY: 0.85 }
 
   constructor(info: DriverInfo, tuning?: Partial<VehicleTuning>, kind: VehicleKind = 'street') {
     this.info = info
     this.physics = new VehiclePhysics(tuning)
     this.kind = kind
     this.mesh = createVehicleMesh(kind, info.color)
+    this.applyMeshShadows()
+    this.bakeHoodCam()
   }
 
   setKind(kind: VehicleKind, scene?: THREE.Scene): void {
@@ -105,8 +112,32 @@ export class Vehicle {
     this.mesh = createVehicleMesh(kind, this.info.color, this.neonColor)
     this.setColor(this.info.color)
     this.setNeon(this.neonColor)
+    this.applyMeshShadows()
+    this.bakeHoodCam()
     if (parent) parent.add(this.mesh)
     else scene?.add(this.mesh)
+  }
+
+  /** Forza Hood: kamera na kapotě u předku, ne floating před autem. */
+  private bakeHoodCam(): void {
+    this.mesh.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(this.mesh)
+    const frontZ = Math.max(0.5, box.max.z)
+    const h = Math.max(0.4, box.max.y - box.min.y)
+    // Na kapotě: ~55 % k předku, výška ~62 % siluety (nad kapotou, pod střechou)
+    const hoodZ = box.min.z + (frontZ - box.min.z) * 0.72
+    const hoodY = box.min.y + h * 0.58
+    this.hoodCam = { hoodZ, hoodY: Math.max(0.35, hoodY) }
+  }
+
+  private applyMeshShadows(): void {
+    // Stíny vypnuté defaultně (FPS) — cast jen když uživatel zapne shadows v Atmosféře
+    this.mesh.traverse((obj) => {
+      const m = obj as THREE.Mesh
+      if (!m.isMesh) return
+      m.castShadow = false
+      m.receiveShadow = false
+    })
   }
 
   reset(x: number, z: number, heading: number, raceTimeMs: number): void {
@@ -220,13 +251,8 @@ export class Vehicle {
       return
     }
 
-    // Freestyle na drift mapě = klasický grip; jinak led mapy
-    if (track.def.drift && this.freestyleOn) {
-      this.physics.surfaceGrip = Math.max(track.def.surfaceGrip, 0.98)
-      this.physics.driftMode = false
-    } else {
-      this.physics.surfaceGrip = track.def.surfaceGrip
-    }
+    this.physics.surfaceGrip = track.def.surfaceGrip
+    if (this.freestyleOn) this.physics.driftMode = false
     const locked = this.trickLocked
     const board = this.isBoardKind()
     const shiftHeld = (controls.push ?? 0) > 0.5

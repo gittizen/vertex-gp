@@ -1,10 +1,10 @@
-# Klec GP · v1.1
+# Klec GP · v0.3
 
 Noční město. Ulice Klecan. Horské rallye. Stoupání Do Klecánek. Freestyle na Plácku.
 
 Prohlížečová 2.5D semi-sim hra. Solo s AI, freestyle triky (PC), nebo **online až 4 hráči**.
 
-> Historie: **0.4** Vertex GP → **1.0** Klec GP → **1.1** mobilní řízení + Netlify.  
+> Historie: **0.1** Vertex GP → **0.2** Klec GP → **0.3** mobil + polish.  
 > Podrobný postup a úvahy: **[VERSIONS.md](./VERSIONS.md)**. Staré verze v gitu zůstávají.
 
 **Web (Netlify):** https://tourmaline-gingersnap-268fa6.netlify.app/  

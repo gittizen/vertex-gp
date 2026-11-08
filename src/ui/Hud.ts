@@ -25,28 +25,59 @@ export class Hud {
   private trackName = 'Nordring'
   private onMenuRequest: (() => void) | null = null
   private onRestartRequest: (() => void) | null = null
+  private onChampionshipNext: (() => void) | null = null
+  private champResult: {
+    points: number
+    progress: string
+    done: boolean
+    lastPts: number
+  } | null = null
   private built = false
-  private elPlace: HTMLElement | null = null
-  private elLap: HTMLElement | null = null
-  private elLapTime: HTMLElement | null = null
-  private elBest: HTMLElement | null = null
-  private elCam: HTMLElement | null = null
+  private elRaceMeta: HTMLElement | null = null
   private elSpeed: HTMLElement | null = null
   private elVmax: HTMLElement | null = null
   private elGear: HTMLElement | null = null
-  private elGap: HTMLElement | null = null
   private lastOverlayKey = ''
   private hudAcc = 0
   private helpKind: VehicleKind | '' = ''
   private shellSandbox = false
+  private shellLoop = false
   private paused = false
   private pauseHelp: PauseHelp | null = null
   private competition: CompetitionId = 'none'
   private onlineRace = false
+  private mirrorFrame = false
+  private mirrorEl: HTMLElement | null = null
 
   constructor(root: HTMLElement, overlay: HTMLElement) {
     this.root = root
     this.overlay = overlay
+    // pointerdown — spolehlivější než click (overlay se přepisuje každý frame při změně key).
+    this.overlay.addEventListener(
+      'pointerdown',
+      (e) => {
+        const el = (e.target as HTMLElement | null)?.closest?.('button')
+        if (!el) return
+        if (el.id === 'btn-restart') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onRestartRequest?.()
+          return
+        }
+        if (el.id === 'btn-champ-next') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onChampionshipNext?.()
+          return
+        }
+        if (el.id === 'btn-menu') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onMenuRequest?.()
+        }
+      },
+      { capture: true },
+    )
   }
 
   setOnlineRace(on: boolean): void {
@@ -70,10 +101,43 @@ export class Hud {
     this.onRestartRequest = cb
   }
 
+  setOnChampionshipNext(cb: () => void): void {
+    this.onChampionshipNext = cb
+  }
+
+  setChampionshipResult(
+    result: { points: number; progress: string; done: boolean; lastPts: number } | null,
+  ): void {
+    this.champResult = result
+    this.lastOverlayKey = ''
+  }
+
+  /** Schovej výsledky / pauzu — před restartem závodu. */
+  clearResultsOverlay(): void {
+    this.champResult = null
+    this.paused = false
+    this.pauseHelp = null
+    this.lastOverlayKey = ''
+    this.overlay.classList.remove('visible')
+    this.overlay.innerHTML = ''
+  }
+
   setPaused(paused: boolean, help: PauseHelp | null = null): void {
     this.paused = paused
     this.pauseHelp = help
     if (paused) this.lastOverlayKey = ''
+  }
+
+  /** Rámeček kolem WebGL scissor zrcátka. */
+  setMirrorFrame(on: boolean): void {
+    this.mirrorFrame = on
+    if (!this.mirrorEl) {
+      this.mirrorEl = document.createElement('div')
+      this.mirrorEl.className = 'hud-mirror'
+      this.mirrorEl.setAttribute('aria-hidden', 'true')
+      this.root.appendChild(this.mirrorEl)
+    }
+    this.mirrorEl.classList.toggle('visible', on)
   }
 
   update(
@@ -82,70 +146,62 @@ export class Hud {
     camera: CameraController,
     showHud: boolean,
   ): void {
+    void camera
     if (!showHud) {
-      this.root.innerHTML = ''
+      this.root.querySelectorAll(':not(.hud-mirror)').forEach((n) => n.remove())
+      // mirror frame element keep if present
+      const keep = this.mirrorEl
+      if (!keep || keep.parentElement !== this.root) {
+        this.root.innerHTML = ''
+        this.mirrorEl = null
+      } else {
+        for (const child of [...this.root.children]) {
+          if (child !== keep) child.remove()
+        }
+      }
       this.built = false
       this.helpKind = ''
       this.shellSandbox = false
+      this.shellLoop = false
       this.paused = false
       this.pauseHelp = null
       this.competition = 'none'
+      this.elRaceMeta = null
+      this.elSpeed = null
+      this.elVmax = null
+      this.elGear = null
       this.overlay.classList.remove('visible')
       this.overlay.innerHTML = ''
       this.lastOverlayKey = ''
+      this.setMirrorFrame(false)
       return
     }
 
-    if (!this.built || this.helpKind !== player.kind || this.shellSandbox !== race.isSandbox) {
-      this.buildShell(player.kind, race.isSandbox)
+    const loopRace = !race.isSandbox && !race.isStage
+    if (
+      !this.built ||
+      this.helpKind !== player.kind ||
+      this.shellSandbox !== race.isSandbox ||
+      this.shellLoop !== loopRace
+    ) {
+      this.buildShell(player.kind, race.isSandbox, loopRace)
     }
 
-    // Text/pozice stačí ~10×/s — méně layout thrashing
     this.hudAcc++
     if (this.hudAcc >= 3 || race.phase !== 'racing' || this.paused) {
       this.hudAcc = 0
-      const place = race.playerPlace()
-      const lap = race.displayLap(player)
-      const lapTime =
-        race.phase === 'racing' || race.phase === 'finished'
-          ? race.raceTimeMs - player.currentLapStart
-          : 0
-      if (race.isSandbox) {
-        if (this.elPlace) this.elPlace.textContent = String(player.trickPoints)
-        if (this.elLap) this.elLap.textContent = '∞'
-        if (this.elLapTime) this.elLapTime.textContent = formatTime(race.raceTimeMs)
-        if (this.elBest) this.elBest.textContent = String(player.trickPoints)
-      } else {
-        if (this.elPlace) this.elPlace.textContent = `${place}/${race.standings.length || 4}`
-        if (this.elLap) {
-          this.elLap.textContent = race.isStage
-            ? `${Math.round(player.trackT * 100)}%`
-            : `${lap}/${race.totalLaps}`
-        }
-        if (this.elLapTime) {
-          this.elLapTime.textContent = formatTime(
-            race.isStage ? race.raceTimeMs : lapTime,
-          )
-        }
-        if (this.elBest) this.elBest.textContent = formatTime(player.bestLapMs)
-        const gap = race.playerGap()
-        if (this.elGap) {
-          if (!gap) {
-            this.elGap.textContent = '—'
-            this.elGap.removeAttribute('title')
-          } else {
-            const sec = (gap.ms / 1000).toFixed(2)
-            // 1.: náskok (+); jinak ztráta na jezdce vpředu (−)
-            this.elGap.textContent = gap.ahead
-              ? `+${sec} ${gap.name}`
-              : `−${sec} ${gap.name}`
-            this.elGap.title = gap.ahead
-              ? `${t('hud.gapLead')} ${gap.name}`
-              : `${t('hud.gapBehind')} ${gap.name}`
-          }
+      if (this.elRaceMeta) {
+        if (race.isSandbox) {
+          this.elRaceMeta.textContent = `FS ${player.trickPoints}`
+        } else if (loopRace) {
+          const place = race.playerPlace()
+          const lap = race.displayLap(player)
+          this.elRaceMeta.textContent = `${t('hud.lapShort')} ${lap}/${race.totalLaps} · P${place}`
+        } else {
+          const place = race.playerPlace()
+          this.elRaceMeta.textContent = `P${place}`
         }
       }
-      if (this.elCam) this.elCam.textContent = camera.modeLabel
       if (this.elVmax) this.elVmax.textContent = `${player.displayMaxKmh}`
       if (this.elGear) {
         const gear = player.physics.gear < 0 ? 'R' : String(player.physics.gear)
@@ -160,7 +216,6 @@ export class Hud {
       this.elSpeed.innerHTML = `${player.displaySpeedKmh}<span>km/h</span>`
     }
 
-    // Žlutý turbo efekt jen u monstertrucku — ne u skate
     const boosting = player.isMonsterFamily() && player.turboAmount > 0.25
     this.root.classList.toggle('hud-boost', boosting)
     this.root.classList.toggle('hud-fallen', player.fallen)
@@ -197,45 +252,33 @@ export class Hud {
     this.renderOverlay(race)
   }
 
-  private buildShell(kind: VehicleKind, sandbox = false): void {
-    // Nápověda jen v pauzě (Esc) — při jízdě nezahlcovat
-    const compRow =
-      this.competition === 'none'
-        ? ''
-        : `<div class="hud-comp"><span class="label">${t('hud.comp')}</span> <span data-h="comp">${t(`comp.${this.competition}`)}</span></div>`
+  private buildShell(kind: VehicleKind, sandbox = false, loopRace = false): void {
+    const keepMirror = this.mirrorEl
     this.root.innerHTML = `
-      <div class="hud-top">
-        <div><span class="label">${sandbox ? t('hud.fsScore') : t('hud.place')}</span><span data-h="place">-</span></div>
-        <div><span class="label">${sandbox ? t('hud.session') : t('hud.lap')}</span><span data-h="lap">-</span></div>
-        <div><span class="label">${t('hud.time')}</span><span data-h="lapTime">-</span></div>
-        <div><span class="label">${sandbox ? t('hud.fsBest') : t('hud.best')}</span><span data-h="best">-</span></div>
-        ${
-          sandbox
-            ? ''
-            : `<div><span class="label">${t('hud.gap')}</span><span data-h="gap">—</span></div>`
-        }
-        <div><span class="label">${t('hud.camera')}</span><span data-h="cam">2.5D</span></div>
-        ${compRow}
-      </div>
       <div class="hud-bottom">
-        <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
+        <div class="hud-speed-row">
+          <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
+          <div class="hud-race-meta" data-h="raceMeta">—</div>
+        </div>
         <div class="hud-vmax"><span class="label">${t('hud.vmax')}</span> <span data-h="vmax">—</span> km/h</div>
         <div class="hud-gear" data-h="gear">${t('hud.gear')}: 1 (${t('hud.auto')})</div>
         <div class="hud-push" data-h="push" hidden>${t('hud.push')}</div>
       </div>
       <div class="hud-boost-flash" aria-hidden="true"></div>
     `
-    this.elPlace = this.root.querySelector('[data-h="place"]')
-    this.elLap = this.root.querySelector('[data-h="lap"]')
-    this.elLapTime = this.root.querySelector('[data-h="lapTime"]')
-    this.elBest = this.root.querySelector('[data-h="best"]')
-    this.elGap = this.root.querySelector('[data-h="gap"]')
-    this.elCam = this.root.querySelector('[data-h="cam"]')
+    if (keepMirror) {
+      this.root.appendChild(keepMirror)
+      keepMirror.classList.toggle('visible', this.mirrorFrame)
+    } else if (this.mirrorFrame) {
+      this.setMirrorFrame(true)
+    }
+    this.elRaceMeta = this.root.querySelector('[data-h="raceMeta"]')
     this.elSpeed = this.root.querySelector('[data-h="speed"]')
     this.elVmax = this.root.querySelector('[data-h="vmax"]')
     this.elGear = this.root.querySelector('[data-h="gear"]')
     this.helpKind = kind
     this.shellSandbox = sandbox
+    this.shellLoop = loopRace
     this.built = true
   }
 
@@ -255,6 +298,7 @@ export class Hud {
         <div class="overlay-card">
           <h1>${text}</h1>
           <p>Klec GP — ${this.trackName}</p>
+          <p class="overlay-hint">${t('menu.escBack')}</p>
         </div>
       `
       return
@@ -271,7 +315,8 @@ export class Hud {
         return { s, placePts, trickPts, driftPts, total }
       })
       if (fs || driftComp) scored.sort((a, b) => b.total - a.total || a.s.place - b.s.place)
-      const key = `fin:${race.playerPlace()}:${scored.map((x) => x.total).join(',')}:${fs ? 1 : 0}:${driftComp ? 1 : 0}`
+      const champ = this.champResult
+      const key = `fin:${race.playerPlace()}:${scored.map((x) => x.total).join(',')}:${fs ? 1 : 0}:${driftComp ? 1 : 0}:${champ?.progress ?? ''}:${champ?.done ? 1 : 0}`
       if (key === this.lastOverlayKey) return
       this.lastOverlayKey = key
       this.overlay.classList.add('visible')
@@ -298,24 +343,34 @@ export class Hud {
           return `<li class="${cls}">${i + 1}. ${s.vehicle.info.name}${tag} — ${time}${fsLine}</li>`
         })
         .join('')
+      const champLine = champ
+        ? `<p class="overlay-hint">${t('hud.champRound', {
+            progress: champ.progress,
+            pts: champ.lastPts,
+            total: champ.points,
+          })}</p>`
+        : ''
+      const actions = this.onlineRace
+        ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>`
+        : champ && !champ.done
+          ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champNext')}</button>
+            <button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+          : champ?.done
+            ? `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.champDone')}</button>`
+            : `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
       this.overlay.innerHTML = `
         <div class="overlay-card">
           <p class="overlay-winner">${t(placeKey)}</p>
-          <h2>${t('hud.results')}${fs ? ' · Freestyle' : driftComp ? ` · ${t('hud.drift')}` : ''}</h2>
+          <h2>${t('hud.results')}${fs ? ' · Freestyle' : driftComp ? ` · ${t('hud.drift')}` : champ ? ` · ${t('comp.championship')}` : ''}</h2>
           <p>${this.trackName}</p>
+          ${champLine}
           <ol>${rows}</ol>
-          <div class="overlay-actions">
-            ${
-              this.onlineRace
-                ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>`
-                : `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
-            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
-            }
-          </div>
+          <div class="overlay-actions">${actions}</div>
         </div>
       `
-      this.overlay.querySelector('#btn-menu')?.addEventListener('click', () => this.onMenuRequest?.())
-      this.overlay.querySelector('#btn-restart')?.addEventListener('click', () => this.onRestartRequest?.())
       return
     }
 

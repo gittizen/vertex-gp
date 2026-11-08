@@ -1,13 +1,23 @@
 import type { DifficultyDef } from './Difficulty'
+import { learnedTargetPaceMs } from './CommunityLearning'
 import type { Track } from '../track/Track'
 import type { Vehicle } from '../vehicle/Vehicle'
-
-/** Střední: 1. jezdec +5 %, 2. stejně, 3. −20 % (slot 0 = hráč) */
-const SLOT_PACE = [1, 1.05, 1.0, 0.8]
+import { speedCapMultFor } from '../vehicle/VehicleProfiles'
 
 /**
- * Pevná jízda po racing line.
- * Do zatáček brzdí, na rovince jede naplno. Tempo podle slotu + tratě.
+ * Rychlostní násobiče slotů (slot 0 = hráč).
+ * targetPaceMs = čas 2. jezdce (medium, street).
+ * 1. jezdec = o 10 % rychlejší než ten čas (čas × 0.9 → rychlost × 1/0.9).
+ * 3. jezdec = −20 %.
+ */
+const SLOT_SPEED = [1, 1 / 0.9, 1.0, 0.8]
+/** Kompenzace zatáček + náběhu, ať průměrné tempo ≈ cíl */
+const CORNER_COMP = 1.34
+const PACE_BOOST = 4 * 1.1 * 1.1
+
+/**
+ * AI po racing line.
+ * targetPaceMs = cílový čas do cíle / kola pro 2. AI na střední (auto).
  */
 export class AiDriver {
   private readonly slot: number
@@ -28,7 +38,6 @@ export class AiDriver {
 
   reset(track: Track, startT: number, vehicle: Vehicle): void {
     const len = Math.max(1, track.length)
-    // Stejná startovní „lajna“ jako hráč (2+2 grid bez náskoku)
     this.railDist = startT * len
     if (track.def.loop) {
       this.railDist = ((this.railDist % len) + len) % len
@@ -54,55 +63,66 @@ export class AiDriver {
     if (loop) t = ((t % 1) + 1) % 1
     else t = Math.max(0, Math.min(0.999, t))
 
-    const corner = cornerFactor(track, t, loop)
-    const eq = equilibriumSpeed(vehicle)
-    const playerRef = Math.max(18, Math.abs(playerSpeed))
-    const slotPace = SLOT_PACE[this.slot] ?? 1
-    const trackMult = track.aiSpeedMult ?? 1
+    const wrap = (u: number) => (loop ? ((u % 1) + 1) % 1 : Math.min(0.999, u))
+    const cornerNow = cornerFactor(track, t, loop)
+    const cornerMid = cornerFactor(track, wrap(t + 0.035), loop)
+    const cornerFar = cornerFactor(track, wrap(t + 0.07), loop)
+    const corner = Math.max(cornerNow, cornerMid * 0.9, cornerFar * 0.7)
 
-    let cruise = eq * 0.55 + playerRef * 0.45
-    // ×4 základ · dřívější +10 % · další +10 %
-    const paceBoost = 4 * 1.1 * 1.1
-    cruise *= this.difficulty.speedScale * paceBoost * slotPace * trackMult
-    cruise = Math.min(
-      cruise,
-      eq * 1.05 * this.difficulty.speedScale * paceBoost * slotPace * trackMult,
-      playerRef * 1.2 * paceBoost * slotPace * trackMult,
-    )
+    const slotSpeed = SLOT_SPEED[this.slot] ?? 1
+    const diffScale = Math.max(0.2, this.difficulty.speedScale)
+    const capScale =
+      speedCapMultFor(vehicle.kind) / Math.max(0.05, speedCapMultFor('street'))
+    // Naučené tempo (po dojetí) má přednost před statickým targetPaceMs
+    const paceMs = learnedTargetPaceMs(track.def.id) ?? track.def.targetPaceMs
 
-    // Start: náběh o 30 % pomalejší
-    this.launch = Math.min(1, this.launch + (dt / 1.1) * 0.7)
-    const cornerSlow = 1 - corner * 0.62
-    const target = cruise * (0.35 + 0.65 * this.launch) * Math.max(0.32, cornerSlow)
+    let cruise: number
+    if (paceMs && paceMs > 800) {
+      // Cíl: 2. AI dojede za paceMs (street); 1. za 0.9×; difficulty škáluje všechny
+      const base = (len / (paceMs / 1000)) * slotSpeed * diffScale * capScale
+      cruise = base * CORNER_COMP
+    } else {
+      const playerRef = Math.max(12, Math.abs(playerSpeed))
+      const eq = equilibriumSpeed(vehicle)
+      const trackMult = Math.max(0.35, track.aiSpeedMult ?? 1)
+      cruise =
+        (eq * 0.55 + playerRef * 0.45) * PACE_BOOST * diffScale * slotSpeed * trackMult
+    }
+
+    if (!Number.isFinite(cruise) || cruise < 6) cruise = 6
+
+    // Rychlý náběh — kalibrované časy počítají s jízdou, ne s plazením ze startu
+    this.launch = Math.min(1, this.launch + dt / 0.55)
+    const cornerSlow = 1 - corner * 0.4
+    const target =
+      cruise * (0.55 + 0.45 * this.launch) * Math.max(0.38, cornerSlow)
 
     if (target >= this.pace) {
-      // Zrychlení ze startu / ze zatáčky: −30 %
-      const blend = Math.min(1, 3.6 * dt * 0.7)
+      const blend = Math.min(1, 3.2 * dt)
       this.pace += (target - this.pace) * blend
     } else {
-      // Brzdění do zatáčky beze změny
-      this.pace = target
+      const brakeBlend = Math.min(1, (4.2 + corner * 5) * dt)
+      this.pace += (target - this.pace) * brakeBlend
     }
 
     const prevPace = this.pace
     this.railDist += this.pace * dt
     if (!loop && this.railDist > len) this.railDist = len
     vehicle.physics.speed = this.pace
-    // Náklon AI: křivost → angularVel / latVel (moto znaménko opačně než auta)
+
     const turn = turnSign(track, t, loop)
-    const leanAmt = corner * Math.min(1.4, this.pace / 42)
+    const leanAmt = corner * Math.min(1.35, this.pace / 40)
     const bike = vehicle.wantsBikeLean()
     const leanDir = bike ? -turn : turn
     vehicle.physics.angularVel = leanDir * leanAmt * (bike ? 1.15 : 0.55)
     vehicle.physics.latVel = leanDir * leanAmt * this.pace * (bike ? 0.08 : 0.03)
-    // AI monstertruck — turbo při zrychlení (stejný vizuál/zvuk jako hráč)
+
     if (vehicle.kind === 'monster') {
-      const boosting = this.pace > prevPace + 0.05 || (this.pace > 8 && corner < 0.25)
+      const boosting = this.pace > prevPace + 0.05 || (this.pace > 8 && corner < 0.22)
       vehicle.setTurboInput(boosting ? 1 : 0.15, dt)
     } else {
       vehicle.setTurboInput(0, dt)
     }
-    // AI skate — vizuál odrážení při zrychlení
     if (vehicle.kind === 'skate') {
       const pushing = this.pace > prevPace + 0.08 || (this.launch < 0.85 && this.pace > 5)
       vehicle.setPushVisual(pushing ? 1 : 0, dt)
@@ -139,7 +159,6 @@ function equilibriumSpeed(vehicle: Vehicle): number {
 }
 
 function laneOffset(slot: number, halfWidth: number): number {
-  // Stejné strany jako startovní 2×2 grid (0|2 vlevo, 1|3 vpravo)
   const side = slot % 2 === 0 ? -1 : 1
   return side * Math.min(3.4, halfWidth * 0.32)
 }
@@ -156,7 +175,6 @@ function cornerFactor(track: Track, t: number, loop: boolean): number {
   return 1 - Math.max(0, Math.min(d1, d2, d3))
 }
 
-/** Směr zatáčky (−1 / 0 / +1) pro náklon AI. */
 function turnSign(track: Track, t: number, loop: boolean): number {
   const wrap = (u: number) => (loop ? ((u % 1) + 1) % 1 : Math.min(0.999, u))
   const a = track.sample(t)

@@ -36,14 +36,20 @@ export class VehiclePreview {
     this.camera.position.set(0, 1.4, 5.2)
     this.camera.lookAt(0, 0.55, 0)
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x334455, 1.1)
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x334455, 1.15)
     this.scene.add(hemi)
-    const key = new THREE.DirectionalLight(0xffffff, 0.85)
-    key.position.set(3, 6, 4)
+    const key = new THREE.DirectionalLight(0xfff4e8, 1.15)
+    key.position.set(3.2, 6.5, 4.2)
     this.scene.add(key)
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.35)
-    fill.position.set(-4, 2, -2)
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.45)
+    fill.position.set(-4, 2.2, -2.4)
     this.scene.add(fill)
+    const rim = new THREE.PointLight(0xb8d0ff, 1.2, 8, 2)
+    rim.position.set(-1.6, 1.8, -2.8)
+    this.scene.add(rim)
+    const nose = new THREE.PointLight(0xfff0e0, 0.85, 6, 2)
+    nose.position.set(1.2, 1.6, 2.6)
+    this.scene.add(nose)
 
     const floor = new THREE.Mesh(
       new THREE.CircleGeometry(2.4, 48),

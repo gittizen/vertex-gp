@@ -12,6 +12,8 @@ export type ControlFeelValues = {
   camFollow: CamFollow
   /** Mírná pomoc při smyku (sníží boční smyk). */
   stabilityAssist: boolean
+  /** Space e-brake drift (NFS styl) — platí na všech tratích, ne na mapě. */
+  driftMode: boolean
   /** 0.75–1.35 — velikost HUD */
   hudScale: number
   /** Dotykové řízení — platí jen na telefonu / tabletu. */
@@ -25,6 +27,7 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
   invertSteer: false,
   camFollow: 'normal',
   stabilityAssist: false,
+  driftMode: false,
   hudScale: 1,
   mobileScheme: 'pads',
 }
@@ -59,6 +62,7 @@ export function loadControlFeel(): ControlFeelValues {
         ? (p.camFollow as CamFollow)
         : DEFAULT_CONTROL_FEEL.camFollow,
       stabilityAssist: !!p.stabilityAssist,
+      driftMode: !!p.driftMode,
       hudScale,
       mobileScheme: migrateMobileScheme(p.mobileScheme),
     }

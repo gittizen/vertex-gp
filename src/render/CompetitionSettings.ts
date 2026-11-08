@@ -3,6 +3,7 @@ import { GAME_STORAGE_NS } from '../input/KeyBindings'
 /** Solo soutěže (ne multiplayer). */
 export type CompetitionId =
   | 'none'
+  | 'championship'
   | 'timeAttack'
   | 'trickHunt'
   | 'cleanRun'
@@ -18,6 +19,7 @@ const STORAGE_KEY = `${GAME_STORAGE_NS}.competition`
 
 export const COMPETITIONS: { id: CompetitionId }[] = [
   { id: 'none' },
+  { id: 'championship' },
   { id: 'timeAttack' },
   { id: 'trickHunt' },
   { id: 'cleanRun' },

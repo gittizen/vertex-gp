@@ -678,41 +678,95 @@ function createStreetCar(color: number, neon = 0xff2bd6): THREE.Group {
   const dark = matLambert(0x1a1a1a)
   const glass = matLambert(0x6a8aa8)
   const chrome = matLambert(0xc0c0c0)
+  const lightMat = matLambert(0xffe8c0, { emissive: 0xffcc88, emissiveIntensity: 0.55 })
+  const tailMat = matLambert(0xff3030, { emissive: 0xff1010, emissiveIntensity: 0.7 })
 
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.45, 4.2), body)
-  chassis.position.y = 0.45
-  paint(chassis)
-  g.add(chassis)
+  // Víc panelů = víc trojúhelníků, čitelnější silueta (ne flat box)
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.38, 4.25), body)
+  lower.position.y = 0.42
+  paint(lower)
+  g.add(lower)
 
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.55, 1.8), glass)
-  cabin.position.set(0, 0.95, -0.15)
-  g.add(cabin)
+  const rocker = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.14, 3.6), dark)
+  rocker.position.set(0, 0.2, 0.05)
+  g.add(rocker)
 
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 1.1), body.clone())
-  hood.position.set(0, 0.72, 1.35)
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.1, 1.15), body.clone())
+  hood.position.set(0, 0.74, 1.38)
   paint(hood)
   g.add(hood)
 
-  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.35), dark)
-  spoiler.position.set(0, 0.95, -1.95)
+  const fenderL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 1.0), body.clone())
+  fenderL.position.set(-0.95, 0.52, 1.35)
+  paint(fenderL)
+  g.add(fenderL)
+  const fenderR = fenderL.clone()
+  fenderR.position.x = 0.95
+  g.add(fenderR)
+
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.52, 1.75), glass)
+  cabin.position.set(0, 0.98, -0.12)
+  g.add(cabin)
+
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.08, 1.55), body.clone())
+  roof.position.set(0, 1.28, -0.15)
+  paint(roof)
+  g.add(roof)
+
+  const aPillarL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.12), dark)
+  aPillarL.position.set(-0.78, 1.05, 0.72)
+  aPillarL.rotation.x = -0.35
+  g.add(aPillarL)
+  const aPillarR = aPillarL.clone()
+  aPillarR.position.x = 0.78
+  g.add(aPillarR)
+
+  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 0.85), body.clone())
+  trunk.position.set(0, 0.78, -1.55)
+  paint(trunk)
+  g.add(trunk)
+
+  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.06, 0.32), dark)
+  spoiler.position.set(0, 1.02, -1.95)
   g.add(spoiler)
+  const spoilerStemL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), dark)
+  spoilerStemL.position.set(-0.55, 0.92, -1.85)
+  g.add(spoilerStemL)
+  const spoilerStemR = spoilerStemL.clone()
+  spoilerStemR.position.x = 0.55
+  g.add(spoilerStemR)
 
-  const skirtL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 3.2), dark)
-  skirtL.position.set(-0.95, 0.25, 0)
-  g.add(skirtL)
-  const skirtR = skirtL.clone()
-  skirtR.position.x = 0.95
-  g.add(skirtR)
+  const bumperF = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.22, 0.28), dark)
+  bumperF.position.set(0, 0.32, 2.2)
+  g.add(bumperF)
+  const bumperR = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.2, 0.22), dark)
+  bumperR.position.set(0, 0.32, -2.15)
+  g.add(bumperR)
 
-  const kidneyL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.08), dark)
-  kidneyL.position.set(-0.2, 0.48, 2.12)
+  for (const sx of [-1, 1] as const) {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.08), lightMat)
+    hl.position.set(0.55 * sx, 0.52, 2.12)
+    g.add(hl)
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.06), tailMat)
+    tl.position.set(0.58 * sx, 0.55, -2.18)
+    g.add(tl)
+  }
+
+  const kidneyL = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.08), dark)
+  kidneyL.position.set(-0.2, 0.48, 2.14)
   g.add(kidneyL)
   const kidneyR = kidneyL.clone()
   kidneyR.position.x = 0.2
   g.add(kidneyR)
 
-  addNeon(g, neon, 1.6, 3.6, 0.12)
+  const mirrorL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.1), dark)
+  mirrorL.position.set(-0.95, 0.95, 0.55)
+  g.add(mirrorL)
+  const mirrorR = mirrorL.clone()
+  mirrorR.position.x = 0.95
+  g.add(mirrorR)
 
+  addNeon(g, neon, 1.6, 3.6, 0.12)
   addWheels(g, dark, chrome, 0.95, 1.25, -1.35, 0.38, 0.32)
   return g
 }
@@ -727,8 +781,11 @@ function addWheels(
   radius: number,
   width: number,
 ): void {
-  const geo = new THREE.CylinderGeometry(radius, radius, width, 8)
+  // 16 segmentů = hladší kola (víc tris, pořád levné)
+  const geo = new THREE.CylinderGeometry(radius, radius, width, 16)
   geo.rotateZ(Math.PI / 2)
+  const hubGeo = new THREE.CylinderGeometry(radius * 0.45, radius * 0.45, width * 1.05, 12)
+  hubGeo.rotateZ(Math.PI / 2)
   for (const [wx, wz] of [
     [-x, zFront],
     [x, zFront],
@@ -738,6 +795,8 @@ function addWheels(
     const w = new THREE.Mesh(geo, tire)
     w.position.set(wx, radius, wz)
     g.add(w)
-    void hub
+    const cap = new THREE.Mesh(hubGeo, hub)
+    cap.position.set(wx, radius, wz)
+    g.add(cap)
   }
 }

@@ -30,32 +30,41 @@ body,
   zoom: var(--hud-scale);
 }
 
-.hud-top {
+.hud-mirror {
   position: absolute;
-  top: 18px;
+  top: 3.5%;
   left: 50%;
   transform: translateX(-50%);
+  width: min(320px, 28vw);
+  aspect-ratio: 100 / 42;
+  border: 2px solid rgba(220, 230, 240, 0.55);
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.hud-mirror.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.hud-speed-row {
   display: flex;
-  gap: 24px;
-  padding: 10px 20px;
-  background: rgba(10, 14, 22, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  backdrop-filter: blur(8px);
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hud-race-meta {
+  font-size: 18px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
-}
-
-.hud-top .label {
-  opacity: 0.6;
-  margin-right: 6px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.hud-comp {
-  opacity: 0.95;
+  opacity: 0.92;
+  letter-spacing: 0.02em;
 }
 
 .race-mode-layout {
@@ -222,7 +231,7 @@ body,
 #overlay {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 45;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -242,21 +251,31 @@ body,
   border-radius: 12px;
   min-width: 320px;
   max-width: 90vw;
+  font-family: "Barlow Condensed", "Outfit", sans-serif;
+  letter-spacing: 0.02em;
 }
 
 .overlay-card h1 {
-  font-size: 48px;
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-size: clamp(36px, 7vw, 48px);
+  font-weight: 400;
+  letter-spacing: 0.06em;
   margin-bottom: 8px;
 }
 
 .overlay-card h2 {
-  font-size: 26px;
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-size: clamp(22px, 4vw, 28px);
+  font-weight: 400;
+  letter-spacing: 0.06em;
   margin-bottom: 16px;
 }
 
 .overlay-card p {
   opacity: 0.8;
   margin-bottom: 10px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .overlay-card ol {
@@ -314,11 +333,15 @@ body,
   max-height: 86vh;
   overflow: auto;
   text-align: left;
+  font-family: "Barlow Condensed", "Outfit", sans-serif;
 }
 
 .pause-card h2,
 .pause-card h3 {
   text-align: center;
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.06em;
 }
 
 .pause-hold {
@@ -449,10 +472,12 @@ body,
 }
 
 .bind-section-title {
-  font-size: 17px;
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-size: 20px;
+  font-weight: 400;
   margin: 12px 0 10px;
   opacity: 0.95;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -600,21 +625,53 @@ body,
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 
+/* Úvod: velký plovoucí watermark uprostřed (původní feel). */
+#entry .track-watermark-stage {
+  inset: 4%;
+  left: 4%;
+  top: 4%;
+  width: auto;
+  height: auto;
+  right: 4%;
+  bottom: 4%;
+  animation: watermarkFloat 48s linear infinite;
+}
+
+#entry .track-watermark-svg {
+  max-height: 78vh;
+}
+
 .track-watermark-stage {
   position: absolute;
-  inset: 4%;
+  left: 0;
+  top: 0;
+  width: min(93vw, 1230px);
+  height: min(93vh, 960px);
+  will-change: transform;
+  animation: watermarkDrift 120s ease-in-out infinite;
+}
+
+.track-watermark-layer {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 18px;
-  animation: watermarkDrift 48s linear infinite;
+  opacity: 1;
+  transition: opacity 2s ease;
+}
+
+.track-watermark-layer.is-enter,
+.track-watermark-layer.is-leave {
+  opacity: 0;
 }
 
 .track-watermark-svg {
   width: 100%;
   height: calc(100% - 40px);
-  max-height: 78vh;
+  max-height: none;
   overflow: visible;
 }
 
@@ -625,12 +682,6 @@ body,
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  transition: opacity 1s ease;
-}
-
-.track-watermark.is-swap .track-watermark-path,
-.track-watermark.is-swap .track-watermark-label {
-  opacity: 0;
 }
 
 .track-watermark-label {
@@ -642,10 +693,9 @@ body,
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.55);
   white-space: nowrap;
-  transition: opacity 1s ease;
 }
 
-@keyframes watermarkDrift {
+@keyframes watermarkFloat {
   0% {
     transform: translate3d(-2%, 1.5%, 0) scale(1.02) rotate(-2deg);
   }
@@ -654,6 +704,29 @@ body,
   }
   100% {
     transform: translate3d(-2%, 1.5%, 0) scale(1.02) rotate(-2deg);
+  }
+}
+
+/* Menu: pohyb mezi kraji obrazovky. */
+@keyframes watermarkDrift {
+  0% {
+    transform: translate3d(2vw, 4vh, 0) scale(1.02) rotate(-4deg);
+  }
+  18% {
+    transform: translate3d(calc(100vw - 100% - 2vw), 6vh, 0) scale(1.05) rotate(2deg);
+  }
+  36% {
+    transform: translate3d(calc(100vw - 100% - 4vw), calc(100vh - 100% - 5vh), 0)
+      scale(1.08) rotate(-2deg);
+  }
+  54% {
+    transform: translate3d(3vw, calc(100vh - 100% - 4vh), 0) scale(1.04) rotate(3deg);
+  }
+  72% {
+    transform: translate3d(calc(48vw - 50%), calc(42vh - 50%), 0) scale(1.06) rotate(-1deg);
+  }
+  100% {
+    transform: translate3d(2vw, 4vh, 0) scale(1.02) rotate(-4deg);
   }
 }
 
@@ -815,14 +888,36 @@ body,
   margin-top: 18px;
 }
 
+.ai-learn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-learn-table th,
+.ai-learn-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ai-learn-table th {
+  opacity: 0.65;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
 .entry-content-warn {
   position: absolute;
   right: max(22px, env(safe-area-inset-right));
   bottom: max(22px, env(safe-area-inset-bottom));
   z-index: 2;
   margin: 0;
-  max-width: min(280px, 46vw);
   text-align: right;
+  white-space: nowrap;
   font-size: 11px;
   line-height: 1.45;
   letter-spacing: 0.03em;
@@ -873,47 +968,25 @@ body,
 
 .burnt-letter {
   position: relative;
-  width: min(440px, 92vw);
-  padding: 36px 34px 28px;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 96vw);
+  max-height: min(90vh, 920px);
+  padding: 42px 46px 32px;
   color: #2a1a12;
-  font-family: "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+  font-family: "Barlow Condensed", "Outfit", sans-serif;
+  letter-spacing: 0.02em;
   background:
     radial-gradient(ellipse at 18% 12%, rgba(255, 220, 160, 0.35), transparent 42%),
     radial-gradient(ellipse at 82% 88%, rgba(60, 20, 8, 0.35), transparent 45%),
     linear-gradient(145deg, #e8c992 0%, #d4a574 42%, #c48a5a 72%, #a86a3e 100%);
   box-shadow:
     0 0 0 1px rgba(40, 18, 8, 0.55),
-    0 18px 50px rgba(0, 0, 0, 0.55),
+    0 22px 60px rgba(0, 0, 0, 0.58),
     inset 0 0 40px rgba(40, 12, 4, 0.28),
     inset 0 0 12px rgba(255, 210, 140, 0.2);
-  clip-path: polygon(
-    2% 4%,
-    8% 0%,
-    22% 3%,
-    38% 0.5%,
-    55% 3%,
-    70% 0%,
-    86% 4%,
-    97% 1%,
-    100% 12%,
-    97% 28%,
-    100% 46%,
-    96% 62%,
-    100% 78%,
-    94% 92%,
-    82% 100%,
-    64% 96%,
-    48% 100%,
-    32% 95%,
-    16% 100%,
-    4% 92%,
-    0% 76%,
-    3% 58%,
-    0% 40%,
-    4% 22%,
-    0% 10%
-  );
-  transform: rotate(-1.2deg);
+  border-radius: 4px 18px 8px 22px / 18px 6px 24px 10px;
+  transform: rotate(-0.6deg);
   animation: burntLetterIn 0.45s ease-out;
 }
 
@@ -955,47 +1028,62 @@ body,
 
 .burnt-letter-from {
   margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-size: clamp(24px, 3.2vw, 32px);
+  font-weight: 400;
+  letter-spacing: 0.06em;
   color: #1c100a;
 }
 
 .burnt-letter-to {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 15px;
+  line-height: 1.5;
   color: #3a2418;
 }
 
-.burnt-letter-body,
-.burnt-letter-lorem {
+.burnt-letter-scroll {
   position: relative;
   z-index: 1;
-  margin: 0 0 14px;
-  font-size: 14px;
-  line-height: 1.55;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  margin-bottom: 16px;
+}
+
+.burnt-letter-body {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.62;
   color: #2e1a12;
 }
 
-.burnt-letter-lorem {
-  font-style: italic;
-  opacity: 0.88;
-  font-size: 13px;
-  line-height: 1.6;
+.burnt-letter-sign {
+  margin: 8px 0 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(60, 28, 12, 0.28);
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+  color: #1c100a;
 }
 
 .burnt-letter-close {
   position: relative;
   z-index: 1;
+  flex: 0 0 auto;
+  align-self: flex-start;
   appearance: none;
   border: 1px solid rgba(50, 22, 10, 0.45);
   background: linear-gradient(180deg, #c9a06a, #9a6840);
   color: #1a100a;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.06em;
-  padding: 8px 14px;
+  padding: 10px 18px;
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 230, 180, 0.35);
 }
@@ -1007,11 +1095,11 @@ body,
 @keyframes burntLetterIn {
   from {
     opacity: 0;
-    transform: rotate(-1.2deg) translateY(18px) scale(0.96);
+    transform: rotate(-0.6deg) translateY(18px) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: rotate(-1.2deg) translateY(0) scale(1);
+    transform: rotate(-0.6deg) translateY(0) scale(1);
   }
 }
 
@@ -1146,7 +1234,9 @@ body,
   z-index: 30;
   display: none;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding: max(56px, calc(env(safe-area-inset-top) + 40px)) 16px 40px;
+  box-sizing: border-box;
   overflow: auto;
   --menu-bg-a: rgba(18, 14, 12, 0.62);
   --menu-bg-b: rgba(8, 10, 14, 0.78);
@@ -1396,13 +1486,22 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   text-align: center;
+  font-family: "Barlow Condensed", "Outfit", sans-serif;
+  letter-spacing: 0.02em;
 }
 
 .scooter-modal-card p {
   margin: 0 0 18px;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.35rem;
+  font-weight: 600;
   line-height: 1.35;
+}
+
+.scooter-modal-card h2,
+.scooter-modal-card .scooter-modal-title {
+  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.06em;
 }
 
 .scooter-ban,
@@ -1456,7 +1555,7 @@ body,
 
 .menu-shell {
   width: min(1120px, 96vw);
-  margin: auto;
+  margin: 0 auto;
   padding: 36px 40px 44px;
   background:
     linear-gradient(145deg, var(--menu-bg-a), var(--menu-bg-b)),
@@ -1605,12 +1704,36 @@ body,
 .menu-panel {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  width: min(1120px, 96vw);
+  min-height: min(78vh, 720px);
   max-height: min(92vh, 920px);
   overflow: auto;
+  scrollbar-width: none;
   background:
     linear-gradient(155deg, var(--menu-bg-a), var(--menu-bg-b)),
     radial-gradient(ellipse at 12% 8%, var(--menu-glow-a), transparent 48%),
     var(--menu-photo) center / cover no-repeat;
+}
+
+.menu-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.menu-panel > .menu-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin-bottom: 18px;
+  padding-bottom: 10px;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 10, 14, 0.92) 55%,
+    rgba(10, 10, 14, 0.55) 85%,
+    transparent
+  );
 }
 
 .menu-tuning .tuning-center {
@@ -1627,6 +1750,58 @@ body,
 .menu-tuning .tune-rules,
 .menu-tuning .tune-hint {
   text-align: center;
+}
+
+.menu-tuning.vehicles-tune .tuning-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-right: 2px;
+}
+
+.menu-tuning.vehicles-tune .tuning-side::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.menu-tuning.vehicles-tune .tune-stack {
+  margin: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.menu-tuning.vehicles-tune .tune-rules,
+.menu-tuning.vehicles-tune .tune-hint {
+  text-align: left;
+}
+
+.menu-flow-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.menu-flow-actions .menu-start {
+  min-width: 180px;
+}
+
+.overlay-actions .menu-start,
+.overlay-actions .btn-ghost {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.menu-budget-line {
+  text-align: center;
+  margin: 0 0 14px;
 }
 
 .menu-eyebrow {
@@ -1769,8 +1944,15 @@ body,
   gap: 8px;
   max-height: min(62vh, 520px);
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 2px;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.tracks-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .tracks-list .track-card {
@@ -2114,7 +2296,7 @@ body,
 
 .vehicle-preview-canvas {
   width: 100%;
-  height: min(38vh, 280px);
+  height: min(28vh, 200px);
   border-radius: 12px;
   touch-action: none;
   cursor: grab;
@@ -2128,8 +2310,14 @@ body,
 }
 
 .vehicle-stage {
-  overflow-y: auto;
-  max-height: min(70vh, 640px);
+  overflow: visible;
+  max-height: none;
+  min-height: 0;
+  gap: 8px;
+}
+
+.vehicles-tune .vehicle-preview-canvas {
+  height: min(24vh, 180px);
 }
 
 .dir-grid {
@@ -2161,13 +2349,13 @@ body,
 .color-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .color-swatch {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
@@ -2197,8 +2385,8 @@ body,
 }
 
 .color-rgb {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   overflow: hidden;
   border: 2px solid rgba(255, 255, 255, 0.35);

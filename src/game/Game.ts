@@ -1,7 +1,10 @@
 import * as THREE from 'three'
 import { AiDriver } from '../ai/AiDriver'
 import { getDifficulty, type DifficultyDef, type DifficultyId } from '../ai/Difficulty'
+import { ingestFinishedRace, installLearnDebugApi } from '../ai/CommunityLearning'
+import { installPaceDebugApi, recordPaceSample } from '../ai/PaceCalibration'
 import { CameraController } from '../camera/CameraController'
+import { RearViewMirror } from '../camera/RearViewMirror'
 import { EngineAudio } from '../audio/EngineAudio'
 import {
   applyUiAtmosphere,
@@ -11,13 +14,29 @@ import {
   saveAtmosphereSettings,
   type AtmosphereSettingsValues,
 } from '../render/AtmosphereSettings'
+import { Actor } from '../engine/Actor'
+import { Engine } from '../engine/Engine'
+import { SceneLightRig } from '../engine/components/SceneLightRig'
 import {
-  clampOpponentsToCategory,
+  loadVisualSettings,
+  saveVisualSettings,
+  type VisualSettingsValues,
+} from '../render/VisualSettings'
+import { createSkyGradientTexture, tickSkyBackdrop } from '../render/SkyBackdrop'
+import {
   loadRaceSettings,
+  randomOpponents,
   saveRaceSettings,
   transmissionAllowedFor,
   type RaceSettingsValues,
 } from '../render/RaceSettings'
+import {
+  championshipProgressLabel,
+  championshipTrackId,
+  loadChampionship,
+  recordChampionshipPlace,
+  resetChampionship,
+} from '../race/Championship'
 import {
   loadCompetitionSettings,
   type CompetitionId,
@@ -56,8 +75,9 @@ const PLAYER_COLORS = [0xc62828, 0x1565c0, 0x2e7d32, 0xef6c00]
 type Mode = 'entry' | 'menu' | 'race'
 
 export class Game {
-  private readonly renderer: THREE.WebGLRenderer
-  private readonly scene = new THREE.Scene()
+  /** Klec Engine — World / Actor / URP-like render (Unity/Unreal styl). */
+  private readonly engine: Engine
+  private readonly lightRig: SceneLightRig
   private readonly camera: THREE.PerspectiveCamera
   private readonly input = new Input()
   private track: Track
@@ -66,12 +86,12 @@ export class Game {
   private readonly ai = new Map<Vehicle, AiDriver>()
   private race: RaceManager
   private readonly cams: CameraController
+  private readonly mirror = new RearViewMirror()
   private readonly hud: Hud
   private readonly menu: Menu
   private readonly entry: Entry
   private readonly net = new NetClient()
   private mode: Mode = 'entry'
-  private lastTime = 0
   private running = false
   private lastTrackId = TRACKS[0].id
   private lastVehicle: VehicleKind = TRACKS[0].vehicle
@@ -94,12 +114,21 @@ export class Game {
   private atmosphere: AtmosphereSettingsValues = loadAtmosphereSettings()
   private raceSettings: RaceSettingsValues = loadRaceSettings()
   private controlFeel: ControlFeelValues = loadControlFeel()
+  private visual: VisualSettingsValues = loadVisualSettings()
   private activeCompetition: CompetitionId = 'none'
   private recordsSaved = false
   /** Pauza na mapě (Esc). */
   private paused = false
   /** Po otevření pauzy Esc ještě držíš — počkat na puštění. */
   private escArm = false
+  /** Rising-edge Esc (spolehlivější než jen justPressed). */
+  private escWasDown = false
+  /** Po Esc z countdownu neber hned další Esc jako „zpět na entry“. */
+  private ignoreEscUntilRelease = false
+
+  private get scene(): THREE.Scene {
+    return this.engine.world.scene
+  }
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -109,21 +138,12 @@ export class Game {
     entryEl: HTMLElement,
     mobileEl: HTMLElement,
   ) {
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: false,
-      powerPreference: 'high-performance',
-    })
-    // 2.5D performance profile
-    this.renderer.setPixelRatio(1)
-    this.renderer.setSize(window.innerWidth, window.innerHeight, false)
-    this.renderer.setClearColor(0x0e1218, 1)
-    this.renderer.shadowMap.enabled = false
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace
-    this.renderer.toneMapping = THREE.NoToneMapping
-    this.renderer.info.autoReset = true
-
-    this.camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.5, 2400)
+    this.engine = new Engine({ canvas, visual: this.visual, worldName: 'KlecGPWorld' })
+    this.camera = this.engine.render.camera
+    const lights = new Actor('DirectionalLightRig')
+    this.lightRig = lights.addComponent(new SceneLightRig())
+    this.engine.world.spawnActor(lights)
+    this.lightRig.configureShadows(this.engine.render.pipeline, this.visual)
     this.cams = new CameraController(this.camera)
     this.hud = new Hud(hudEl, overlayEl)
     this.menu = new Menu(menuEl)
@@ -146,18 +166,8 @@ export class Game {
       if (this.multiplayer) this.leaveLobby()
       else this.openMenu()
     })
-    this.hud.setOnRestartRequest(() => {
-      if (this.multiplayer) return
-      this.beginSoloRace(
-        this.lastTrackId,
-        this.lastVehicle,
-        this.lastColor,
-        this.lastNeon,
-        this.lastTuning,
-        this.player.info.name,
-        this.lastDifficulty.id,
-      )
-    })
+    this.hud.setOnRestartRequest(() => this.restartSoloSameRace({ sameTrack: true }))
+    this.hud.setOnChampionshipNext(() => this.restartSoloSameRace({ sameTrack: false }))
     this.input.attachMobileUi(mobileEl)
     const unlock = () => {
       this.audio.unlock()
@@ -178,6 +188,21 @@ export class Game {
         this.applyTheme(this.track.def)
       },
     })
+    this.menu.setVisualApi({
+      get: () => ({ ...this.visual }),
+      set: (partial) => {
+        this.visual = { ...this.visual, ...partial }
+        // Performance default — bloom/stíny jen když je uživatel sám zapne (ne auto při cinematic)
+        if (partial.quality === 'perf') {
+          this.visual.bloom = false
+          this.visual.shadows = false
+        }
+        saveVisualSettings(this.visual)
+        this.mirror.setEnabled(this.visual.rearMirror)
+        this.hud.setMirrorFrame(this.visual.rearMirror && this.mode === 'race')
+        this.applyVisual()
+      },
+    })
     applyUiAtmosphere(this.atmosphere)
     this.menu.setRaceApi({
       get: () => ({ ...this.raceSettings }),
@@ -195,10 +220,14 @@ export class Game {
       },
     })
     this.applyControlFeel()
+    this.mirror.setEnabled(this.visual.rearMirror)
+    this.hud.setMirrorFrame(false)
+    installPaceDebugApi()
+    installLearnDebugApi()
+    this.installQaApi()
     window.addEventListener('pointerdown', unlock, { once: true })
     window.addEventListener('keydown', unlock, { once: true })
 
-    this.setupLights()
     this.track = new Track(this.scene, resolveTrackDef(getTrackDef(TRACKS[0].id), this.raceSettings.reverse))
     this.track.setDecorQuality(this.atmosphere.decor)
     this.applyTheme(this.track.def)
@@ -266,6 +295,7 @@ export class Game {
     this.menu.hide()
     this.input.setMobileHud(false)
     this.hud.update(this.player, this.race, this.cams, false)
+    this.hud.setMirrorFrame(false)
     this.audio.setActive(false)
     this.audio.setMusic(false)
     this.entry.show()
@@ -273,8 +303,8 @@ export class Game {
 
   start(): void {
     this.running = true
-    this.lastTime = performance.now()
-    requestAnimationFrame((t) => this.frame(t))
+    this.engine.setGameTick((dt) => this.gameTick(dt))
+    this.engine.start()
   }
 
   private openMenu(): void {
@@ -282,6 +312,8 @@ export class Game {
       this.saveSandboxRecord()
     }
     this.clearPause()
+    this.escWasDown = true // dokud Esc držíš, neotevírej znovu
+    this.ignoreEscUntilRelease = true
     this.mode = 'menu'
     this.multiplayer = false
     this.net.disconnect()
@@ -296,6 +328,7 @@ export class Game {
     this.input.setMobileHud(false)
     this.menu.show()
     this.hud.update(this.player, this.race, this.cams, false)
+    this.hud.setMirrorFrame(false)
     this.audio.setActive(false)
     this.audio.unlock()
     this.audio.setMusic(true)
@@ -305,6 +338,10 @@ export class Game {
     this.paused = false
     this.escArm = false
     this.hud.setPaused(false, null)
+  }
+
+  private resetEscEdge(): void {
+    this.escWasDown = this.input.escapeHeld
   }
 
   private enterPause(): void {
@@ -495,6 +532,23 @@ export class Game {
     this.net.send({ type: 'start', trackId: this.lastTrackId, laps: this.lastMpLaps })
   }
 
+  /** Po dojetí: sameTrack = opakovat stejnou trať; jinak šampionát posune dál. */
+  private restartSoloSameRace(opts?: { sameTrack?: boolean }): void {
+    if (this.multiplayer) return
+    this.escWasDown = false
+    this.hud.clearResultsOverlay()
+    this.beginSoloRace(
+      this.lastTrackId,
+      this.lastVehicle,
+      this.lastColor,
+      this.lastNeon,
+      this.lastTuning,
+      this.player.info.name,
+      this.lastDifficulty.id,
+      { keepTrack: opts?.sameTrack === true },
+    )
+  }
+
   private beginSoloRace(
     trackId: string,
     vehicle: VehicleKind,
@@ -503,22 +557,34 @@ export class Game {
     tuning: PlayerTuningValues,
     name = t('player.you'),
     difficulty: DifficultyId = 'normal',
+    opts?: { keepTrack?: boolean },
   ): void {
     this.multiplayer = false
     this.mpRaceEnded = false
+    this.recordsSaved = false
     this.hud.setOnlineRace(false)
+    this.hud.clearResultsOverlay()
     this.clearPause()
     this.lastVehicle = vehicle
     this.lastColor = color
     this.lastNeon = neon
+    this.lastTuning = { ...tuning }
     this.lastDifficulty = getDifficulty(difficulty)
     this.activeCompetition = loadCompetitionSettings().id
     if (this.activeCompetition === 'trickHunt' && vehicle !== 'skate' && vehicle !== 'bike') {
       vehicle = 'skate'
       this.lastVehicle = vehicle
     }
+    if (!opts?.keepTrack && this.activeCompetition === 'championship') {
+      let champ = loadChampionship()
+      if (champ.done) champ = resetChampionship()
+      const champTrack = championshipTrackId(champ)
+      if (champTrack) trackId = champTrack
+    }
+    this.lastTrackId = trackId
     this.menu.hide()
     this.mode = 'race'
+    this.resetEscEdge()
     this.setupGridSolo(name, color, neon)
     this.loadTrack(trackId, vehicle, tuning)
     this.applyAiDifficulty()
@@ -526,9 +592,12 @@ export class Game {
     this.race.finishPolicy = 'solo'
     this.race.start({ skipCountdown: this.raceSettings.skipCountdown })
     this.resetAiRails()
-    for (const v of this.vehicles) v.mesh.visible = true
+    for (const v of this.vehicles) {
+      v.mesh.visible = true
+      v.finished = false
+    }
     this.hud.setCompetition(this.activeCompetition)
-    // Sandbox / freestyle / solo soutěže — bez AI soupeřů
+    // Solo soutěže = bez AI. Normální závod (comp.none) = AI vždy jede.
     const soloChallenge =
       this.activeCompetition === 'timeAttack' ||
       this.activeCompetition === 'trickHunt' ||
@@ -536,14 +605,21 @@ export class Game {
       this.activeCompetition === 'paceGhost' ||
       this.activeCompetition === 'sprintDash' ||
       this.activeCompetition === 'driftScore'
-    if (this.track.def.sandbox || this.raceSettings.freestyle || soloChallenge) {
-      for (let i = 0; i < this.vehicles.length; i++) {
-        if (i === this.localSlot) continue
+    for (let i = 0; i < this.vehicles.length; i++) {
+      if (i === this.localSlot) continue
+      if (this.track.def.sandbox || this.raceSettings.freestyle || soloChallenge) {
         this.vehicles[i].mesh.visible = false
         this.vehicles[i].finished = true
+      } else {
+        this.vehicles[i].mesh.visible = true
+        this.vehicles[i].finished = false
       }
     }
+    // Hráč musí zůstat nedokončený — jinak solo race hned skončí.
+    this.player.finished = false
+    this.player.finishTime = 0
     this.input.setMobileHud(true)
+    this.hud.setMirrorFrame(this.visual.rearMirror)
     this.audio.unlock()
     this.audio.setMusic(true)
     this.audio.setActive(true)
@@ -562,6 +638,7 @@ export class Game {
     this.hud.setOnlineRace(true)
     this.menu.hide()
     this.mode = 'race'
+    this.resetEscEdge()
     this.lastTrackId = trackId
     this.lastMpLaps = laps
     this.setupGridMultiplayer(order, room)
@@ -576,9 +653,51 @@ export class Game {
     this.resetAiRails()
     for (const v of this.vehicles) v.mesh.visible = true
     this.input.setMobileHud(true)
+    this.hud.setMirrorFrame(this.visual.rearMirror)
     this.audio.unlock()
     this.audio.setMusic(true)
     this.audio.setActive(true)
+  }
+
+  /** Po dojetí: kalibrace + community učení (AI se upraví až pro další závod). */
+  private recordPaceCalibration(finishTimeMs: number): void {
+    if (this.track.def.sandbox) return
+    const len = Math.max(1, this.track.length)
+    const bestLap = this.player.bestLapMs
+    const isStage = this.race.isStage
+    const paceMs = isStage
+      ? finishTimeMs
+      : Number.isFinite(bestLap) && bestLap > 0 && bestLap < Infinity
+        ? bestLap
+        : finishTimeMs / Math.max(1, this.race.totalLaps)
+    if (!(paceMs > 500)) return
+    recordPaceSample({
+      trackId: this.lastTrackId,
+      vehicle: this.lastVehicle,
+      difficulty: this.lastDifficulty.id,
+      paceMs,
+      finishTimeMs,
+      bestLapMs: Number.isFinite(bestLap) && bestLap < Infinity ? bestLap : 0,
+      totalLaps: this.race.totalLaps,
+      trackLength: len,
+      avgSpeed: len / (paceMs / 1000),
+      isStage,
+      isSandbox: false,
+      at: Date.now(),
+    })
+    ingestFinishedRace({
+      player: this.player.info.name,
+      trackId: this.lastTrackId,
+      vehicle: this.lastVehicle,
+      difficulty: this.lastDifficulty.id,
+      finishTimeMs,
+      paceMs,
+      bestLapMs: Number.isFinite(bestLap) && bestLap < Infinity ? bestLap : 0,
+      totalLaps: this.race.totalLaps,
+      trackLength: len,
+      place: this.race.playerPlace(),
+      isStage,
+    })
   }
 
   private applyControlFeel(): void {
@@ -676,14 +795,10 @@ export class Game {
       !this.input.mobile && transmissionAllowedFor(vehicle)
         ? this.raceSettings.transmission
         : 'auto'
-    // Solo: AI stejná kategorie (freestyle vs ostatní). Multiplayer: cokoliv vs cokoliv.
+    // Solo: každý závod noví soupeři (stejná kategorie). Multi: pevní z lobby.
     const opponents = this.multiplayer
       ? this.raceSettings.opponents
-      : clampOpponentsToCategory(
-          this.raceSettings.opponents,
-          vehicle,
-          this.raceSettings.freestyle,
-        )
+      : randomOpponents(vehicle, this.raceSettings.freestyle)
     if (!this.multiplayer) {
       this.raceSettings.opponents = opponents
       saveRaceSettings(this.raceSettings)
@@ -722,8 +837,11 @@ export class Game {
   }
 
   private applyTheme(def: (typeof TRACKS)[number]): void {
-    const { sky, fog } = def.theme
-    this.scene.background = new THREE.Color(sky)
+    const { fog } = def.theme
+    // UE-stylový gradient (equirect) — levnější než sky dome mesh
+    const prevBg = this.scene.background
+    this.scene.background = createSkyGradientTexture(def)
+    if (prevBg instanceof THREE.Texture && !prevBg.userData.sharedSky) prevBg.dispose()
     const scale = fogDistanceScale(this.atmosphere.fog)
     // Lineární fog je levnější než Exp2
     if (def.world === 'city') {
@@ -741,77 +859,100 @@ export class Game {
 
     const hemi = this.scene.getObjectByName('hemi') as THREE.HemisphereLight | undefined
     const sun = this.scene.getObjectByName('sun') as THREE.DirectionalLight | undefined
+    const ambient = this.scene.getObjectByName('ambient') as THREE.AmbientLight | undefined
+    const rim = this.scene.getObjectByName('rim') as THREE.DirectionalLight | undefined
+
+    // Per-world mood — vyšší fill, ať Lambert scéna drží vedle Basic asfaltu
+    let ambientBase = 0.42
+    let hemiBase = 0.85
+    let sunBase = 1.15
+    let rimBase = 0.35
     if (def.world === 'city') {
-      hemi?.color.setHex(0x4a3080)
-      hemi?.groundColor.setHex(0x1a1028)
-      if (hemi) hemi.intensity = 0.6
-      sun?.color.setHex(0xff66cc)
-      if (sun) {
-        sun.intensity = 0.5
-        sun.position.set(80, 80, 40)
-      }
-    } else if (def.world === 'rally' || def.world === 'climb') {
-      hemi?.color.setHex(0xc8dff0)
-      hemi?.groundColor.setHex(0x5a6a40)
-      if (hemi) hemi.intensity = 0.9
-      sun?.color.setHex(0xfff5e8)
-      if (sun) {
-        sun.intensity = 1
-        sun.position.set(80, 120, 40)
-      }
+      ambient?.color.setHex(0x6a5a88)
+      hemi?.color.setHex(0x7a60a8)
+      hemi?.groundColor.setHex(0x1a1428)
+      sun?.color.setHex(0xff9ad4)
+      rim?.color.setHex(0x5aeeff)
+      ambientBase = 0.48
+      hemiBase = 0.75
+      sunBase = 0.72
+      rimBase = 0.45
+      if (sun) sun.position.set(60, 90, 50)
+    } else if (def.world === 'rally') {
+      ambient?.color.setHex(0xd8c8b0)
+      hemi?.color.setHex(0xffd8b0)
+      hemi?.groundColor.setHex(0x5a4028)
+      sun?.color.setHex(0xffc090)
+      rim?.color.setHex(0xff8855)
+      ambientBase = 0.4
+      hemiBase = 0.8
+      sunBase = 1.05
+      rimBase = 0.32
+      if (sun) sun.position.set(90, 100, 30)
+    } else if (def.world === 'climb') {
+      ambient?.color.setHex(0xc8d8e8)
+      hemi?.color.setHex(0xd0e8ff)
+      hemi?.groundColor.setHex(0x4a5a38)
+      sun?.color.setHex(0xfff6e8)
+      rim?.color.setHex(0x88b8ff)
+      ambientBase = 0.44
+      hemiBase = 0.9
+      sunBase = 1.12
+      rimBase = 0.34
+      if (sun) sun.position.set(75, 135, 45)
     } else if (def.world === 'plaza') {
-      hemi?.color.setHex(0xb8e0f0)
+      ambient?.color.setHex(0xd0e4f0)
+      hemi?.color.setHex(0xc8e8f8)
       hemi?.groundColor.setHex(0x4a6a40)
-      if (hemi) hemi.intensity = 0.95
-      sun?.color.setHex(0xfff4d8)
-      if (sun) {
-        sun.intensity = 1.05
-        sun.position.set(60, 130, 50)
-      }
+      sun?.color.setHex(0xfff6e0)
+      rim?.color.setHex(0x90d0ff)
+      ambientBase = 0.46
+      hemiBase = 0.95
+      sunBase = 1.1
+      rimBase = 0.3
+      if (sun) sun.position.set(55, 125, 55)
     } else {
-      hemi?.color.setHex(0xffb080)
+      // town / dusk Klecany
+      ambient?.color.setHex(0xe0c8b0)
+      hemi?.color.setHex(0xffc090)
       hemi?.groundColor.setHex(0x3a2818)
-      if (hemi) hemi.intensity = 0.55
-      sun?.color.setHex(0xff6a32)
-      if (sun) {
-        sun.intensity = 0.95
-        sun.position.set(-70, 22, 130)
-      }
+      sun?.color.setHex(0xff8a45)
+      rim?.color.setHex(0xffb070)
+      ambientBase = 0.4
+      hemiBase = 0.7
+      sunBase = 0.95
+      rimBase = 0.38
+      if (sun) sun.position.set(-55, 45, 110)
     }
 
-    // Atmosférické osvětlení (dim / normal / bright)
     const lightMul = lightIntensityScale(this.atmosphere.light)
-    const ambient = this.scene.getObjectByName('ambient') as THREE.AmbientLight | undefined
-    if (ambient) ambient.intensity = 0.4 * lightMul
-    if (hemi) hemi.intensity *= lightMul
-    if (sun) sun.intensity *= lightMul
+    if (ambient) ambient.intensity = ambientBase * lightMul
+    if (hemi) hemi.intensity = hemiBase * lightMul
+    if (sun) {
+      sun.intensity = sunBase * lightMul
+      this.engine.render.pipeline.configureSunShadow(sun, this.visual)
+    }
+    if (rim) rim.intensity = rimBase * lightMul
   }
 
-  private setupLights(): void {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4)
-    ambient.name = 'ambient'
-    this.scene.add(ambient)
-
-    const hemi = new THREE.HemisphereLight(0xb8d8f0, 0x4a8a4a, 0.8)
-    hemi.name = 'hemi'
-    this.scene.add(hemi)
-
-    const sun = new THREE.DirectionalLight(0xfff0d8, 1.1)
-    sun.name = 'sun'
-    sun.position.set(80, 120, 40)
-    this.scene.add(sun)
+  private applyVisual(): void {
+    this.engine.render.applyVisual(this.visual, this.lightRig.getSun())
+    this.onResize()
   }
 
   private onResize(): void {
     const w = window.innerWidth
     const h = window.innerHeight
-    this.camera.aspect = w / h
-    this.camera.updateProjectionMatrix()
-    // Cap vnitřní rozlišení — 60 FPS na slabších PC
-    const scale = w * h > 1600 * 900 ? 0.85 : 1
-    this.renderer.setSize(Math.floor(w * scale), Math.floor(h * scale), false)
-    this.renderer.domElement.style.width = `${w}px`
-    this.renderer.domElement.style.height = `${h}px`
+    const q = this.visual.quality
+    const scale = q === 'perf' ? (w * h > 1280 * 720 ? 0.75 : 0.9) : q === 'balanced' ? 0.92 : 1
+    this.engine.render.resize(w, h, scale)
+  }
+
+  private draw(): void {
+    this.engine.render.draw(this.engine.world)
+    if (this.mode === 'race' && this.mirror.isEnabled()) {
+      this.mirror.render(this.engine.render.renderer, this.scene)
+    }
   }
 
   private pushNetState(): void {
@@ -855,68 +996,69 @@ export class Game {
     return true
   }
 
-  private frame(now: number): void {
+  /** GameMode tick — volá Klec Engine (jako Unreal Tick / Unity Update). */
+  private gameTick(dt: number): void {
     if (!this.running) return
-    const dt = Math.min(0.05, (now - this.lastTime) / 1000)
-    this.lastTime = now
 
     if (this.mode === 'entry' || this.mode === 'menu') {
-      if (this.mode === 'menu' && this.input.pressed('Escape')) {
+      this.escWasDown = this.input.escapeHeld
+      if (this.ignoreEscUntilRelease) {
+        if (!this.input.escapeHeld) this.ignoreEscUntilRelease = false
+      } else if (this.mode === 'menu' && this.input.pressed('Escape')) {
         const nav = this.menu.handleEscape()
         if (nav === 'to-entry') this.showEntry()
       }
-      const t = now * 0.00015
+      const t = this.engine.world.timeSeconds * 0.15
       this.camera.position.set(Math.sin(t) * 140, 55, Math.cos(t) * 140)
       this.camera.lookAt(0, 0, 0)
-      this.renderer.render(this.scene, this.camera)
+      this.draw()
       this.input.endFrame()
-      requestAnimationFrame((n) => this.frame(n))
       return
     }
 
-    if (this.input.pressed('KeyR') && !this.multiplayer && !this.paused) {
-      this.beginSoloRace(
-        this.lastTrackId,
-        this.lastVehicle,
-        this.lastColor,
-        this.lastNeon,
-        this.lastTuning,
-        this.player.info.name,
-        this.lastDifficulty.id,
-      )
-      requestAnimationFrame((n) => this.frame(n))
+    if (this.input.actionPressed('camera')) {
+      this.cams.cycleMode()
+    }
+
+    if (
+      !this.multiplayer &&
+      (this.input.actionPressed('restart') || this.input.pressed('KeyR'))
+    ) {
+      // Funguje i po dojetí / v pauze — vždy stejná trať
+      this.restartSoloSameRace({ sameTrack: true })
       return
     }
 
-    // Po výsledcích Esc rovnou do menu; jinak pauza (2. Esc = menu · jiná klávesa = hra)
-    if (!this.paused && this.input.pressed('Escape')) {
-      if (this.race.phase === 'finished') {
+    // Esc rising-edge: countdown/načítání/dojetí → menu; závod → pauza
+    const escDown = this.input.escapeHeld
+    const escEdge = escDown && !this.escWasDown
+    this.escWasDown = escDown
+    if (!this.paused && escEdge) {
+      if (this.race.phase === 'countdown' || this.race.phase === 'finished') {
         this.openMenu()
       } else {
         this.enterPause()
       }
       this.input.endFrame()
-      requestAnimationFrame((n) => this.frame(n))
       return
     }
     if (this.paused) {
       if (this.escArm) {
         if (!this.input.escapeHeld) this.escArm = false
-      } else if (this.input.pressed('Escape') || this.input.actionPressed('menu')) {
+      } else if (escEdge) {
         this.openMenu()
         this.input.endFrame()
-        requestAnimationFrame((n) => this.frame(n))
         return
       } else if (this.input.anyPressedExcept('Escape')) {
         this.resumeFromPause()
       }
 
       this.cams.update(dt, this.player)
+      this.mirror.update(this.player)
       this.audio.update(this.vehicles, this.player, false)
       this.hud.update(this.player, this.race, this.cams, true)
-      this.renderer.render(this.scene, this.camera)
+      this.draw()
       this.input.endFrame()
-      requestAnimationFrame((n) => this.frame(n))
       return
     }
 
@@ -948,8 +1090,8 @@ export class Game {
         const mobileClassic = this.input.mobile
         v.freestyleOn =
           !mobileClassic && freestyleMode && (v.kind === 'skate' || v.kind === 'bike')
-        // Drift e-brake jen na drift mapě a mimo freestyle (klasické řízení)
-        v.physics.driftMode = !!this.track.def.drift && !freestyleMode && !mobileClassic
+        // Drift e-brake z Ovládání (ne z mapy)
+        v.physics.driftMode = this.controlFeel.driftMode && !freestyleMode && !mobileClassic
         const controls =
           this.race.phase === 'racing'
             ? {
@@ -1000,23 +1142,42 @@ export class Game {
       this.race.update(dt)
     }
 
+    tickSkyBackdrop(this.track.skyBackdrop, dt)
+
     if (this.race.phase === 'finished' && !this.recordsSaved) {
       this.recordsSaved = true
-      const place = this.race.playerPlace()
-      const trickPts = this.player.trickPoints
-      const driftPts = this.player.driftPoints
-      const fsScore =
-        this.activeCompetition === 'driftScore'
-          ? driftPts
-          : placePoints(place) + trickPts
-      submitRaceRecord({
-        player: this.player.info.name,
-        trackId: this.lastTrackId,
-        vehicle: this.lastVehicle,
-        timeMs: this.player.finishTime || this.race.raceTimeMs,
-        fsScore,
-        trickPts: this.activeCompetition === 'driftScore' ? driftPts : trickPts,
-      })
+      try {
+        const place = this.race.playerPlace()
+        const trickPts = this.player.trickPoints
+        const driftPts = this.player.driftPoints
+        const fsScore =
+          this.activeCompetition === 'driftScore'
+            ? driftPts
+            : placePoints(place) + trickPts
+        const finishTimeMs = this.player.finishTime || this.race.raceTimeMs
+        submitRaceRecord({
+          player: this.player.info.name,
+          trackId: this.lastTrackId,
+          vehicle: this.lastVehicle,
+          timeMs: finishTimeMs,
+          fsScore,
+          trickPts: this.activeCompetition === 'driftScore' ? driftPts : trickPts,
+        })
+        this.recordPaceCalibration(finishTimeMs)
+        if (this.activeCompetition === 'championship') {
+          const champ = recordChampionshipPlace(place)
+          this.hud.setChampionshipResult({
+            points: champ.points,
+            progress: championshipProgressLabel(champ),
+            done: champ.done,
+            lastPts: placePoints(place),
+          })
+        } else {
+          this.hud.setChampionshipResult(null)
+        }
+      } catch (err) {
+        console.warn('Post-finish save failed', err)
+      }
     }
     if (this.race.phase !== 'finished') this.recordsSaved = false
 
@@ -1040,12 +1201,73 @@ export class Game {
     }
 
     this.cams.update(dt, this.player)
+    this.mirror.update(this.player)
     this.audio.update(this.vehicles, this.player, this.race.phase === 'racing')
     this.hud.update(this.player, this.race, this.cams, true)
-    this.renderer.render(this.scene, this.camera)
+    this.draw()
     this.input.endFrame()
+  }
 
-    requestAnimationFrame((n) => this.frame(n))
+  /** QA / deep test bez UI — window.__klecQa */
+  private installQaApi(): void {
+    if (typeof window === 'undefined') return
+    window.__klecQa = {
+      state: () => ({
+        mode: this.mode,
+        phase: this.race.phase,
+        trackId: this.lastTrackId,
+        vehicle: this.lastVehicle,
+        freestyle: this.raceSettings.freestyle,
+        paused: this.paused,
+        finished: this.player.finished,
+        place: this.race.playerPlace(),
+        speed: this.player.displaySpeedKmh,
+        trackT: this.player.trackT,
+        trickPts: this.player.trickPoints,
+        driftPts: this.player.driftPoints,
+        escHeld: this.input.escapeHeld,
+        escWasDown: this.escWasDown,
+      }),
+      openMenu: () => this.openMenu(),
+      start: (trackId, vehicle = 'street', freestyle = false) => {
+        this.raceSettings.freestyle = freestyle
+        saveRaceSettings(this.raceSettings)
+        this.beginSoloRace(
+          trackId,
+          vehicle,
+          this.lastColor,
+          this.lastNeon,
+          this.lastTuning,
+          this.player.info.name,
+          this.lastDifficulty.id,
+          { keepTrack: true },
+        )
+      },
+      skipCountdown: () => {
+        if (this.mode !== 'race') return
+        this.race.skipToRacing()
+      },
+      forceFinish: () => {
+        if (this.mode !== 'race') return
+        this.race.forceFinish()
+      },
+      restart: () => this.restartSoloSameRace({ sameTrack: true }),
+      escToMenu: () => {
+        this.escWasDown = false
+        this.openMenu()
+      },
+      warp: (t: number) => {
+        const tt = Math.max(0, Math.min(0.999, t))
+        const s = this.track.sample(tt)
+        this.player.reset(s.position.x, s.position.z, Math.atan2(s.tangent.x, s.tangent.z), this.race.raceTimeMs)
+        this.player.groundY = s.position.y
+        this.player.trackT = tt
+        this.player.finished = false
+      },
+      setSpeed: (kmh: number) => {
+        this.player.physics.speed = Math.max(0, kmh) / 3.6
+      },
+    }
   }
 }
 
@@ -1053,4 +1275,20 @@ function labelVehicle(kind: VehicleKind): string {
   const key = `vehicle.${kind}`
   const named = t(key)
   return named === key ? kind : named
+}
+
+declare global {
+  interface Window {
+    __klecQa?: {
+      state: () => Record<string, unknown>
+      openMenu: () => void
+      start: (trackId: string, vehicle?: VehicleKind, freestyle?: boolean) => void
+      skipCountdown: () => void
+      forceFinish: () => void
+      restart: () => void
+      escToMenu: () => void
+      warp: (t: number) => void
+      setSpeed: (kmh: number) => void
+    }
+  }
 }

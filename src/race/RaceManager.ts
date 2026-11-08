@@ -21,6 +21,8 @@ export class RaceManager {
   private readonly track: Track
   private readonly vehicles: Vehicle[]
   private readonly lastT = new Map<Vehicle, number>()
+  /** Etapa: cíl platí až po projetí části tratě (prevence okamžitého konce po Znovu). */
+  private readonly stageArmed = new Map<Vehicle, boolean>()
   private finishGraceStartedAt = -1
   finishPolicy: FinishPolicy = 'solo'
   readonly isStage: boolean
@@ -43,6 +45,7 @@ export class RaceManager {
     this.standings = []
     this.finishGraceStartedAt = -1
     this.lastT.clear()
+    this.stageArmed.clear()
     if (this.isStage) {
       this.totalLaps = 1
     } else if (typeof opts?.laps === 'number' && Number.isFinite(opts.laps)) {
@@ -55,7 +58,12 @@ export class RaceManager {
       const pose = this.track.getStartPose(i)
       v.reset(pose.x, pose.z, pose.heading, 0)
       v.groundY = pose.y
-      this.lastT.set(v, this.track.progressAt(pose.x, pose.z))
+      const t0 = this.track.progressAt(pose.x, pose.z)
+      this.lastT.set(v, t0)
+      this.stageArmed.set(v, false)
+      v.trackT = t0
+      v.finished = false
+      v.finishTime = 0
     })
 
     if (opts?.skipCountdown) {
@@ -67,6 +75,29 @@ export class RaceManager {
         this.lastT.set(v, this.track.progressAt(v.physics.x, v.physics.z))
       }
     }
+  }
+
+  /** QA / skipCountdown za běhu — bez resetu aut. */
+  skipToRacing(): void {
+    if (this.phase !== 'countdown') return
+    this.phase = 'racing'
+    this.countdown = 0
+    this.raceTimeMs = 0
+    for (const v of this.vehicles) {
+      v.currentLapStart = 0
+      this.lastT.set(v, this.track.progressAt(v.physics.x, v.physics.z))
+    }
+  }
+
+  /** QA: vynutit konec (solo výsledky). */
+  forceFinish(): void {
+    const player = this.vehicles.find((v) => v.info.isPlayer)
+    if (player && !player.finished) {
+      player.finished = true
+      player.finishTime = Math.max(1, this.raceTimeMs)
+    }
+    this.phase = 'finished'
+    this.standings = this.computeStandings()
   }
 
   update(dt: number): void {
@@ -153,7 +184,8 @@ export class RaceManager {
       v.raceDistance = t
       v.lap = t >= 0.97 ? 1 : 0
       v.checkpoint = Math.floor(t * this.track.checkpoints.length)
-      if (t >= 0.97) {
+      if (t > 0.18 && t < 0.9) this.stageArmed.set(v, true)
+      if (this.stageArmed.get(v) && t >= 0.97) {
         v.finished = true
         v.finishTime = this.raceTimeMs
         v.physics.speed *= 0.45

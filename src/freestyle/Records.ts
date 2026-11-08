@@ -87,3 +87,8 @@ export function recordsFor(trackId?: string, vehicle?: VehicleKind): RecordEntry
 export function topRecords(limit = 20): RecordEntry[] {
   return recordsFor().slice(0, limit)
 }
+
+/** Všechny záznamy (pro export kalibrace). */
+export function allRecords(): RecordEntry[] {
+  return loadStore().entries.slice()
+}

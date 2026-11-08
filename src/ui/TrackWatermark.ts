@@ -13,28 +13,58 @@ export function pickWatermarkTrack(excludeIds: string[] = []): TrackDef {
  * Trať i nápis rotují spolu; SVG ukáže celou trať (meet).
  */
 export function trackWatermarkHtml(def: TrackDef = pickWatermarkTrack()): string {
-  const geom = pathFromTrack(def)
   return `
     <div class="track-watermark" data-track-id="${escapeXml(def.id)}" aria-hidden="true">
       <div class="track-watermark-stage">
-        <svg class="track-watermark-svg" viewBox="${geom.viewBox}" preserveAspectRatio="xMidYMid meet">
-          <path class="track-watermark-path" d="${geom.d}" />
-        </svg>
-        <p class="track-watermark-label">${escapeXml(def.name)}</p>
+        ${watermarkLayerHtml(def)}
       </div>
     </div>
   `
 }
 
 export function applyWatermarkTo(el: Element, def: TrackDef): void {
-  const geom = pathFromTrack(def)
+  const stage = el.querySelector('.track-watermark-stage')
+  if (!stage) return
   el.setAttribute('data-track-id', def.id)
-  const svg = el.querySelector('.track-watermark-svg')
-  const path = el.querySelector('.track-watermark-path')
-  const label = el.querySelector('.track-watermark-label')
-  if (svg) svg.setAttribute('viewBox', geom.viewBox)
-  if (path) path.setAttribute('d', geom.d)
-  if (label) label.textContent = def.name
+  stage.innerHTML = watermarkLayerHtml(def)
+}
+
+/** 2s prolínání: stará + nová mapa najednou, pak zůstane nová. */
+export function crossfadeWatermark(el: Element, def: TrackDef, fadeMs = 2000): void {
+  const stage = el.querySelector('.track-watermark-stage')
+  if (!stage) {
+    applyWatermarkTo(el, def)
+    return
+  }
+  const outgoing = [...stage.querySelectorAll('.track-watermark-layer')]
+  const wrap = document.createElement('div')
+  wrap.innerHTML = watermarkLayerHtml(def).trim()
+  const incoming = wrap.firstElementChild as HTMLElement | null
+  if (!incoming) return
+  incoming.classList.add('is-enter')
+  stage.appendChild(incoming)
+  el.setAttribute('data-track-id', def.id)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      for (const layer of outgoing) layer.classList.add('is-leave')
+      incoming.classList.remove('is-enter')
+    })
+  })
+  window.setTimeout(() => {
+    for (const layer of outgoing) layer.remove()
+  }, fadeMs)
+}
+
+function watermarkLayerHtml(def: TrackDef): string {
+  const geom = pathFromTrack(def)
+  return `
+    <div class="track-watermark-layer">
+      <svg class="track-watermark-svg" viewBox="${geom.viewBox}" preserveAspectRatio="xMidYMid meet">
+        <path class="track-watermark-path" d="${geom.d}" />
+      </svg>
+      <p class="track-watermark-label">${escapeXml(def.name)}</p>
+    </div>
+  `
 }
 
 function hexCss(n: number): string {

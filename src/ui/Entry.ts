@@ -1,7 +1,7 @@
 import { TRACKS } from '../track/TrackDefs'
 import { bindLangToggle, langToggleHtml, t } from '../i18n/i18n'
 import {
-  applyWatermarkTo,
+  crossfadeWatermark,
   pickWatermarkTrack,
   trackWatermarkHtml,
 } from './TrackWatermark'
@@ -16,6 +16,7 @@ export class Entry {
   private keyHandler: ((e: KeyboardEvent) => void) | null = null
   private pointerHandler: ((e: PointerEvent) => void) | null = null
   private watermarkTimer: number | null = null
+  private watermarkFadeTimer: number | null = null
   /** Poslední 2 watermark tratě — další nesmí být z nich. */
   private recentTrackIds: string[] = []
   private currentTrackId = TRACKS[0]!.id
@@ -77,24 +78,27 @@ export class Entry {
     this.stopWatermarkRotation()
     const holdMs = 8000
     const fadeMs = 2000
-    this.watermarkTimer = window.setInterval(() => {
-      const next = pickWatermarkTrack(this.recentTrackIds.slice(-2))
-      this.currentTrackId = next.id
-      this.recentTrackIds = [...this.recentTrackIds, next.id].slice(-2)
-      const el = this.root.querySelector('.track-watermark')
-      if (!el) return
-      el.classList.add('is-swap')
-      window.setTimeout(() => {
-        applyWatermarkTo(el, next)
-        el.classList.remove('is-swap')
-      }, fadeMs / 2)
-    }, holdMs)
+    const schedule = () => {
+      this.watermarkTimer = window.setTimeout(() => {
+        const next = pickWatermarkTrack(this.recentTrackIds.slice(-2))
+        this.currentTrackId = next.id
+        this.recentTrackIds = [...this.recentTrackIds, next.id].slice(-2)
+        const el = this.root.querySelector('.track-watermark')
+        if (el) crossfadeWatermark(el, next, fadeMs)
+        this.watermarkFadeTimer = window.setTimeout(schedule, fadeMs)
+      }, holdMs)
+    }
+    schedule()
   }
 
   private stopWatermarkRotation(): void {
     if (this.watermarkTimer !== null) {
-      window.clearInterval(this.watermarkTimer)
+      window.clearTimeout(this.watermarkTimer)
       this.watermarkTimer = null
+    }
+    if (this.watermarkFadeTimer !== null) {
+      window.clearTimeout(this.watermarkFadeTimer)
+      this.watermarkFadeTimer = null
     }
   }
 

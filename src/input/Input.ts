@@ -190,12 +190,25 @@ export class Input {
   }
 
   /** Na mobilu vždy null — triky nejsou. */
+  /** Krátký buffer — trik se nezkazí, když keydown přijde těsně před endFrame. */
+  private trickLetterBuf: string | null = null
+  private trickLetterFrames = 0
+
   get trickLetter(): string | null {
     if (this.mobile) return null
     for (const code of this.justPressed) {
       const letter = codeToTrickLetter(this.trickBindings, code)
-      if (letter) return letter
+      if (letter) {
+        this.trickLetterBuf = letter
+        this.trickLetterFrames = 3
+        return letter
+      }
     }
+    if (this.trickLetterFrames > 0) {
+      this.trickLetterFrames -= 1
+      return this.trickLetterBuf
+    }
+    this.trickLetterBuf = null
     return null
   }
 

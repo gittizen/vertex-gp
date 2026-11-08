@@ -3,16 +3,21 @@ import type { WorldKind } from '../track/TrackDefs'
 
 const textureCache = new Map<string, THREE.CanvasTexture>()
 
-/** Procedurální šum — asfalt, sníh, beton… aby to nebylo flat vektor. */
+/** Procedurální šum — tráva, omítka, terén. */
 export function noiseTexture(
   key: string,
   base: string,
-  opts: { size?: number; speck?: number; speckAlpha?: number; tint?: string } = {},
+  opts: {
+    size?: number
+    speck?: number
+    speckAlpha?: number
+    tint?: string
+  } = {},
 ): THREE.CanvasTexture {
   const cached = textureCache.get(key)
   if (cached) return cached
 
-  const size = opts.size ?? 128
+  const size = opts.size ?? 256
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -20,8 +25,8 @@ export function noiseTexture(
   ctx.fillStyle = base
   ctx.fillRect(0, 0, size, size)
 
-  const speck = opts.speck ?? 1800
-  const a = opts.speckAlpha ?? 0.08
+  const speck = opts.speck ?? 3200
+  const a = opts.speckAlpha ?? 0.1
   for (let i = 0; i < speck; i++) {
     const x = Math.random() * size
     const y = Math.random() * size
@@ -38,14 +43,34 @@ export function noiseTexture(
   const tex = new THREE.CanvasTexture(canvas)
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
   tex.needsUpdate = true
   textureCache.set(key, tex)
   return tex
 }
 
-/** Asfalt bez vlivu světel a fogu — sytá šedá zůstane čitelná. */
-export function matAsphalt(color: number = 0xa8a8b0): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({ color, fog: false, side: THREE.DoubleSide })
+export function shadeRoad(hex: number, mul: number): number {
+  const r = Math.min(255, Math.max(0, Math.round(((hex >> 16) & 255) * mul)))
+  const g = Math.min(255, Math.max(0, Math.round(((hex >> 8) & 255) * mul)))
+  const b = Math.min(255, Math.max(0, Math.round((hex & 255) * mul)))
+  return (r << 16) | (g << 8) | b
+}
+
+/**
+ * Tourmaline / v0.3 recept: MeshBasic + fog:false + solidní barva.
+ * Bez mapy a bez Lambertu — šedá zůstane šedá ve stínu i v mlze.
+ */
+export function matAsphalt(color: number = 0x9a9aa4): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    color,
+    fog: false,
+    side: THREE.DoubleSide,
+  })
+}
+
+/** Shoulder — o něco tmavší stejný odstín (pořád Basic, bez fleků). */
+export function matAsphaltShoulder(roadColor: number): THREE.MeshBasicMaterial {
+  return matAsphalt(shadeRoad(roadColor, 0.82))
 }
 
 export function matLambert(
@@ -61,23 +86,21 @@ export function matLambert(
   })
 }
 
-/**
- * Lak peklostroje — bez sdílené mapy (dispose tratě/preview ji nesmí zničit).
- * Jemný emisní nádech ve stylu menu neonu.
- */
+/** Lak — Phong s ostrým highlightem (hero car look bez env mapy). */
 export function matPaint(
   color: number,
   opts: { emissive?: number; emissiveIntensity?: number } = {},
-): THREE.MeshLambertMaterial {
+): THREE.MeshPhongMaterial {
   const em = opts.emissive ?? color
-  return new THREE.MeshLambertMaterial({
+  return new THREE.MeshPhongMaterial({
     color,
     emissive: new THREE.Color(em),
-    emissiveIntensity: opts.emissiveIntensity ?? 0.1,
+    emissiveIntensity: opts.emissiveIntensity ?? 0.14,
+    shininess: 110,
+    specular: new THREE.Color(0xb0b8c4),
   })
 }
 
-/** Neon / chrome akcenty. */
 export function matAccent(color: number, intensity = 0.55): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({
     color,
@@ -88,7 +111,13 @@ export function matAccent(color: number, intensity = 0.55): THREE.MeshLambertMat
 
 export function matPhong(
   color: number,
-  opts: { map?: THREE.Texture; shininess?: number; specular?: number; emissive?: number; emissiveIntensity?: number } = {},
+  opts: {
+    map?: THREE.Texture
+    shininess?: number
+    specular?: number
+    emissive?: number
+    emissiveIntensity?: number
+  } = {},
 ): THREE.MeshPhongMaterial {
   return new THREE.MeshPhongMaterial({
     color,
@@ -109,16 +138,20 @@ export function roadMap(world: WorldKind): THREE.CanvasTexture {
 
 export function groundMap(world: WorldKind): THREE.CanvasTexture {
   if (world === 'rally') {
-    const t = noiseTexture('ground-rally', '#3a4a32', { speck: 2800, speckAlpha: 0.07 })
+    const t = noiseTexture('ground-rally-hi', '#3a4a32', { size: 256, speck: 5000, speckAlpha: 0.09 })
     t.repeat.set(40, 40)
     return t
   }
   if (world === 'city') {
-    const t = noiseTexture('ground-city', '#16161e', { speck: 1600, speckAlpha: 0.06 })
+    const t = noiseTexture('ground-city-hi', '#16161e', { size: 256, speck: 2800, speckAlpha: 0.07 })
     t.repeat.set(30, 30)
     return t
   }
-  const t = noiseTexture('ground-dawn', '#2e3a24', { speck: 2400, speckAlpha: 0.1 })
+  const t = noiseTexture('ground-dawn-hi', '#2e3a24', { size: 256, speck: 4500, speckAlpha: 0.11 })
   t.repeat.set(36, 36)
   return t
+}
+
+export function plasterMap(seed: string, hex: string): THREE.CanvasTexture {
+  return noiseTexture(`plaster-${seed}`, hex, { size: 128, speck: 900, speckAlpha: 0.07 })
 }

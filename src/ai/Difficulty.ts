@@ -30,7 +30,7 @@ export const DIFFICULTIES: DifficultyDef[] = [
   {
     id: 'normal',
     label: 'Střední',
-    blurb: '1. +5 % · 2. stejně · 3. −20 %',
+    blurb: '1. −10 % času · 2. tvůj čas · 3. −20 % tempa',
     speedScale: 1,
   },
   {

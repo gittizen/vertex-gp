@@ -1,7 +1,19 @@
 import { DIFFICULTIES, type DifficultyId } from '../ai/Difficulty'
+import { exportPaceJson, getPaceSamples, pushPaceToWorkspace } from '../ai/PaceCalibration'
+import { allRecords } from '../freestyle/Records'
+import { resetChampionship } from '../race/Championship'
+import {
+  analyticsTable,
+  exportCommunityBundle,
+  importCommunityBundle,
+  loadCommunitySamples,
+  loadLearnSettings,
+  loadLearnedModel,
+  saveLearnSettings,
+} from '../ai/CommunityLearning'
 import { bindMuteToggle, muteToggleHtml, t } from '../i18n/i18n'
 import {
-  applyWatermarkTo,
+  crossfadeWatermark,
   pickWatermarkTrack,
   trackPreviewHtml,
   trackWatermarkHtml,
@@ -48,6 +60,11 @@ import {
   type ControlFeelValues,
   type MobileDriveScheme,
 } from '../input/ControlFeel'
+import {
+  DEFAULT_VISUAL,
+  VISUAL_QUALITIES,
+  type VisualQuality,
+} from '../render/VisualSettings'
 import {
   COMPETITIONS,
   loadCompetitionSettings,
@@ -120,6 +137,11 @@ export type MenuControlFeelApi = {
   set: (partial: Partial<ControlFeelValues>) => void
 }
 
+export type MenuVisualApi = {
+  get: () => import('../render/VisualSettings').VisualSettingsValues
+  set: (partial: Partial<import('../render/VisualSettings').VisualSettingsValues>) => void
+}
+
 export type MenuStartPayload = {
   mode: 'solo' | 'host' | 'join' | 'browse'
   trackId: string
@@ -154,6 +176,7 @@ type Screen =
   | 'difficulty'
   | 'manual'
   | 'competitions'
+  | 'aiLearn'
   | 'controls'
   | 'records'
   | 'online'
@@ -200,11 +223,13 @@ export class Menu {
   private localNetId: string | null = null
   private audioApi: MenuAudioApi | null = null
   private atmosphereApi: MenuAtmosphereApi | null = null
+  private visualApi: MenuVisualApi | null = null
   private raceApi: MenuRaceApi | null = null
   private controlFeelApi: MenuControlFeelApi | null = null
   private watermarkTrackId = TRACKS[0]!.id
   private recentWatermarkIds: string[] = []
   private watermarkTimer: number | null = null
+  private watermarkFadeTimer: number | null = null
   private vehiclePreview: VehiclePreview | null = null
   /** Leaderboard filtr tratě ('' = vše). */
   private lbTrackId = ''
@@ -237,6 +262,10 @@ export class Menu {
 
   setAtmosphereApi(api: MenuAtmosphereApi): void {
     this.atmosphereApi = api
+  }
+
+  setVisualApi(api: MenuVisualApi): void {
+    this.visualApi = api
   }
 
   setRaceApi(api: MenuRaceApi): void {
@@ -389,8 +418,14 @@ export class Menu {
             <p class="burnt-letter-from" id="burnt-letter-title">${t('menu.thanksAuthor')}</p>
             <p class="burnt-letter-to">${t('menu.thanksTo')}</p>
           </header>
-          <p class="burnt-letter-body">${t('menu.thanksBody')}</p>
-          <p class="burnt-letter-lorem">${t('menu.thanksLorem')}</p>
+          <div class="burnt-letter-scroll">
+            <p class="burnt-letter-body">${t('menu.thanksIntro')}</p>
+            <p class="burnt-letter-body">${t('menu.thanksStory')}</p>
+            <p class="burnt-letter-body">${t('menu.thanksFeatures')}</p>
+            <p class="burnt-letter-body">${t('menu.thanksAi')}</p>
+            <p class="burnt-letter-body">${t('menu.thanksPlay')}</p>
+            <p class="burnt-letter-sign">${t('menu.thanksSign')}</p>
+          </div>
           <button type="button" class="burnt-letter-close" data-burnt-close>${t('menu.thanksClose')}</button>
         </article>
       </div>
@@ -459,6 +494,7 @@ export class Menu {
       this.screen === 'difficulty' ||
       this.screen === 'manual' ||
       this.screen === 'competitions' ||
+      this.screen === 'aiLearn' ||
       this.screen === 'controls'
     ) {
       this.screen = 'settings'
@@ -470,18 +506,19 @@ export class Menu {
       this.render()
       return 'stay'
     }
+    if (this.screen === 'vehicles') {
+      if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return 'stay'
+      this.clearScooterTrap()
+      this.screen = 'home'
+      this.render()
+      return 'stay'
+    }
     if (this.screen === 'online') {
       this.screen = 'raceMode'
       this.render()
       return 'stay'
     }
     if (this.screen === 'raceMode' || this.screen === 'records') {
-      this.screen = 'home'
-      this.render()
-      return 'stay'
-    }
-    if (this.screen === 'vehicles' && this.selectedVehicle === 'scooter') {
-      if (!this.tryLeaveScooter()) return 'stay'
       this.screen = 'home'
       this.render()
       return 'stay'
@@ -506,24 +543,27 @@ export class Menu {
     this.stopWatermarkRotation()
     const holdMs = 8000
     const fadeMs = 2000
-    this.watermarkTimer = window.setInterval(() => {
-      const next = pickWatermarkTrack(this.recentWatermarkIds.slice(-2))
-      this.watermarkTrackId = next.id
-      this.recentWatermarkIds = [...this.recentWatermarkIds, next.id].slice(-2)
-      const el = this.root.querySelector('.track-watermark')
-      if (!el) return
-      el.classList.add('is-swap')
-      window.setTimeout(() => {
-        applyWatermarkTo(el, next)
-        el.classList.remove('is-swap')
-      }, fadeMs / 2)
-    }, holdMs)
+    const schedule = () => {
+      this.watermarkTimer = window.setTimeout(() => {
+        const next = pickWatermarkTrack(this.recentWatermarkIds.slice(-2))
+        this.watermarkTrackId = next.id
+        this.recentWatermarkIds = [...this.recentWatermarkIds, next.id].slice(-2)
+        const el = this.root.querySelector('.track-watermark')
+        if (el) crossfadeWatermark(el, next, fadeMs)
+        this.watermarkFadeTimer = window.setTimeout(schedule, fadeMs)
+      }, holdMs)
+    }
+    schedule()
   }
 
   private stopWatermarkRotation(): void {
     if (this.watermarkTimer !== null) {
-      window.clearInterval(this.watermarkTimer)
+      window.clearTimeout(this.watermarkTimer)
       this.watermarkTimer = null
+    }
+    if (this.watermarkFadeTimer !== null) {
+      window.clearTimeout(this.watermarkFadeTimer)
+      this.watermarkFadeTimer = null
     }
   }
 
@@ -615,10 +655,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel gta-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.raceModeEyebrow')}</p>
-            <h1>${t('menu.raceModeTitle')}</h1>
-          </header>
           <div class="race-mode-layout">
             <div class="race-mode-list">
               ${modes
@@ -738,10 +774,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.tracksEyebrow')}</p>
-            <h1>${t('menu.tracksTitle')}</h1>
-          </header>
           <div class="tracks-layout">
             <div class="tracks-list">${TRACKS.map((tr) => this.trackCard(tr)).join('')}</div>
             <div class="tracks-preview-pane">
@@ -765,7 +797,10 @@ export class Menu {
               }
             </div>
           </div>
-          <button type="button" class="btn-ghost" data-back style="margin-top:14px">${t('menu.back')}</button>
+          <div class="menu-flow-actions">
+            <button type="button" class="menu-start" data-next>${t('menu.next')}</button>
+            <p class="menu-esc-hint">${t('menu.escBack')}</p>
+          </div>
         </div>
       `
       this.bindMuteBar()
@@ -776,20 +811,35 @@ export class Menu {
           this.render()
         })
       })
-      this.bindBack('home')
+      this.root.querySelector('[data-next]')?.addEventListener('click', () => {
+        this.screen = 'home'
+        this.render()
+      })
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (!this.visible || this.screen !== 'tracks') return
+          if (e.code !== 'Enter' && e.code !== 'NumpadEnter') return
+          e.preventDefault()
+          this.screen = 'home'
+          this.render()
+        },
+        { signal },
+      )
       return
     }
 
     if (this.screen === 'vehicles') {
       const kind = this.selectedVehicle
+      const confirmVehicle = () => {
+        if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
+        this.screen = 'tuning'
+        this.render()
+      }
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.vehiclesEyebrow')}</p>
-            <h1>${t('menu.vehiclesTitle')}</h1>
-          </header>
           <div class="tracks-layout vehicles-layout">
             <div class="tracks-list">
               ${VEHICLE_KINDS.map((k) => {
@@ -815,17 +865,10 @@ export class Menu {
                   <input type="color" id="color-rgb" value="${this.selectedColor < 0 ? '#c62828' : '#' + this.selectedColor.toString(16).padStart(6, '0')}" />
                 </label>
               </div>
-              <p class="tune-rules">${kind === 'bike' ? t('menu.wheelPick') : kind === 'scooter' ? t('menu.neonNone') : t('menu.neonPick')}</p>
               ${
                 kind === 'scooter'
                   ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
-                  : `<div class="color-grid">
-                ${this.colorSwatchHtml('neon', NEON_NONE, this.selectedNeon)}
-                ${NEON_COLOR_CHOICES.map((c) => this.colorSwatchHtml('neon', c, this.selectedNeon)).join('')}
-                <label class="color-rgb" title="${t('menu.neonRgb')}">
-                  <input type="color" id="neon-rgb" value="${this.selectedNeon < 0 ? '#ff2bd6' : '#' + this.selectedNeon.toString(16).padStart(6, '0')}" />
-                </label>
-              </div>`
+                  : ''
               }
               <p class="vehicle-lore">${t(`vehicle.${kind}.invented`)}</p>
               <p class="vehicle-lore">${t(`vehicle.${kind}.first`)}</p>
@@ -833,8 +876,10 @@ export class Menu {
               <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>
             </div>
           </div>
-          <button type="button" class="menu-start" data-go-tuning style="margin-top:14px">${t('menu.tuning')}</button>
-          <button type="button" class="btn-ghost" data-back style="margin-top:8px">${t('menu.back')}</button>
+          <div class="menu-flow-actions">
+            <button type="button" class="menu-start" data-next>${t('menu.next')}</button>
+            <p class="menu-esc-hint">${t('menu.escBack')}</p>
+          </div>
         </div>
         ${
           this.scooterPopup
@@ -848,17 +893,13 @@ export class Menu {
         }
       `
       this.bindMuteBar()
+      this.root.querySelector('[data-next]')?.addEventListener('click', () => confirmVehicle())
       this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
         this.scooterPopup = null
         if (this.scooterForceSkate || this.scooterLeaveAttempts >= SCOOTER_INSULT_MAX) {
           this.selectedVehicle = 'skate'
           this.clearScooterTrap()
         }
-        this.render()
-      })
-      this.root.querySelector('[data-go-tuning]')?.addEventListener('click', () => {
-        if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
-        this.screen = 'tuning'
         this.render()
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-vehicle]').forEach((btn) => {
@@ -883,11 +924,6 @@ export class Menu {
           b.classList.toggle('active', Number(b.dataset.color) === this.selectedColor)
         })
       }
-      const syncNeonActive = () => {
-        this.root.querySelectorAll<HTMLButtonElement>('[data-neon]').forEach((b) => {
-          b.classList.toggle('active', Number(b.dataset.neon) === this.selectedNeon)
-        })
-      }
       this.root.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.selectedColor = Number(btn.dataset.color)
@@ -900,6 +936,86 @@ export class Menu {
           }
         })
       })
+      this.root.querySelector<HTMLInputElement>('#color-rgb')?.addEventListener('input', (e) => {
+        const el = e.target as HTMLInputElement
+        this.selectedColor = parseInt(el.value.slice(1), 16)
+        this.vehiclePreview?.setColor(this.selectedColor)
+        syncColorActive()
+      })
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (!this.visible || this.screen !== 'vehicles') return
+          if (this.root.querySelector('.scooter-modal')) return
+          if (e.code !== 'Enter' && e.code !== 'NumpadEnter') return
+          e.preventDefault()
+          confirmVehicle()
+        },
+        { signal },
+      )
+      const canvas = this.root.querySelector<HTMLCanvasElement>('#vehicle-preview')
+      if (canvas) {
+        this.vehiclePreview = new VehiclePreview(canvas)
+        this.vehiclePreview.setVehicle(kind, this.selectedColor, this.selectedNeon)
+      }
+      return
+    }
+
+    if (this.screen === 'tuning') {
+      const kind = this.selectedVehicle
+      const used = tuningSum(this.tuning)
+      const confirmTuning = () => {
+        this.screen = 'home'
+        this.render()
+      }
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-panel menu-tuning vehicles-tune">
+          <p class="tune-rules menu-budget-line">${this.vehicleLabel(kind)} · ${t('menu.budget')} <span class="budget-pill">${used} / ${TUNING_BUDGET} ${t('menu.points')}</span></p>
+          <div class="tracks-layout vehicles-layout">
+            <div class="tuning-side">
+              <p class="tune-rules">${t('menu.tuneRules')}</p>
+              <div class="tune-stack">
+                ${TUNE_KEYS.map((key) => this.slider(key, t(`menu.${key}`), this.tuning[key])).join('')}
+              </div>
+              <p class="tune-hint" id="tune-hint">${tuningHint(this.tuning)}</p>
+            </div>
+            <div class="tracks-preview-pane vehicle-stage">
+              <canvas id="vehicle-preview" class="vehicle-preview-canvas"></canvas>
+              <p class="tune-help">${t('menu.vehicleDrag')}</p>
+              <div class="track-preview-meta">
+                <strong>${this.vehicleLabel(kind)}</strong>
+                <span>${t(`vehicle.${kind}.max`)}</span>
+              </div>
+              <p class="tune-rules">${kind === 'bike' ? t('menu.wheelPick') : kind === 'scooter' ? t('menu.neonNone') : t('menu.neonPick')}</p>
+              ${
+                kind === 'scooter'
+                  ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
+                  : `<div class="color-grid">
+                ${this.colorSwatchHtml('neon', NEON_NONE, this.selectedNeon)}
+                ${NEON_COLOR_CHOICES.map((c) => this.colorSwatchHtml('neon', c, this.selectedNeon)).join('')}
+                <label class="color-rgb" title="${t('menu.neonRgb')}">
+                  <input type="color" id="neon-rgb" value="${this.selectedNeon < 0 ? '#ff2bd6' : '#' + this.selectedNeon.toString(16).padStart(6, '0')}" />
+                </label>
+              </div>`
+              }
+            </div>
+          </div>
+          <div class="menu-flow-actions">
+            <button type="button" class="menu-start" data-next>${t('menu.next')}</button>
+            <p class="menu-esc-hint">${t('menu.escBack')}</p>
+          </div>
+        </div>
+      `
+      this.bindMuteBar()
+      this.bindTuning()
+      this.root.querySelector('[data-next]')?.addEventListener('click', () => confirmTuning())
+      const syncNeonActive = () => {
+        this.root.querySelectorAll<HTMLButtonElement>('[data-neon]').forEach((b) => {
+          b.classList.toggle('active', Number(b.dataset.neon) === this.selectedNeon)
+        })
+      }
       this.root.querySelectorAll<HTMLButtonElement>('[data-neon]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.selectedNeon = Number(btn.dataset.neon)
@@ -912,23 +1028,24 @@ export class Menu {
           }
         })
       })
-      this.root.querySelector<HTMLInputElement>('#color-rgb')?.addEventListener('input', (e) => {
-        const el = e.target as HTMLInputElement
-        this.selectedColor = parseInt(el.value.slice(1), 16)
-        this.vehiclePreview?.setColor(this.selectedColor)
-        syncColorActive()
-      })
       this.root.querySelector<HTMLInputElement>('#neon-rgb')?.addEventListener('input', (e) => {
         const el = e.target as HTMLInputElement
         this.selectedNeon = parseInt(el.value.slice(1), 16)
         this.vehiclePreview?.setNeon(this.selectedNeon)
         syncNeonActive()
       })
-      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
-        if (!this.tryLeaveScooter()) return
-        this.screen = 'home'
-        this.render()
-      })
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (!this.visible || this.screen !== 'tuning') return
+          if (e.code !== 'Enter' && e.code !== 'NumpadEnter') return
+          const tag = (e.target as HTMLElement | null)?.tagName
+          if (tag === 'INPUT' || tag === 'TEXTAREA') return
+          e.preventDefault()
+          confirmTuning()
+        },
+        { signal },
+      )
       const canvas = this.root.querySelector<HTMLCanvasElement>('#vehicle-preview')
       if (canvas) {
         this.vehiclePreview = new VehiclePreview(canvas)
@@ -937,47 +1054,17 @@ export class Menu {
       return
     }
 
-    if (this.screen === 'tuning') {
-      const used = tuningSum(this.tuning)
-      this.root.innerHTML = `
-        ${wm}
-        ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-tuning">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.tuningEyebrow')}</p>
-            <h1>${t('menu.tuningTitle')}</h1>
-            <p class="menu-sub">${t('menu.budget')} <span class="budget-pill">${used} / ${TUNING_BUDGET} ${t('menu.points')}</span></p>
-          </header>
-          <div class="tuning-center">
-            <p class="tune-rules">${t('menu.tuneRules')}</p>
-            <div class="tune-stack">
-              ${TUNE_KEYS.map((key) => this.slider(key, t(`menu.${key}`), this.tuning[key])).join('')}
-            </div>
-            <p class="tune-hint" id="tune-hint">${tuningHint(this.tuning)}</p>
-            <button type="button" class="btn-ghost" data-back style="margin-top:14px">${t('menu.back')}</button>
-          </div>
-        </div>
-      `
-      this.bindMuteBar()
-      this.bindTuning()
-      this.bindBack('vehicles')
-      return
-    }
-
     if (this.screen === 'settings') {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.settingsEyebrow')}</p>
-            <h1>${t('menu.settingsTitle')}</h1>
-          </header>
           <div class="home-actions">
             <button type="button" class="btn-ghost home-panel" data-go="audio">${t('menu.settingsAudio')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="atmosphere">${t('menu.settingsAtmosphere')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="difficulty">${t('menu.difficulty')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="competitions">${t('menu.settingsCompetitions')}</button>
+            <button type="button" class="btn-ghost home-panel" data-go="aiLearn">${t('menu.settingsAiLearn')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="controls">${t('menu.settingsControls')}</button>
             ${
               isMobileClient()
@@ -1006,10 +1093,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.compEyebrow')}</p>
-            <h1>${t('menu.compTitle')}</h1>
-          </header>
           <p class="tune-rules">${t('menu.compBlurb')}</p>
           <div class="track-grid">
             ${COMPETITIONS.map((c) => {
@@ -1029,9 +1112,77 @@ export class Menu {
           const id = (btn.dataset.comp || 'none') as CompetitionId
           this.competition = { id }
           saveCompetitionSettings(this.competition)
+          if (id === 'championship') resetChampionship()
           this.render()
         })
       })
+      return
+    }
+
+    if (this.screen === 'aiLearn') {
+      const learn = loadLearnSettings()
+      const samples = loadCommunitySamples()
+      const model = loadLearnedModel()
+      const rows = analyticsTable()
+      const tableRows = rows
+        .slice(0, 40)
+        .map(
+          (r) =>
+            `<tr>
+              <td>${this.escape(r.trackId)}</td>
+              <td>${this.escape(r.vehicle)}</td>
+              <td>${this.escape(r.difficulty)}</td>
+              <td>${r.n}</td>
+              <td>${r.players}</td>
+              <td>${fmtMs(r.medianMs)}</td>
+              <td>${fmtMs(r.learnedPaceMs)}</td>
+            </tr>`,
+        )
+        .join('')
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-panel">
+          <p class="tune-rules">${t('menu.aiLearnBlurb')}</p>
+          <p class="tune-help">${t('menu.aiLearnStats', { n: samples.length, c: model.cells.length })}</p>
+          <div class="dir-grid" style="margin:12px 0">
+            <button type="button" class="track-card ${learn.enabled ? 'active' : ''}" data-learn-enabled>
+              <strong>${t('menu.aiLearnCollect')}</strong>
+              <span>${learn.enabled ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+            </button>
+            <button type="button" class="track-card ${learn.applyToAi ? 'active' : ''}" data-learn-apply>
+              <strong>${t('menu.aiLearnApply')}</strong>
+              <span>${learn.applyToAi ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+            </button>
+          </div>
+          <div class="dir-grid" style="margin-bottom:12px">
+            <button type="button" class="menu-start" data-learn-export>${t('menu.aiLearnExport')}</button>
+            <button type="button" class="btn-ghost" data-learn-import>${t('menu.aiLearnImport')}</button>
+          </div>
+          <input type="file" accept="application/json,.json" data-learn-file hidden />
+          <textarea class="text-input" data-learn-box readonly rows="5" style="width:100%;font-size:11px" placeholder="${t('menu.aiLearnPh')}"></textarea>
+          <p class="tune-rules" data-learn-status style="margin-top:8px"></p>
+          <div style="overflow:auto;max-height:240px;margin-top:12px">
+            <table class="ai-learn-table">
+              <thead>
+                <tr>
+                  <th>${t('menu.aiLearnColTrack')}</th>
+                  <th>${t('menu.aiLearnColVeh')}</th>
+                  <th>${t('menu.aiLearnColDiff')}</th>
+                  <th>N</th>
+                  <th>${t('menu.aiLearnColPlayers')}</th>
+                  <th>${t('menu.aiLearnColMedian')}</th>
+                  <th>${t('menu.aiLearnColTarget')}</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows || `<tr><td colspan="7">${t('menu.aiLearnEmpty')}</td></tr>`}</tbody>
+            </table>
+          </div>
+          ${this.settingsEscHint()}
+        </div>
+      `
+      this.bindMuteBar()
+      this.bindAiLearn()
       return
     }
 
@@ -1089,9 +1240,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel menu-controls">
-          <header class="menu-header">
-            <h1>${t('menu.ctrlTitle')}</h1>
-          </header>
           <p class="tune-rules">${onPhone ? t('menu.ctrlBlurbMobile') : t('menu.ctrlBlurb')}</p>
           ${
             onPhone
@@ -1136,6 +1284,10 @@ export class Menu {
                 <button type="button" class="track-card ${feel.stabilityAssist ? 'active' : ''}" data-feel-stability>
                   <strong>${t('menu.ctrlStability')}</strong>
                   <span>${feel.stabilityAssist ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </button>
+                <button type="button" class="track-card ${feel.driftMode ? 'active' : ''}" data-feel-drift>
+                  <strong>${t('menu.ctrlDrift')}</strong>
+                  <span>${feel.driftMode ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
                 </button>
                 <button type="button" class="track-card ${raceFeel.skipCountdown ? 'active' : ''}" data-feel-skip-cd>
                   <strong>${t('menu.ctrlSkipCountdown')}</strong>
@@ -1291,10 +1443,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.recEyebrow')}</p>
-            <h1>${t('menu.leaderboard')}</h1>
-          </header>
           <p class="tune-rules">${t('menu.lbBlurb')}</p>
           <div class="lb-tabs">${tabs}</div>
           <ol class="records-list lb-list">${rows || `<li>${t('menu.recEmpty')}</li>`}</ol>
@@ -1324,10 +1472,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.manualEyebrow')}</p>
-            <h1>${t('menu.manualTitle')}</h1>
-          </header>
           <p class="tune-rules">${t('menu.manualBlurb')}</p>
           <div class="manual-grid">
             <button type="button" class="track-card ${tx === 'auto' ? 'active' : ''}" data-tx="auto">
@@ -1376,10 +1520,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.diffEyebrow')}</p>
-            <h1>${t('menu.diffTitle')}</h1>
-          </header>
           <div class="track-grid">
             ${DIFFICULTIES.map((d) => {
               const active = d.id === this.selectedDifficulty ? 'active' : ''
@@ -1448,10 +1588,6 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.audioEyebrow')}</p>
-            <h1>${t('menu.audioTitle')}</h1>
-          </header>
           <div class="tune-grid">
             ${this.audioSlider('master', t('menu.audioMaster'), audio.master)}
             ${this.audioSlider('music', t('menu.audioMusic'), audio.music)}
@@ -1476,6 +1612,7 @@ export class Menu {
 
     if (this.screen === 'atmosphere') {
       const atm = this.atmosphereApi?.get() ?? { ...DEFAULT_ATMOSPHERE }
+      const vis = this.visualApi?.get() ?? { ...DEFAULT_VISUAL }
       const fogLevels: FogLevel[] = ['low', 'normal', 'high']
       const decorLevels: DecorLevel[] = ['off', 'simple', 'rich']
       const lightLevels: LightLevel[] = ['dim', 'normal', 'bright', 'night']
@@ -1528,10 +1665,31 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.atmEyebrow')}</p>
-            <h1>${t('menu.atmTitle')}</h1>
-          </header>
+          <p class="tune-rules">${t('menu.visualQuality')}</p>
+          <p class="tune-rules">${t('menu.visualQualityBlurb')}</p>
+          <div class="track-grid">
+            ${VISUAL_QUALITIES.map((q) => {
+              const active = q === vis.quality ? 'active' : ''
+              return `<button type="button" class="track-card ${active}" data-visual-q="${q}">
+                <strong>${t(`menu.visual.${q}`)}</strong>
+                <span>${t(`menu.visual.${q}.blurb`)}</span>
+              </button>`
+            }).join('')}
+          </div>
+          <div class="dir-grid" style="margin:10px 0 16px">
+            <button type="button" class="track-card ${vis.bloom ? 'active' : ''}" data-visual-bloom>
+              <strong>${t('menu.visualBloom')}</strong>
+              <span>${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+            </button>
+            <button type="button" class="track-card ${vis.shadows ? 'active' : ''}" data-visual-shadows>
+              <strong>${t('menu.visualShadows')}</strong>
+              <span>${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+            </button>
+            <button type="button" class="track-card ${vis.rearMirror ? 'active' : ''}" data-visual-mirror>
+              <strong>${t('menu.visualMirror')}</strong>
+              <span>${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+            </button>
+          </div>
           <p class="tune-rules">${t('menu.atmTone')}</p>
           <div class="track-grid">
             ${toneCards}
@@ -1570,11 +1728,17 @@ export class Menu {
               })
               .join('')}
           </div>
+          <p class="tune-rules" style="margin-top:16px">${t('menu.paceExport')}</p>
+          <p class="tune-rules">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
+          <button type="button" class="menu-start" data-pace-export>${t('menu.paceExportBtn')}</button>
+          <p class="tune-rules" data-pace-status style="margin-top:8px"></p>
+          <textarea class="text-input" data-pace-box readonly rows="6" style="width:100%;margin-top:10px;font-size:12px;opacity:0.9" placeholder="${t('menu.paceExportPh')}"></textarea>
           ${this.settingsEscHint()}
         </div>
       `
       this.bindMuteBar()
       this.bindAtmosphere()
+      this.bindVisual()
       return
     }
 
@@ -1616,12 +1780,8 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel menu-online">
-          <header class="menu-header">
-            <p class="menu-eyebrow">${t('menu.onlineEyebrow')}</p>
-            <h1 class="online-title">${t('menu.onlineTitle')}</h1>
-            <p class="menu-sub">${t('menu.onlineSub')}</p>
-            <p class="menu-sub online-status">${statusLine}</p>
-          </header>
+          <p class="menu-sub">${t('menu.onlineSub')}</p>
+          <p class="menu-sub online-status">${statusLine}</p>
           <section class="menu-section">
             <h2>${t('menu.name')}</h2>
             <input class="text-input" id="player-name" maxlength="18" value="${this.escape(this.playerName)}" />
@@ -1850,11 +2010,7 @@ export class Menu {
       ${wm}
       ${this.muteBar()}
       <div class="menu-shell menu-panel">
-        <header class="menu-header">
-          <p class="menu-eyebrow">${t('menu.lobbyEyebrow')}</p>
-          <h1>${t('menu.room')} ${room.code}</h1>
-          <p class="menu-sub">${room.players.length}/${room.maxPlayers || 4} ${t('menu.playersOf')} · ${this.escape(trackLabel)} · ${room.laps} ${t('menu.onlineLaps').toLowerCase()}</p>
-        </header>
+        <p class="menu-sub">${t('menu.room')} ${room.code} · ${room.players.length}/${room.maxPlayers || 4} ${t('menu.playersOf')} · ${this.escape(trackLabel)} · ${room.laps} ${t('menu.onlineLaps').toLowerCase()}</p>
         <section class="menu-section">
           <h2>${t('menu.players')}</h2>
           <ol class="lobby-list">${players}</ol>
@@ -1984,7 +2140,7 @@ export class Menu {
         <strong>${this.escape(this.trackName(tr))}</strong>
         <span>${blurb === blurbKey ? tr.blurb : blurb}</span>
         ${tr.sandbox ? `<span class="track-card-est">${t('menu.sandboxTag')}</span>` : ''}
-        ${tr.drift ? `<span class="track-card-est">${t('menu.driftTag')}</span>` : ''}
+        ${tr.id === 'kasarny' ? `<span class="track-card-est">${t('menu.skateTag')}</span>` : ''}
       </button>
     `
   }
@@ -2075,6 +2231,11 @@ export class Menu {
         this.controlFeelApi?.set({ stabilityAssist: !cur.stabilityAssist })
         this.render()
       })
+    this.root.querySelector<HTMLButtonElement>('[data-feel-drift]')?.addEventListener('click', () => {
+      const cur = this.controlFeelApi?.get() ?? DEFAULT_CONTROL_FEEL
+      this.controlFeelApi?.set({ driftMode: !cur.driftMode })
+      this.render()
+    })
     this.root.querySelector<HTMLButtonElement>('[data-feel-skip-cd]')?.addEventListener('click', () => {
       const cur = this.raceApi?.get() ?? DEFAULT_RACE
       this.raceApi?.set({ skipCountdown: !cur.skipCountdown })
@@ -2095,6 +2256,32 @@ export class Menu {
         this.controlFeelApi?.set({ mobileScheme: scheme })
         this.render()
       })
+    })
+  }
+
+  private bindVisual(): void {
+    this.root.querySelectorAll<HTMLButtonElement>('[data-visual-q]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const q = btn.dataset.visualQ as VisualQuality
+        if (!VISUAL_QUALITIES.includes(q)) return
+        this.visualApi?.set({ quality: q })
+        this.render()
+      })
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-visual-bloom]')?.addEventListener('click', () => {
+      const cur = this.visualApi?.get() ?? DEFAULT_VISUAL
+      this.visualApi?.set({ bloom: !cur.bloom })
+      this.render()
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-visual-shadows]')?.addEventListener('click', () => {
+      const cur = this.visualApi?.get() ?? DEFAULT_VISUAL
+      this.visualApi?.set({ shadows: !cur.shadows })
+      this.render()
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-visual-mirror]')?.addEventListener('click', () => {
+      const cur = this.visualApi?.get() ?? DEFAULT_VISUAL
+      this.visualApi?.set({ rearMirror: !cur.rearMirror })
+      this.render()
     })
   }
 
@@ -2158,6 +2345,123 @@ export class Menu {
         this.render()
       })
     })
+    this.root.querySelector<HTMLButtonElement>('[data-pace-export]')?.addEventListener('click', () => {
+      void this.exportPaceCalibration()
+    })
+  }
+
+  private bindAiLearn(): void {
+    this.root.querySelector<HTMLButtonElement>('[data-learn-enabled]')?.addEventListener('click', () => {
+      const cur = loadLearnSettings()
+      saveLearnSettings({ ...cur, enabled: !cur.enabled })
+      this.render()
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-learn-apply]')?.addEventListener('click', () => {
+      const cur = loadLearnSettings()
+      saveLearnSettings({ ...cur, applyToAi: !cur.applyToAi })
+      this.render()
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-learn-export]')?.addEventListener('click', () => {
+      const json = exportCommunityBundle()
+      const box = this.root.querySelector<HTMLTextAreaElement>('[data-learn-box]')
+      const status = this.root.querySelector<HTMLElement>('[data-learn-status]')
+      if (box) {
+        box.value = json
+        box.focus()
+        box.select()
+      }
+      void navigator.clipboard.writeText(json).catch(() => {})
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'community-learn.json'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      if (status) status.textContent = t('menu.aiLearnExported')
+    })
+    const fileInput = this.root.querySelector<HTMLInputElement>('[data-learn-file]')
+    this.root.querySelector<HTMLButtonElement>('[data-learn-import]')?.addEventListener('click', () => {
+      fileInput?.click()
+    })
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const text = String(reader.result || '')
+        const res = importCommunityBundle(text)
+        const status = this.root.querySelector<HTMLElement>('[data-learn-status]')
+        if (status) {
+          status.textContent = res.ok
+            ? t('menu.aiLearnImported', { n: res.added })
+            : t('menu.aiLearnImportFail')
+        }
+        this.render()
+      }
+      reader.readAsText(file)
+      fileInput.value = ''
+    })
+  }
+
+  /** Bez konzole: box + clipboard + soubor + Vite ingest. */
+  private async exportPaceCalibration(): Promise<void> {
+    const status = this.root.querySelector<HTMLElement>('[data-pace-status]')
+    const box = this.root.querySelector<HTMLTextAreaElement>('[data-pace-box]')
+    const samples = getPaceSamples()
+    const records = allRecords()
+    const payload = {
+      samples,
+      records: records.map((e) => ({
+        trackId: e.trackId,
+        vehicle: e.vehicle,
+        bestTimeMs: e.bestTimeMs,
+        player: e.player,
+        at: e.at,
+      })),
+      rawPace: exportPaceJson(),
+    }
+    const json = JSON.stringify(payload, null, 2)
+    if (box) {
+      box.value = json
+      box.focus()
+      box.select()
+    }
+    if (samples.length === 0 && records.length === 0) {
+      if (status) status.textContent = t('menu.paceExportEmpty')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(json)
+    } catch {
+      /* ignore */
+    }
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'pace-cal.json'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    const pushed = await pushPaceToWorkspace().catch(() => false)
+    // I když pace samples chybí, pošli celý payload
+    if (!pushed) {
+      await fetch('/__klec-pace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: json,
+      }).catch(() => null)
+    }
+    if (status) {
+      status.textContent = t('menu.paceExportReady', {
+        n: samples.length,
+        r: records.length,
+      })
+    }
   }
 
   private trackLabel(): string {
@@ -2180,4 +2484,12 @@ export class Menu {
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;')
   }
+}
+
+function fmtMs(ms: number): string {
+  if (!(ms > 0)) return '—'
+  const s = Math.round(ms / 1000)
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}:${r.toString().padStart(2, '0')}`
 }
