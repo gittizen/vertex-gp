@@ -96,7 +96,7 @@ export class Game {
   private lastTrackId = TRACKS[0].id
   private lastVehicle: VehicleKind = TRACKS[0].vehicle
   private lastColor = PLAYER_COLORS[0]!
-  private lastNeon = 0xff2bd6
+  private lastNeon = 0x7a8fa8
   private lastTuning: PlayerTuningValues = { ...DEFAULT_PLAYER_TUNING }
   private lastDifficulty: DifficultyDef = getDifficulty('normal')
   private multiplayer = false
@@ -257,6 +257,7 @@ export class Game {
           : aiProfileForKind('street', i)
       const v = new Vehicle(info, tuning, 'street')
       this.scene.add(v.mesh)
+      v.setCastShadow(this.visual.shadows)
       this.vehicles.push(v)
       this.ai.set(v, new AiDriver(i, this.lastDifficulty))
     }
@@ -278,7 +279,7 @@ export class Game {
         trackId: TRACKS[0].id,
         vehicle: TRACKS[0].vehicle,
         color: PLAYER_COLORS[0]!,
-        neon: 0xff2bd6,
+        neon: 0x7a8fa8,
         tuning: { ...DEFAULT_PLAYER_TUNING },
         name: t('menu.defaultName'),
         difficulty: 'normal',
@@ -828,7 +829,7 @@ export class Game {
         })
         v.physics.transmission = 'auto'
         v.physics.driftMode = false
-        v.setNeon(0x2de2e6)
+        v.setNeon(0x6a849e)
       }
       v.setColor(v.info.color)
     }
@@ -843,18 +844,22 @@ export class Game {
     this.scene.background = createSkyGradientTexture(def)
     if (prevBg instanceof THREE.Texture && !prevBg.userData.sharedSky) prevBg.dispose()
     const scale = fogDistanceScale(this.atmosphere.fog)
-    // Lineární fog je levnější než Exp2
-    if (def.world === 'city') {
-      this.scene.fog = new THREE.Fog(fog, 35 * scale, 220 * scale)
-    } else if (def.id === 'mexiku') {
-      // otevřená etapa — mlha by celou scénu vybělila
+    // Exp2 = přirozená atmosférická perspektiva (reálný vzduch), ne „bílá stěna“
+    if (def.id === 'mexiku') {
       this.scene.fog = null
-    } else if (def.world === 'rally' || def.world === 'climb') {
-      this.scene.fog = new THREE.Fog(fog, 90 * scale, 420 * scale)
+    } else if (def.world === 'city') {
+      // Slabší noc — silnice nesmí zmizet v černé
+      this.scene.fog = new THREE.FogExp2(fog, 0.0024 / scale)
+    } else if (def.world === 'rally') {
+      this.scene.fog = new THREE.FogExp2(fog, 0.0014 / scale)
+    } else if (def.world === 'climb') {
+      this.scene.fog = new THREE.FogExp2(fog, 0.0017 / scale)
     } else if (def.world === 'plaza') {
-      this.scene.fog = new THREE.Fog(fog, 80 * scale, 380 * scale)
+      this.scene.fog = new THREE.FogExp2(fog, 0.0015 / scale)
+    } else if (def.id === 'klecany') {
+      this.scene.fog = new THREE.FogExp2(fog, 0.0016 / scale)
     } else {
-      this.scene.fog = new THREE.Fog(fog, 55 * scale, 340 * scale)
+      this.scene.fog = new THREE.FogExp2(fog, 0.0019 / scale)
     }
 
     const hemi = this.scene.getObjectByName('hemi') as THREE.HemisphereLight | undefined
@@ -862,67 +867,67 @@ export class Game {
     const ambient = this.scene.getObjectByName('ambient') as THREE.AmbientLight | undefined
     const rim = this.scene.getObjectByName('rim') as THREE.DirectionalLight | undefined
 
-    // Per-world mood — vyšší fill, ať Lambert scéna drží vedle Basic asfaltu
-    let ambientBase = 0.42
-    let hemiBase = 0.85
-    let sunBase = 1.15
-    let rimBase = 0.35
+    // Přirozené denní světlo (sun + skylight + bounce), ne arcade tint
+    let ambientBase = 0.28
+    let hemiBase = 0.62
+    let sunBase = 1.35
+    let rimBase = 0.22
     if (def.world === 'city') {
-      ambient?.color.setHex(0x6a5a88)
-      hemi?.color.setHex(0x7a60a8)
-      hemi?.groundColor.setHex(0x1a1428)
-      sun?.color.setHex(0xff9ad4)
-      rim?.color.setHex(0x5aeeff)
-      ambientBase = 0.48
-      hemiBase = 0.75
-      sunBase = 0.72
-      rimBase = 0.45
-      if (sun) sun.position.set(60, 90, 50)
-    } else if (def.world === 'rally') {
-      ambient?.color.setHex(0xd8c8b0)
-      hemi?.color.setHex(0xffd8b0)
-      hemi?.groundColor.setHex(0x5a4028)
-      sun?.color.setHex(0xffc090)
-      rim?.color.setHex(0xff8855)
-      ambientBase = 0.4
-      hemiBase = 0.8
+      ambient?.color.setHex(0x5a6080)
+      hemi?.color.setHex(0x7888b0)
+      hemi?.groundColor.setHex(0x1a1820)
+      sun?.color.setHex(0xd0d8f0)
+      rim?.color.setHex(0x7080b0)
+      ambientBase = 0.42
+      hemiBase = 0.62
       sunBase = 1.05
       rimBase = 0.32
-      if (sun) sun.position.set(90, 100, 30)
+      this.lightRig.setSunOffset(70, 110, 40)
+    } else if (def.world === 'rally') {
+      ambient?.color.setHex(0xb8b0a4)
+      hemi?.color.setHex(0xd8d0c4)
+      hemi?.groundColor.setHex(0x3a3228)
+      sun?.color.setHex(0xffe8d0)
+      rim?.color.setHex(0x8890a0)
+      ambientBase = 0.26
+      hemiBase = 0.58
+      sunBase = 1.28
+      rimBase = 0.24
+      this.lightRig.setSunOffset(130, 85, -70)
     } else if (def.world === 'climb') {
-      ambient?.color.setHex(0xc8d8e8)
-      hemi?.color.setHex(0xd0e8ff)
-      hemi?.groundColor.setHex(0x4a5a38)
-      sun?.color.setHex(0xfff6e8)
-      rim?.color.setHex(0x88b8ff)
-      ambientBase = 0.44
-      hemiBase = 0.9
-      sunBase = 1.12
-      rimBase = 0.34
-      if (sun) sun.position.set(75, 135, 45)
+      ambient?.color.setHex(0xb8c8d8)
+      hemi?.color.setHex(0xd0e0f0)
+      hemi?.groundColor.setHex(0x3a4834)
+      sun?.color.setHex(0xfff4e8)
+      rim?.color.setHex(0x90a8c8)
+      ambientBase = 0.3
+      hemiBase = 0.68
+      sunBase = 1.32
+      rimBase = 0.2
+      this.lightRig.setSunOffset(80, 140, 50)
     } else if (def.world === 'plaza') {
-      ambient?.color.setHex(0xd0e4f0)
-      hemi?.color.setHex(0xc8e8f8)
-      hemi?.groundColor.setHex(0x4a6a40)
-      sun?.color.setHex(0xfff6e0)
-      rim?.color.setHex(0x90d0ff)
-      ambientBase = 0.46
-      hemiBase = 0.95
-      sunBase = 1.1
-      rimBase = 0.3
-      if (sun) sun.position.set(55, 125, 55)
-    } else {
-      // town / dusk Klecany
-      ambient?.color.setHex(0xe0c8b0)
-      hemi?.color.setHex(0xffc090)
-      hemi?.groundColor.setHex(0x3a2818)
-      sun?.color.setHex(0xff8a45)
-      rim?.color.setHex(0xffb070)
-      ambientBase = 0.4
+      ambient?.color.setHex(0xc0d0dc)
+      hemi?.color.setHex(0xd0e4f0)
+      hemi?.groundColor.setHex(0x3a4a38)
+      sun?.color.setHex(0xfff2e0)
+      rim?.color.setHex(0x98b8d0)
+      ambientBase = 0.3
       hemiBase = 0.7
-      sunBase = 0.95
-      rimBase = 0.38
-      if (sun) sun.position.set(-55, 45, 110)
+      sunBase = 1.25
+      rimBase = 0.18
+      this.lightRig.setSunOffset(60, 130, 55)
+    } else {
+      // town — pozdní odpoledne, stále „venku“, ne neon sunset
+      ambient?.color.setHex(0xc8b8a8)
+      hemi?.color.setHex(0xe8d8c4)
+      hemi?.groundColor.setHex(0x3a3024)
+      sun?.color.setHex(0xffd0a0)
+      rim?.color.setHex(0x8898b0)
+      ambientBase = 0.27
+      hemiBase = 0.55
+      sunBase = 1.18
+      rimBase = 0.26
+      this.lightRig.setSunOffset(-70, 70, 100)
     }
 
     const lightMul = lightIntensityScale(this.atmosphere.light)
@@ -937,6 +942,7 @@ export class Game {
 
   private applyVisual(): void {
     this.engine.render.applyVisual(this.visual, this.lightRig.getSun())
+    for (const v of this.vehicles) v.setCastShadow(this.visual.shadows)
     this.onResize()
   }
 
@@ -1055,6 +1061,7 @@ export class Game {
 
       this.cams.update(dt, this.player)
       this.mirror.update(this.player)
+      this.lightRig.follow(this.player.physics.x, this.player.physics.z)
       this.audio.update(this.vehicles, this.player, false)
       this.hud.update(this.player, this.race, this.cams, true)
       this.draw()
@@ -1202,6 +1209,7 @@ export class Game {
 
     this.cams.update(dt, this.player)
     this.mirror.update(this.player)
+    this.lightRig.follow(this.player.physics.x, this.player.physics.z)
     this.audio.update(this.vehicles, this.player, this.race.phase === 'racing')
     this.hud.update(this.player, this.race, this.cams, true)
     this.draw()

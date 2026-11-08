@@ -35,7 +35,6 @@ export class Hud {
   private built = false
   private elRaceMeta: HTMLElement | null = null
   private elSpeed: HTMLElement | null = null
-  private elVmax: HTMLElement | null = null
   private elGear: HTMLElement | null = null
   private lastOverlayKey = ''
   private hudAcc = 0
@@ -168,7 +167,6 @@ export class Hud {
       this.competition = 'none'
       this.elRaceMeta = null
       this.elSpeed = null
-      this.elVmax = null
       this.elGear = null
       this.overlay.classList.remove('visible')
       this.overlay.innerHTML = ''
@@ -202,7 +200,6 @@ export class Hud {
           this.elRaceMeta.textContent = `P${place}`
         }
       }
-      if (this.elVmax) this.elVmax.textContent = `${player.displayMaxKmh}`
       if (this.elGear) {
         const gear = player.physics.gear < 0 ? 'R' : String(player.physics.gear)
         const tx = player.physics.transmission
@@ -260,7 +257,6 @@ export class Hud {
           <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
           <div class="hud-race-meta" data-h="raceMeta">—</div>
         </div>
-        <div class="hud-vmax"><span class="label">${t('hud.vmax')}</span> <span data-h="vmax">—</span> km/h</div>
         <div class="hud-gear" data-h="gear">${t('hud.gear')}: 1 (${t('hud.auto')})</div>
         <div class="hud-push" data-h="push" hidden>${t('hud.push')}</div>
       </div>
@@ -274,7 +270,6 @@ export class Hud {
     }
     this.elRaceMeta = this.root.querySelector('[data-h="raceMeta"]')
     this.elSpeed = this.root.querySelector('[data-h="speed"]')
-    this.elVmax = this.root.querySelector('[data-h="vmax"]')
     this.elGear = this.root.querySelector('[data-h="gear"]')
     this.helpKind = kind
     this.shellSandbox = sandbox

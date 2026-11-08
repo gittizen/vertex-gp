@@ -1,10 +1,9 @@
-# 0.3 — současná
+# 0.3 — mobil + hosting + polish
 
-Dříve **1.1** + pozdější polish. Produkční mirror i na Netlify Tourmaline.
+Dříve **1.1** + polish. Archiv — produkce je teď **0.4**.
 
 ## Hrát
 - GitHub Pages: https://gittizen.github.io/vertex-gp/0.3/
-- Netlify (aktuální produkce): https://tourmaline-gingersnap-268fa6.netlify.app/
 
 ## Patří sem
 - Mobilní řízení (volant, stick, náklon, ťukání)
@@ -13,5 +12,8 @@ Dříve **1.1** + pozdější polish. Produkční mirror i na Netlify Tourmaline
 - Menu vozidlo → tuning, watermark, Esc/restart polish
 - UI `v0.3` / `package.json` `0.3.0`
 
+## Screenshot
+![Gameplay 0.3](./screenshot.png)
+
 ## Git
-- větev / ref: `0.3` / `master`
+- větev / ref: `0.3`

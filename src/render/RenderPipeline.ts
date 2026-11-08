@@ -14,14 +14,14 @@ import {
   type VisualSettingsValues,
 } from './VisualSettings'
 
-/** Jemný NFS / Forza color grade + vignette (free, bez assetů). */
+/** Filmový grade 2026 — méně „candy“, víc kontrastu / chill teal. */
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    uVignette: { value: 0.35 },
+    uVignette: { value: 0.28 },
     uContrast: { value: 1.08 },
-    uSat: { value: 1.12 },
-    uWarm: { value: 0.04 },
+    uSat: { value: 0.98 },
+    uWarm: { value: 0.01 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -44,9 +44,9 @@ const GradeShader = {
       float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(luma), col, uSat);
       col.r += uWarm;
-      col.b -= uWarm * 0.5;
+      col.b -= uWarm * 0.65;
       float d = distance(vUv, vec2(0.5));
-      col *= 1.0 - smoothstep(0.35, 0.95, d) * uVignette;
+      col *= 1.0 - smoothstep(0.28, 0.98, d) * uVignette;
       gl_FragColor = vec4(col, c.a);
     }
   `,
@@ -85,9 +85,10 @@ export class RenderPipeline {
     this.renderer.toneMapping = usePostFx(settings)
       ? THREE.ACESFilmicToneMapping
       : THREE.NoToneMapping
-    this.renderer.toneMappingExposure = 1
+    this.renderer.toneMappingExposure = 1.0
     this.renderer.shadowMap.enabled = settings.shadows
-    this.renderer.shadowMap.type = THREE.BasicShadowMap
+    this.renderer.shadowMap.type =
+      settings.quality === 'perf' ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap
     this.renderer.info.autoReset = true
     this.applyPixelRatio(settings.quality)
 
@@ -102,8 +103,8 @@ export class RenderPipeline {
     this.bloomPass = new UnrealBloomPass(
       size.clone(),
       bloomStrengthFor(settings.quality),
-      0.55,
-      0.82,
+      0.48,
+      0.88,
     )
     this.bloomPass.enabled = settings.bloom
     this.composer.addPass(this.bloomPass)
@@ -115,9 +116,9 @@ export class RenderPipeline {
     this.composer.addPass(new OutputPass())
   }
 
-  /** Env mapa jen pro cinematic — jinak zbytečný cost. */
+  /** Env mapa pro balanced+ (lak aut); perf bez. */
   attachEnvironment(scene: THREE.Scene): void {
-    if (!usePostFx(this.settings)) {
+    if (this.settings.quality === 'perf') {
       scene.environment = null
       return
     }
@@ -134,12 +135,15 @@ export class RenderPipeline {
   applySettings(settings: VisualSettingsValues, sun?: THREE.DirectionalLight): void {
     this.settings = { ...settings }
     this.renderer.shadowMap.enabled = settings.shadows
+    this.renderer.shadowMap.type =
+      settings.quality === 'perf' ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap
     this.renderer.toneMapping = usePostFx(settings)
       ? THREE.ACESFilmicToneMapping
       : THREE.NoToneMapping
+    this.renderer.toneMappingExposure = 1.0
     this.bloomPass.enabled = settings.bloom
     this.bloomPass.strength = bloomStrengthFor(settings.quality)
-    this.gradePass.enabled = settings.quality === 'cinematic'
+    this.gradePass.enabled = settings.quality !== 'perf'
     this.applyPixelRatio(settings.quality)
     if (sun) this.configureSunShadow(sun, settings)
   }
@@ -148,14 +152,16 @@ export class RenderPipeline {
     sun.castShadow = settings.shadows
     const mapSize = shadowMapSizeFor(settings.quality)
     sun.shadow.mapSize.set(mapSize, mapSize)
-    sun.shadow.bias = -0.00025
-    sun.shadow.normalBias = 0.04
-    sun.shadow.camera.near = 5
-    sun.shadow.camera.far = 420
-    sun.shadow.camera.left = -140
-    sun.shadow.camera.right = 140
-    sun.shadow.camera.top = 140
-    sun.shadow.camera.bottom = -140
+    // Menší frustum kolem auta (follow v SceneLightRig) = ostřejší stín, bez děr na Hrubý
+    sun.shadow.bias = -0.00035
+    sun.shadow.normalBias = 0.045
+    sun.shadow.radius = settings.quality === 'perf' ? 1 : 2.5
+    sun.shadow.camera.near = 10
+    sun.shadow.camera.far = 380
+    sun.shadow.camera.left = -95
+    sun.shadow.camera.right = 95
+    sun.shadow.camera.top = 95
+    sun.shadow.camera.bottom = -95
     sun.shadow.camera.updateProjectionMatrix()
     if (sun.shadow.map) {
       sun.shadow.map.dispose()

@@ -11,5 +11,8 @@ https://gittizen.github.io/vertex-gp/0.2/
 - Atmosféra menu
 - Online hub (presence, rooms, ready, laps)
 
+## Screenshot
+![Gameplay 0.2](./screenshot.png)
+
 ## Git
 - větev / ref: `0.2` → commit `54d764a` (*Release Klec GP 1.0…*)

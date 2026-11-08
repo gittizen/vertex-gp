@@ -12,5 +12,8 @@ https://gittizen.github.io/vertex-gp/0.1/
 - Solo + online WS (max 4)
 - Tuning rozpočet + barvy
 
+## Screenshot
+![Gameplay 0.1](./screenshot.png)
+
 ## Git
 - větev / ref: `0.1` → commit `6f21368` (*Launch Vertex GP…*)

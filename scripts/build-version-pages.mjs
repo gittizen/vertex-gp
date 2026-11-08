@@ -1,6 +1,7 @@
 /**
- * Build playable static sites for 0.1 / 0.2 / 0.3 into ./site/
+ * Build playable static sites for 0.1 / 0.2 / 0.3 / 0.4 into ./site/
  * GH Pages base: /vertex-gp/<ver>/
+ * Kopíruje versions/<ver>/screenshot.webp do hubu, pokud existuje.
  */
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -29,10 +30,17 @@ const VERSIONS = [
   },
   {
     id: '0.3',
-    ref: 'HEAD',
+    ref: '0.3',
     base: '/vertex-gp/0.3/',
-    title: '0.3 — současná',
-    blurb: 'Mobilní řízení, Netlify, community AI, šampionát, UX polish.',
+    title: '0.3 — mobil + polish',
+    blurb: 'Mobilní řízení, Netlify éra, community AI, šampionát.',
+  },
+  {
+    id: '0.4',
+    ref: 'HEAD',
+    base: '/vertex-gp/0.4/',
+    title: '0.4 — reálnější svět',
+    blurb: 'Okolí, terén, unikátní mapy, stíny bez děr v asfaltu.',
     current: true,
   },
 ]
@@ -51,15 +59,36 @@ function copyDir(src, dest) {
   fs.cpSync(src, dest, { recursive: true })
 }
 
+function copyScreenshot(versionId) {
+  const srcWebp = path.join(ROOT, 'versions', versionId, 'screenshot.webp')
+  const srcPng = path.join(ROOT, 'versions', versionId, 'screenshot.png')
+  const destDir = path.join(SITE, 'shots')
+  fs.mkdirSync(destDir, { recursive: true })
+  if (fs.existsSync(srcWebp)) {
+    fs.copyFileSync(srcWebp, path.join(destDir, `${versionId}.webp`))
+    return `./shots/${versionId}.webp`
+  }
+  if (fs.existsSync(srcPng)) {
+    fs.copyFileSync(srcPng, path.join(destDir, `${versionId}.png`))
+    return `./shots/${versionId}.png`
+  }
+  return null
+}
+
 function writeHub() {
-  const cards = VERSIONS.map(
-    (v) => `    <a class="card" href="./${v.id}/">
+  const cards = VERSIONS.map((v) => {
+    const shot = copyScreenshot(v.id)
+    const img = shot
+      ? `<img class="shot" src="${shot}" alt="Gameplay ${v.id}" loading="lazy" />`
+      : `<div class="shot shot-empty">bez screenshotu</div>`
+    return `    <a class="card" href="./${v.id}/">
+      ${img}
       <span class="ver">${v.id}</span>
       <strong>${v.title}</strong>
       <p>${v.blurb}</p>
       <span class="play">Hrát →</span>
-    </a>`,
-  ).join('\n')
+    </a>`
+  }).join('\n')
 
   const html = `<!doctype html>
 <html lang="cs">
@@ -88,7 +117,7 @@ function writeHub() {
         linear-gradient(180deg, var(--bg1), var(--bg0));
     }
     main {
-      max-width: 920px;
+      max-width: 1100px;
       margin: 0 auto;
       padding: 3rem 1.25rem 4rem;
     }
@@ -97,7 +126,7 @@ function writeHub() {
       letter-spacing: 0.04em;
       margin: 0 0 0.4rem;
     }
-    .sub { color: var(--muted); margin: 0 0 2rem; max-width: 36rem; line-height: 1.5; }
+    .sub { color: var(--muted); margin: 0 0 2rem; max-width: 40rem; line-height: 1.5; }
     .grid {
       display: grid;
       gap: 1rem;
@@ -107,7 +136,8 @@ function writeHub() {
       display: flex;
       flex-direction: column;
       gap: 0.45rem;
-      padding: 1.15rem 1.2rem 1.25rem;
+      padding: 0;
+      overflow: hidden;
       border: 1px solid var(--line);
       background: rgba(14, 18, 26, 0.72);
       color: inherit;
@@ -115,6 +145,26 @@ function writeHub() {
       transition: border-color 0.15s, transform 0.15s;
     }
     .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .shot {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #0e1218;
+      border-bottom: 1px solid var(--line);
+    }
+    .shot-empty {
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .card .ver, .card strong, .card p, .card .play {
+      padding-left: 1.15rem;
+      padding-right: 1.15rem;
+    }
+    .card .ver { padding-top: 0.9rem; }
+    .card .play { padding-bottom: 1.15rem; }
     .ver {
       font-size: 0.75rem;
       letter-spacing: 0.14em;
@@ -122,7 +172,7 @@ function writeHub() {
       color: var(--accent);
     }
     .card p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.45; flex: 1; }
-    .play { margin-top: 0.6rem; font-size: 0.9rem; color: var(--ink); }
+    .play { margin-top: 0.35rem; font-size: 0.9rem; color: var(--ink); }
     .note {
       margin-top: 2rem;
       padding-top: 1rem;
@@ -137,7 +187,7 @@ function writeHub() {
 <body>
   <main>
     <h1>Klec GP</h1>
-    <p class="sub">Hratelné archivy verzí na GitHub Pages. 0.4 → 0.1, 1.0 → 0.2, současná → 0.3.</p>
+    <p class="sub">Hratelné archivy verzí na GitHub Pages — každá s screenshotem ze hry. Aktuální produkce je 0.4.</p>
     <div class="grid">
 ${cards}
     </div>
@@ -181,7 +231,6 @@ function patchHistoricalTree(dir, version) {
       'utf8',
     )
   } else {
-    // 0.1: verze přímo v Entry
     const entry = path.join(dir, 'src', 'ui', 'Entry.ts')
     if (fs.existsSync(entry)) {
       let src = fs.readFileSync(entry, 'utf8')

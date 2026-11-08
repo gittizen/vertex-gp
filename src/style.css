@@ -10,9 +10,9 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #0e1218;
-  font-family: "Outfit", "Segoe UI", system-ui, sans-serif;
-  color: #eef3f8;
+  background: #0a0c10;
+  font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
+  color: #e6eaef;
 }
 
 #game-canvas {
@@ -111,7 +111,7 @@ body,
 .hold-bar {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, var(--menu-accent, #38bdf8), var(--menu-accent-2, #ff2bd6));
+  background: linear-gradient(90deg, var(--menu-accent, #c4a574), var(--menu-accent-2, #8a9aab));
 }
 
 @media (max-width: 780px) {
@@ -122,44 +122,54 @@ body,
 
 .hud-bottom {
   position: absolute;
-  left: 22px;
-  bottom: 22px;
+  left: 20px;
+  bottom: 20px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 18px;
-  min-width: 160px;
-  background: rgba(10, 14, 22, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  backdrop-filter: blur(8px);
+  gap: 4px;
+  padding: 12px 16px 14px;
+  min-width: 148px;
+  background: rgba(8, 10, 14, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  backdrop-filter: blur(10px);
 }
 
 .hud-speed {
-  font-size: 42px;
-  font-weight: 700;
+  font-family: "Barlow Condensed", "DM Sans", sans-serif;
+  font-size: 46px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   line-height: 1;
+  color: #f2f4f7;
 }
 
 .hud-speed span {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  opacity: 0.65;
-  margin-left: 6px;
+  opacity: 0.45;
+  margin-left: 5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .hud-gear {
-  font-size: 13px;
-  opacity: 0.85;
+  font-size: 12px;
+  opacity: 0.55;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .hud-push {
   margin-top: 4px;
-  font-family: "Orbitron", sans-serif;
-  font-size: 13px;
-  letter-spacing: 0.18em;
-  color: #ffb040;
-  text-shadow: 0 0 12px rgba(255, 140, 30, 0.85);
+  font-family: "Instrument Sans", "DM Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #c4a574;
+  text-shadow: none;
 }
 
 .hud-boost-flash {
@@ -178,13 +188,13 @@ body,
 }
 
 #hud.hud-boost .hud-speed {
-  color: #ffc060;
-  text-shadow: 0 0 18px rgba(255, 160, 40, 0.7);
+  color: #e2c08a;
+  text-shadow: none;
 }
 
 #hud.hud-boost .hud-bottom {
-  border-color: rgba(255, 160, 60, 0.55);
-  box-shadow: 0 0 24px rgba(255, 120, 20, 0.25);
+  border-color: rgba(196, 165, 116, 0.45);
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.35);
 }
 
 #hud.hud-fallen .hud-boost-flash {
@@ -256,7 +266,7 @@ body,
 }
 
 .overlay-card h1 {
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: clamp(36px, 7vw, 48px);
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -264,7 +274,7 @@ body,
 }
 
 .overlay-card h2 {
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: clamp(22px, 4vw, 28px);
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -305,7 +315,7 @@ body,
 }
 
 .overlay-winner {
-  font-family: "Orbitron", "Outfit", sans-serif;
+  font-family: "Instrument Sans", "DM Sans", sans-serif;
   font-size: clamp(18px, 4vw, 26px);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -339,7 +349,7 @@ body,
 .pause-card h2,
 .pause-card h3 {
   text-align: center;
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-weight: 400;
   letter-spacing: 0.06em;
 }
@@ -361,7 +371,7 @@ body,
 
 .pause-hold-bar {
   height: 100%;
-  background: linear-gradient(90deg, #7dd3fc, #ffe08a);
+  background: linear-gradient(90deg, #8a9aab, #c4a574);
   width: 0;
   transition: width 0.05s linear;
 }
@@ -472,7 +482,7 @@ body,
 }
 
 .bind-section-title {
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: 20px;
   font-weight: 400;
   margin: 12px 0 10px;
@@ -687,7 +697,7 @@ body,
 .track-watermark-label {
   flex-shrink: 0;
   margin: 0;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: clamp(11px, 2.2vw, 15px);
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -827,7 +837,7 @@ body,
 
 .brand-title {
   margin: 0;
-  font-family: "Orbitron", "Outfit", sans-serif;
+  font-family: "Instrument Sans", "DM Sans", sans-serif;
   font-size: clamp(42px, 11vw, 84px);
   font-weight: 800;
   line-height: 0.95;
@@ -839,7 +849,7 @@ body,
 }
 
 .brand-klec {
-  background: linear-gradient(115deg, #ff4ad2 0%, #ff2bd6 35%, #2de2e6 72%, #ffe08a 100%);
+  background: linear-gradient(115deg, #8a9aab 0%, #c4a574 55%, #d8dde4 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -872,7 +882,7 @@ body,
 }
 
 .entry-version {
-  font-family: "Orbitron", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.28em;
@@ -1028,7 +1038,7 @@ body,
 
 .burnt-letter-from {
   margin: 0 0 6px;
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: clamp(24px, 3.2vw, 32px);
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -1064,7 +1074,7 @@ body,
   margin: 8px 0 4px;
   padding-top: 12px;
   border-top: 1px solid rgba(60, 28, 12, 0.28);
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: 20px;
   letter-spacing: 0.05em;
   line-height: 1.4;
@@ -1161,7 +1171,7 @@ body,
 
 .lang-btn.active {
   color: #041018;
-  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  background: linear-gradient(135deg, #6a7a8c, #c4a574);
 }
 
 .menu-author {
@@ -1453,8 +1463,8 @@ body,
 }
 
 .menu-online .online-title {
-  font-family: "Orbitron", "Outfit", sans-serif;
-  background: linear-gradient(120deg, #ff2bd6, #2de2e6, #ffe08a);
+  font-family: "Instrument Sans", "DM Sans", sans-serif;
+  background: linear-gradient(120deg, #6a7a8c, #c4a574, #d0d5dc);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -1499,7 +1509,7 @@ body,
 
 .scooter-modal-card h2,
 .scooter-modal-card .scooter-modal-title {
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-weight: 400;
   letter-spacing: 0.06em;
 }
@@ -1661,7 +1671,7 @@ body,
 }
 
 .gta-tile-label {
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: clamp(28px, 4vw, 44px);
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -1818,13 +1828,13 @@ body,
 
 .menu-brand {
   /* legacy alias — home používá .brand-title */
-  font-family: "Orbitron", "Outfit", sans-serif;
+  font-family: "Instrument Sans", "DM Sans", sans-serif;
   font-size: clamp(48px, 9vw, 86px);
   font-weight: 800;
   margin-bottom: 6px;
   letter-spacing: 0.04em;
   line-height: 1;
-  background: linear-gradient(120deg, #ff2bd6, #2de2e6, #ffe08a);
+  background: linear-gradient(120deg, #6a7a8c, #c4a574, #d0d5dc);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -1832,7 +1842,7 @@ body,
 }
 
 .menu-version {
-  font-family: "Orbitron", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 11px;
   letter-spacing: 0.28em;
   text-transform: uppercase;
@@ -1841,7 +1851,7 @@ body,
 }
 
 .menu-header h1 {
-  font-family: "Bebas Neue", "Orbitron", sans-serif;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
   font-size: clamp(32px, 5vw, 48px);
   font-weight: 400;
   margin-bottom: 10px;
@@ -2265,7 +2275,7 @@ body,
 .track-preview-badge {
   fill: #fecaca;
   font-size: 11px;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   letter-spacing: 0.12em;
 }
 
@@ -2553,7 +2563,7 @@ body,
 
 .menu-start {
   border: none;
-  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  background: linear-gradient(135deg, #6a7a8c, #c4a574);
   color: #041018;
 }
 

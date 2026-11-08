@@ -150,15 +150,19 @@ export class VehiclePhysics {
                     : 0.65
         : 0.85
 
+    const cruiseMax = (118 + downforce * 5) * 1.3 * speedCapMult * manualBonus
     const accel = (controls.throttle * power * forwardRatio * gearFactor * manualBonus) / mass
     const brake = (controls.brake * brakeForce) / mass
     const reversePower = (power * 0.4) / mass
 
+    // Max = strop jen při plynu dopředu. Shift / turbo / triky můžou jet nad ním
+    // (aplikují se až po physics.update ve Vehicle).
     if (controls.throttle > 0) {
       if (this.speed < -0.4) {
         this.speed += brakeForce * 0.95 * dt
-      } else {
+      } else if (this.speed < cruiseMax) {
         this.speed += accel * dt
+        if (this.speed > cruiseMax) this.speed = cruiseMax
       }
     }
 
@@ -180,13 +184,18 @@ export class VehiclePhysics {
     if (absSpeed > 0.05) {
       this.speed -= Math.sign(this.speed) * aero * absSpeed * dt
     }
+    // Po boostu: jemně zpět k cruise max (boost ve Vehicle pak zase zatlačí výš).
+    if (this.speed > cruiseMax) {
+      const over = this.speed - cruiseMax
+      this.speed -= over * (1 - Math.exp(-1.4 * dt))
+    }
     if (Math.abs(this.speed) < 0.05 && controls.throttle === 0 && controls.brake === 0) {
       this.speed = 0
     }
 
-    const maxSpeed = (118 + downforce * 5) * 1.3 * speedCapMult * manualBonus
     const maxReverse = 16
-    this.speed = Math.max(-maxReverse, Math.min(maxSpeed, this.speed))
+    const boostCeil = cruiseMax * 1.45
+    this.speed = Math.max(-maxReverse, Math.min(boostCeil, this.speed))
 
     if (!this.manualShift) {
       if (this.speed < -0.35) this.gear = -1
@@ -307,7 +316,10 @@ export class VehiclePhysics {
     }
   }
 
-  /** Soft/hard cap rychlosti (stejný vzorec jako ve update). */
+  /**
+   * Cruise max (km/h na HUD) — jen plyn dopředu.
+   * Shift / turbo / triky můžou krátkodobě jet výš (až ~1.45×).
+   */
   get maxSpeedAbs(): number {
     const { downforce, speedCapMult } = this.tuning
     return (118 + downforce * 5) * 1.3 * (speedCapMult || 1) * this.speedBonus()

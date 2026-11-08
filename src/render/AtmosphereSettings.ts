@@ -51,7 +51,7 @@ const TONE_MIGRATE: Record<string, MenuTone> = {
 
 /** Default: Klecany + bohaté dekorace. */
 export const DEFAULT_ATMOSPHERE: AtmosphereSettingsValues = {
-  fog: 'high',
+  fog: 'normal',
   decor: 'rich',
   light: 'normal',
   tone: 'klecany',

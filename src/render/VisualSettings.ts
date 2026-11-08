@@ -1,6 +1,6 @@
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
 
-/** Kvalita: default = plynulost. Cinematic = volitelný post-FX (seká na slabších PC). */
+/** Kvalita: default balanced = moderní look + plynulost. Cinematic = max post-FX. */
 export type VisualQuality = 'perf' | 'balanced' | 'cinematic'
 
 export type VisualSettingsValues = {
@@ -11,13 +11,13 @@ export type VisualSettingsValues = {
   rearMirror: boolean
 }
 
-/** v2 — starý cinematic default zahodit kvůli FPS. */
-const STORAGE_KEY = `${GAME_STORAGE_NS}.visual-v2`
+/** v3 — default balanced (dospělý look 2026). */
+const STORAGE_KEY = `${GAME_STORAGE_NS}.visual-v3`
 
 export const DEFAULT_VISUAL: VisualSettingsValues = {
-  quality: 'perf',
+  quality: 'balanced',
   bloom: false,
-  shadows: false,
+  shadows: true,
   rearMirror: false,
 }
 
@@ -33,8 +33,8 @@ export function loadVisualSettings(): VisualSettingsValues {
       : DEFAULT_VISUAL.quality
     return {
       quality,
-      bloom: !!p.bloom,
-      shadows: !!p.shadows,
+      bloom: p.bloom !== undefined ? !!p.bloom : DEFAULT_VISUAL.bloom,
+      shadows: p.shadows !== undefined ? !!p.shadows : DEFAULT_VISUAL.shadows,
       rearMirror: !!p.rearMirror,
     }
   } catch {
@@ -47,24 +47,27 @@ export function saveVisualSettings(vals: VisualSettingsValues): void {
 }
 
 export function pixelRatioFor(quality: VisualQuality): number {
-  // Max 1.25 i na cinematic — víc pixelů = stutter, ne hezčí tvary
   const cap = quality === 'cinematic' ? 1.25 : quality === 'balanced' ? 1.1 : 1
   return Math.min(window.devicePixelRatio || 1, cap)
 }
 
 export function bloomStrengthFor(quality: VisualQuality): number {
-  if (quality === 'cinematic') return 0.28
-  if (quality === 'balanced') return 0.18
-  return 0.1
+  if (quality === 'cinematic') return 0.22
+  if (quality === 'balanced') return 0.12
+  return 0.08
 }
 
 export function shadowMapSizeFor(quality: VisualQuality): number {
-  if (quality === 'cinematic') return 1024
-  if (quality === 'balanced') return 512
-  return 256
+  if (quality === 'cinematic') return 2048
+  if (quality === 'balanced') return 1024
+  return 512
 }
 
-/** Composer (bloom/grade) jen když uživatel opravdu chce. */
+/** Composer (bloom/grade) — balanced má lehký grade bez bloom, pokud bloom=false. */
 export function usePostFx(vals: VisualSettingsValues): boolean {
-  return vals.bloom || vals.quality === 'cinematic'
+  return vals.bloom || vals.quality === 'cinematic' || vals.quality === 'balanced'
+}
+
+export function useGradeOnly(vals: VisualSettingsValues): boolean {
+  return vals.quality === 'balanced' && !vals.bloom
 }

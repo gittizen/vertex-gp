@@ -17,14 +17,14 @@ function mixHex(a: number, b: number, t: number): string {
   return `rgb(${r},${g},${bl})`
 }
 
-/** Levný equirectangular gradient — UE-stylové nebe bez sky dome mesh. */
+/** Equirectangular sky — bohatší pásy, méně plochý „flat color“. */
 export function createSkyGradientTexture(def: TrackDef): THREE.CanvasTexture {
-  const key = `sky-${def.id}-${def.theme.sky.toString(16)}-${def.theme.fog.toString(16)}`
+  const key = `sky-v5-${def.id}-${def.theme.sky.toString(16)}-${def.theme.fog.toString(16)}`
   const cached = skyTexCache.get(key)
   if (cached) return cached
 
-  const w = 512
-  const h = 256
+  const w = 768
+  const h = 384
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
@@ -33,33 +33,49 @@ export function createSkyGradientTexture(def: TrackDef): THREE.CanvasTexture {
   const sky = def.theme.sky
   const fog = def.theme.fog
   const night = def.skyBody === 'moon' || def.world === 'city'
-  const zenith = night ? mixHex(sky, 0x020208, 0.35) : mixHex(sky, 0xffffff, 0.12)
-  const mid = mixHex(sky, fog, 0.35)
-  const horizon = mixHex(fog, sky, 0.25)
+  const rally = def.world === 'rally'
+
+  const zenith = night
+    ? mixHex(sky, 0x02040a, 0.55)
+    : rally
+      ? mixHex(sky, 0x2a1810, 0.18)
+      : mixHex(sky, 0xa8c4e8, 0.35)
+  const upper = night ? mixHex(sky, fog, 0.18) : mixHex(sky, 0xe8f0ff, 0.12)
+  const mid = mixHex(sky, fog, 0.32)
+  const horizon = night
+    ? mixHex(fog, 0x121820, 0.25)
+    : rally
+      ? mixHex(fog, 0xffc090, 0.28)
+      : mixHex(fog, 0xf0f4f8, 0.35)
+  const groundFade = mixHex(fog, def.theme.ground, 0.5)
 
   const grad = ctx.createLinearGradient(0, 0, 0, h)
   grad.addColorStop(0, zenith)
-  grad.addColorStop(0.42, mid)
-  grad.addColorStop(0.62, horizon)
-  grad.addColorStop(0.72, mixHex(fog, def.theme.ground, 0.15))
-  grad.addColorStop(1, mixHex(def.theme.ground, fog, 0.4))
+  grad.addColorStop(0.22, upper)
+  grad.addColorStop(0.48, mid)
+  grad.addColorStop(0.66, horizon)
+  grad.addColorStop(0.8, mixHex(fog, def.theme.ground, 0.4))
+  grad.addColorStop(1, groundFade)
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, w, h)
 
-  // Jemný „atmosférický“ pás u horizontu
-  const haze = ctx.createLinearGradient(0, h * 0.5, 0, h * 0.78)
+  // Soft Rayleigh-like haze (slabší = méně „plast“)
+  const haze = ctx.createLinearGradient(0, h * 0.5, 0, h * 0.82)
   haze.addColorStop(0, 'rgba(255,255,255,0)')
-  haze.addColorStop(0.5, night ? 'rgba(120,140,200,0.12)' : 'rgba(255,255,255,0.18)')
+  haze.addColorStop(
+    0.5,
+    night ? 'rgba(90,110,160,0.1)' : rally ? 'rgba(255,180,120,0.14)' : 'rgba(220,235,255,0.14)',
+  )
   haze.addColorStop(1, 'rgba(255,255,255,0)')
   ctx.fillStyle = haze
   ctx.fillRect(0, 0, w, h)
 
   if (night) {
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'
-    for (let i = 0; i < 48; i++) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    for (let i = 0; i < 64; i++) {
       const x = (Math.sin(i * 12.9898) * 0.5 + 0.5) * w
-      const y = (Math.sin(i * 78.233) * 0.5 + 0.5) * h * 0.45
-      const r = 0.6 + (i % 3) * 0.4
+      const y = (Math.sin(i * 78.233) * 0.5 + 0.5) * h * 0.42
+      const r = 0.5 + (i % 3) * 0.35
       ctx.beginPath()
       ctx.arc(x, y, r, 0, Math.PI * 2)
       ctx.fill()
@@ -76,11 +92,11 @@ export function createSkyGradientTexture(def: TrackDef): THREE.CanvasTexture {
 }
 
 function cloudTexture(kind: WorldKind, night: boolean): THREE.CanvasTexture {
-  const key = `cloud-${kind}-${night ? 'n' : 'd'}`
+  const key = `cloud-v4-${kind}-${night ? 'n' : 'd'}`
   const cached = cloudTexCache.get(key)
   if (cached) return cached
 
-  const size = 128
+  const size = 160
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -107,19 +123,19 @@ function cloudTexture(kind: WorldKind, night: boolean): THREE.CanvasTexture {
     const x = ux * size
     const y = uy * size
     const r = ur * size
-    const g = ctx.createRadialGradient(x, y, r * 0.15, x, y, r)
+    const g = ctx.createRadialGradient(x, y, r * 0.12, x, y, r)
     if (night) {
-      g.addColorStop(0, 'rgba(180,190,220,0.55)')
-      g.addColorStop(0.55, 'rgba(120,130,170,0.22)')
-      g.addColorStop(1, 'rgba(80,90,120,0)')
+      g.addColorStop(0, 'rgba(170,185,220,0.5)')
+      g.addColorStop(0.55, 'rgba(100,115,160,0.18)')
+      g.addColorStop(1, 'rgba(60,70,100,0)')
     } else if (kind === 'rally') {
-      g.addColorStop(0, 'rgba(255,200,160,0.5)')
-      g.addColorStop(0.5, 'rgba(220,140,90,0.2)')
-      g.addColorStop(1, 'rgba(180,80,40,0)')
+      g.addColorStop(0, 'rgba(255,210,180,0.42)')
+      g.addColorStop(0.5, 'rgba(200,120,80,0.16)')
+      g.addColorStop(1, 'rgba(140,60,30,0)')
     } else {
-      g.addColorStop(0, 'rgba(255,255,255,0.72)')
-      g.addColorStop(0.45, 'rgba(240,245,255,0.28)')
-      g.addColorStop(1, 'rgba(220,230,255,0)')
+      g.addColorStop(0, 'rgba(255,255,255,0.65)')
+      g.addColorStop(0.45, 'rgba(235,240,250,0.24)')
+      g.addColorStop(1, 'rgba(210,220,240,0)')
     }
     ctx.fillStyle = g
     ctx.beginPath()
@@ -134,106 +150,125 @@ function cloudTexture(kind: WorldKind, night: boolean): THREE.CanvasTexture {
   return tex
 }
 
-function mountainColor(def: TrackDef): number {
+function mountainColor(def: TrackDef, layer: 0 | 1): number {
   const g = def.theme.ground
   const f = def.theme.fog
-  if (def.world === 'city') return 0x12101c
-  if (def.world === 'rally') return 0x2a1810
-  if (def.skyBody === 'moon') return 0x2a3440
-  // Tmavší směs země + fog = silueta
   const A = hexRgb(g)
   const B = hexRgb(f)
-  const r = Math.round(A.r * 0.35 + B.r * 0.15)
-  const gr = Math.round(A.g * 0.38 + B.g * 0.12)
-  const b = Math.round(A.b * 0.32 + B.b * 0.18)
+  const dark = layer === 0 ? 0.28 : 0.42
+  const fogW = layer === 0 ? 0.22 : 0.35
+  if (def.world === 'city') return layer === 0 ? 0x0e0c16 : 0x161420
+  if (def.world === 'rally') return layer === 0 ? 0x1c100c : 0x2a1812
+  if (def.skyBody === 'moon') return layer === 0 ? 0x1a2430 : 0x2a3440
+  const r = Math.round(A.r * dark + B.r * fogW)
+  const gr = Math.round(A.g * (dark + 0.04) + B.g * fogW)
+  const b = Math.round(A.b * dark + B.b * fogW)
   return (r << 16) | (gr << 8) | b
 }
 
+export type SkyBackdropOpts = {
+  /** Vzdálenost ke vzdálenějšímu bodu tratě od středu (kvůli etapám). */
+  trackReach?: number
+}
+
 /**
- * Distant backdrop (UE-like): silueta hor + pár cloud billboardů.
- * MeshBasic + málo tris — téměř zdarma oproti lokálním dekoracím.
+ * Distant backdrop: hory ZA tratí (ne přes ni) + haze + mraky.
  */
-export function createSkyBackdrop(def: TrackDef, center: THREE.Vector3): THREE.Group {
+export function createSkyBackdrop(
+  def: TrackDef,
+  center: THREE.Vector3,
+  opts: SkyBackdropOpts = {},
+): THREE.Group {
   const root = new THREE.Group()
   root.name = 'skyBackdrop'
   root.position.copy(center)
 
-  const radius = def.sandbox ? 420 : def.world === 'rally' || def.world === 'climb' ? 780 : 520
-  const segs = 48
-  const peaks = def.world === 'city' ? 10 : def.world === 'rally' ? 14 : 12
-  const baseH = def.world === 'city' ? 28 : def.world === 'climb' ? 55 : 42
-  const peakH = def.world === 'city' ? 70 : def.world === 'rally' ? 95 : 88
+  const base =
+    def.sandbox ? 420 : def.world === 'rally' || def.world === 'climb' ? 820 : 560
+  // Etapy (Novostavby…): hory až ZA koncem tratě — jinak „stěna“ na startu/cíli
+  const reach = opts.trackReach ?? 0
+  const radius = Math.max(base, reach + 320)
 
-  // Jedna páska siluet — spodní prsten + horský hřeben
-  const pos: number[] = []
-  const idx: number[] = []
-  for (let i = 0; i <= segs; i++) {
-    const a = (i / segs) * Math.PI * 2
-    const nx = Math.cos(a)
-    const nz = Math.sin(a)
-    // Pseudo-náhodný hřeben (deterministický)
-    const n =
-      0.55 +
-      0.35 * Math.sin(i * 0.7 + peaks) +
-      0.2 * Math.sin(i * 1.9) +
-      0.12 * Math.sin(i * 3.1 + 2)
-    const h = baseH + (peakH - baseH) * Math.max(0.15, n)
-    const r0 = radius
-    const r1 = radius * 1.08
-    pos.push(nx * r0, 0, nz * r0)
-    pos.push(nx * r1, h, nz * r1)
+  const segs = 96
+  const addRidge = (rScale: number, hScale: number, layer: 0 | 1) => {
+    const pos: number[] = []
+    const idx: number[] = []
+    const peaks = def.world === 'city' ? 11 : 15
+    const baseH = (def.world === 'city' ? 32 : def.world === 'climb' ? 48 : 38) * hScale
+    const peakH = (def.world === 'city' ? 78 : def.world === 'rally' ? 110 : 96) * hScale
+    const r0 = radius * rScale
+    const r1 = radius * rScale * 1.06
+    const rMid = (r0 + r1) * 0.5
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2
+      const nx = Math.cos(a)
+      const nz = Math.sin(a)
+      const n =
+        0.5 +
+        0.32 * Math.sin(i * 0.65 + peaks + layer) +
+        0.22 * Math.sin(i * 1.7 + layer * 2) +
+        0.14 * Math.sin(i * 3.3 + 1.5) +
+        0.08 * Math.sin(i * 5.1 + layer)
+      const h = baseH + (peakH - baseH) * Math.max(0.12, n)
+      const midH = h * 0.42
+      // 2 pásy quads = hustší silueta hor (míň „prosklených“ mezer)
+      pos.push(nx * r0, -6, nz * r0)
+      pos.push(nx * rMid, midH, nz * rMid)
+      pos.push(nx * r1, h, nz * r1)
+    }
+    for (let i = 0; i < segs; i++) {
+      const a = i * 3
+      idx.push(a, a + 1, a + 3, a + 1, a + 4, a + 3)
+      idx.push(a + 1, a + 2, a + 4, a + 2, a + 5, a + 4)
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geo.setIndex(idx)
+    geo.computeVertexNormals()
+    const mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshLambertMaterial({
+        color: mountainColor(def, layer),
+        fog: true,
+        side: THREE.DoubleSide,
+      }),
+    )
+    mesh.name = `distantMountains-${layer}`
+    root.add(mesh)
   }
-  for (let i = 0; i < segs; i++) {
-    const a = i * 2
-    idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
-  }
-  const mountainGeo = new THREE.BufferGeometry()
-  mountainGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  mountainGeo.setIndex(idx)
-  mountainGeo.computeVertexNormals()
-  const mountains = new THREE.Mesh(
-    mountainGeo,
-    new THREE.MeshBasicMaterial({
-      color: mountainColor(def),
-      fog: true,
-      depthWrite: true,
-      side: THREE.DoubleSide,
-    }),
-  )
-  mountains.name = 'distantMountains'
-  root.add(mountains)
 
-  // Měkký haze pás u paty hor
+  addRidge(1, 1, 0)
+  addRidge(0.92, 0.72, 1)
+
   const haze = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.98, radius * 1.02, 18, 32, 1, true),
-    new THREE.MeshBasicMaterial({
+    new THREE.CylinderGeometry(radius * 0.96, radius * 1.04, 22, 40, 1, true),
+    new THREE.MeshLambertMaterial({
       color: def.theme.fog,
       transparent: true,
-      opacity: def.world === 'city' ? 0.22 : 0.28,
+      opacity: def.world === 'city' ? 0.1 : 0.12,
       depthWrite: false,
       side: THREE.DoubleSide,
       fog: true,
     }),
   )
-  haze.position.y = 8
+  haze.position.y = 10
   haze.name = 'horizonHaze'
   root.add(haze)
 
-  // Mraky — pár billboardů (max ~10 draw calls, Basic + alpha)
   const night = def.skyBody === 'moon' || def.world === 'city'
   const tex = cloudTexture(def.world, night)
-  const cloudCount = def.world === 'city' ? 7 : 10
-  const cloudY = night ? 95 : 110
+  const cloudCount = def.world === 'city' ? 8 : 11
+  const cloudY = night ? 100 : 120
   for (let i = 0; i < cloudCount; i++) {
     const a = (i / cloudCount) * Math.PI * 2 + i * 0.37
-    const elev = cloudY + (i % 3) * 18
-    const dist = radius * (0.62 + (i % 4) * 0.06)
-    const w = 70 + (i % 4) * 28
-    const h = 28 + (i % 3) * 10
+    const elev = cloudY + (i % 3) * 20
+    const dist = radius * (0.55 + (i % 4) * 0.05)
+    const w = 80 + (i % 4) * 30
+    const h = 30 + (i % 3) * 12
     const mat = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
-      opacity: night ? 0.45 : 0.7,
+      opacity: night ? 0.22 : 0.32,
       depthWrite: false,
       fog: true,
       side: THREE.DoubleSide,
@@ -241,7 +276,7 @@ export function createSkyBackdrop(def: TrackDef, center: THREE.Vector3): THREE.G
     const cloud = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)
     cloud.position.set(Math.cos(a) * dist, elev, Math.sin(a) * dist)
     cloud.lookAt(center.x, elev * 0.85, center.z)
-    cloud.userData.cloudSpin = 0.012 + (i % 5) * 0.004
+    cloud.userData.cloudSpin = 0.01 + (i % 5) * 0.0035
     cloud.userData.cloudAngle = a
     cloud.userData.cloudDist = dist
     cloud.userData.cloudElev = elev
@@ -252,7 +287,6 @@ export function createSkyBackdrop(def: TrackDef, center: THREE.Vector3): THREE.G
   return root
 }
 
-/** Pomalý drift mraků — volej z game ticku. */
 export function tickSkyBackdrop(root: THREE.Object3D | null | undefined, dt: number): void {
   if (!root) return
   root.traverse((obj) => {

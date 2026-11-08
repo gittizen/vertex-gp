@@ -1,28 +1,66 @@
 import type { VehicleKind } from '../track/TrackDefs'
 import type { VehicleTuning } from './VehiclePhysics'
 import type { PlayerTuningValues } from '../tuning/PlayerTuning'
-import { tuningToPhysics } from '../tuning/PlayerTuning'
+import { DEFAULT_PLAYER_TUNING, tuningToPhysics } from '../tuning/PlayerTuning'
 
-/** Skate po úpravě na max ~60 km/h */
-const SKATE_CAP = 0.14 * 1.3 * (60 / 80)
-/** Kolo: tempo +20 % vs skate, max ~80 */
-const BIKE_CAP = SKATE_CAP * (80 / 60)
-const MONSTER_CAP = 0.95 * 0.8
-const TRUCK_CAP = MONSTER_CAP * 0.8
-const TANK_CAP = TRUCK_CAP * 0.9
-const LIMO_CAP = 1 * 0.95
+/**
+ * Cruise max (km/h) při default tuningu — jen plyn dopředu.
+ * Tachometr ukazuje vždy skutečnou rychlost (stejná jednotka u všech peklostrojů).
+ * Popisy v menu se berou z těchto čísel.
+ */
+export const CATALOG_MAX_KMH: Record<VehicleKind, number> = {
+  street: 400,
+  moto: 448,
+  formula: 544,
+  monster: 304,
+  truck: 243,
+  tank: 219,
+  limo: 381,
+  skate: 96,
+  bike: 128,
+  scooter: 3,
+}
+
+/** speedCapMult tak, aby (118 + df*5)*1.3*cap*3.6 ≈ targetKmh */
+function capForTarget(downforce: number, targetKmh: number): number {
+  const denom = (118 + downforce * 5) * 1.3 * 3.6
+  return targetKmh / Math.max(1, denom)
+}
+
+/** Reference DF při DEFAULT_PLAYER_TUNING + násobitelích profilu. */
+const REF_DF = tuningToPhysics(DEFAULT_PLAYER_TUNING).downforce
+const STREET_DF = REF_DF * 0.7
+const FORMULA_DF = REF_DF * 1.35
+const MONSTER_DF = REF_DF * 0.25
+const TANK_DF = REF_DF * 0.2
+const SKATE_DF = REF_DF * 0.25
+
+const STREET_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.street)
+const MOTO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.moto)
+const FORMULA_CAP = capForTarget(FORMULA_DF, CATALOG_MAX_KMH.formula)
+const MONSTER_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.monster)
+const TRUCK_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.truck)
+const TANK_CAP = capForTarget(TANK_DF, CATALOG_MAX_KMH.tank)
+const LIMO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.limo)
+const SKATE_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.skate)
+const BIKE_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.bike)
 
 /** Relativní strop rychlosti vozidla (pro přepočet AI tempa). */
 export function speedCapMultFor(kind: VehicleKind): number {
   if (kind === 'skate') return SKATE_CAP
   if (kind === 'bike') return BIKE_CAP
-  if (kind === 'formula') return 1.22
+  if (kind === 'moto') return MOTO_CAP
+  if (kind === 'formula') return FORMULA_CAP
   if (kind === 'monster') return MONSTER_CAP
   if (kind === 'truck') return TRUCK_CAP
   if (kind === 'tank') return TANK_CAP
   if (kind === 'limo') return LIMO_CAP
-  if (kind === 'scooter') return 0.02
-  return 1
+  if (kind === 'scooter') return capForTarget(0.1, CATALOG_MAX_KMH.scooter)
+  return STREET_CAP
+}
+
+export function catalogMaxKmh(kind: VehicleKind): number {
+  return CATALOG_MAX_KMH[kind] ?? CATALOG_MAX_KMH.street
 }
 
 /**
@@ -78,7 +116,7 @@ export function profileForKind(
       grip: 0.4,
       drag: 0.8,
       mass: 0.5,
-      speedCapMult: 0.02,
+      speedCapMult: speedCapMultFor('scooter'),
       steerResp: 0.3,
     }
   }
@@ -115,7 +153,7 @@ export function profileForKind(
       downforce: base.downforce * 0.7,
       grip: base.grip * 1.05,
       drag: 0.24,
-      speedCapMult: 1,
+      speedCapMult: MOTO_CAP,
     }
   }
 
@@ -137,7 +175,7 @@ export function profileForKind(
       grip: base.grip * 1.18,
       drag: 0.16,
       mass: 0.85,
-      speedCapMult: 1.22,
+      speedCapMult: FORMULA_CAP,
       steerResp: 1.12,
     }
   }
@@ -212,13 +250,22 @@ export function profileForKind(
     downforce: base.downforce * 0.7,
     grip: base.grip * 1.05,
     drag: 0.24,
-    speedCapMult: 1,
+    speedCapMult: STREET_CAP,
   }
 }
 
 export function aiProfileForKind(kind: VehicleKind, index: number): Partial<VehicleTuning> {
   if (kind === 'scooter') {
-    return { power: 2, brakeForce: 40, downforce: 0.1, grip: 0.4, drag: 0.8, mass: 0.5, speedCapMult: 0.02, steerResp: 0.3 }
+    return {
+      power: 2,
+      brakeForce: 40,
+      downforce: 0.1,
+      grip: 0.4,
+      drag: 0.8,
+      mass: 0.5,
+      speedCapMult: speedCapMultFor('scooter'),
+      steerResp: 0.3,
+    }
   }
   if (kind === 'skate') {
     return {
@@ -251,7 +298,7 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       downforce: 0.75,
       grip: 1.12 + index * 0.025,
       drag: 0.23,
-      speedCapMult: 1,
+      speedCapMult: MOTO_CAP,
       steerResp: 0.98,
     }
   }
@@ -263,7 +310,7 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       grip: 1.28 + index * 0.03,
       drag: 0.15,
       mass: 0.86,
-      speedCapMult: 1.22,
+      speedCapMult: FORMULA_CAP,
       steerResp: 1.1,
     }
   }
@@ -321,7 +368,7 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
     downforce: 0.75,
     grip: 1.12 + index * 0.025,
     drag: 0.23,
-    speedCapMult: 1,
+    speedCapMult: STREET_CAP,
     steerResp: 0.98,
   }
 }

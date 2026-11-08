@@ -1,15 +1,15 @@
-# Klec GP · v0.3
+# Klec GP · v0.4
 
 Noční město. Ulice Klecan. Horské rallye. Stoupání Do Klecánek. Freestyle na Plácku.
 
 Prohlížečová 2.5D semi-sim hra. Solo s AI, freestyle triky (PC), nebo **online až 4 hráči**.
 
-> Historie: **0.1** Vertex GP → **0.2** Klec GP → **0.3** mobil + polish.  
+> Historie: **0.1** Vertex GP → **0.2** Klec GP → **0.3** mobil + polish → **0.4** reálnější svět.  
 > Podrobnosti: **[VERSIONS.md](./VERSIONS.md)** · složky **[versions/](./versions/)**.
 
 **Aktuální web (Netlify):** https://tourmaline-gingersnap-268fa6.netlify.app/  
 **Hub verzí (GitHub Pages):** https://gittizen.github.io/vertex-gp/  
-**Hrát archivy:** [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/)
+**Hrát archivy:** [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/)
 
 ---
 
@@ -45,7 +45,7 @@ Otevři **http://localhost:5173** → stiskni klávesu (entry) → **Závod** / 
 | R | Restart (solo) |
 | Esc | Pauza → menu |
 
-### Telefon / tablet (0.3)
+### Telefon / tablet
 
 V **Nastavení → Ovládání** přepni režim: volant+pedály · joystick · náklon · ťukání stran.  
 Na mobilu jen **klasická jízda** (+ boost na displeji) — freestyle triky nejsou.

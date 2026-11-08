@@ -13,10 +13,9 @@ export type WorldKind = 'city' | 'town' | 'rally' | 'climb' | 'plaza'
 export type SkyBody = 'sun' | 'moon'
 
 /**
- * Sytá střední šedá — Tourmaline / v0.3.
- * MeshBasic + fog:false; lehké per-mapa varianty v theme.road.
+ * Čitelný charcoal asfalt 2026 (ne pastel, ne skoro-černá).
  */
-export const ASPHALT_GREY = 0x9a9aa4
+export const ASPHALT_GREY = 0x565a62
 
 export type TrackTheme = {
   road: number
@@ -195,13 +194,13 @@ export const TRACKS: TrackDef[] = [
       [-20, -125],
     ],
     theme: {
-      road: 0x9498a0,
-      ground: 0x0c0c14,
+      road: 0xa0a4ac,
+      ground: 0x12121a,
       barrierL: 0xff2bd6,
       barrierR: 0x2de2e6,
       edge: 0xffffff,
       sky: 0x080812,
-      fog: 0x1a1230,
+      fog: 0x221830,
       building: 0x222030,
       accent: 0xff2bd6,
       detail: 0x2de2e6,
@@ -258,8 +257,8 @@ export const TRACKS: TrackDef[] = [
       [-8, -132],
     ],
     theme: {
-      road: 0x9a968e,
-      ground: 0x3d522c,
+      road: 0xa8a49c,
+      ground: 0x4a4a38,
       barrierL: 0xc4a574,
       barrierR: 0xc4a574,
       edge: 0xffffff,
@@ -267,7 +266,7 @@ export const TRACKS: TrackDef[] = [
       fog: 0xffc49a,
       building: 0xc8b8a4,
       accent: 0xb8860b,
-      detail: 0x4a6a38,
+      detail: 0x5a6a40,
     },
   },
   {
@@ -324,15 +323,15 @@ export const TRACKS: TrackDef[] = [
       10, 8, 7, 8, 9,
     ],
     theme: {
-      road: 0x9a9084,
+      road: 0x565a62,
       ground: 0x3a2a18,
-      barrierL: 0xff8a00,
-      barrierR: 0xff8a00,
-      edge: 0xd0a060,
-      sky: 0x2a1810,
-      fog: 0x4a2818,
-      building: 0x3a3a42,
-      accent: 0xff6a00,
+      barrierL: 0xb07040,
+      barrierR: 0x8a6040,
+      edge: 0xa08060,
+      sky: 0x3a2818,
+      fog: 0x5a4030,
+      building: 0x4a4848,
+      accent: 0xc08050,
       detail: 0x5a3a22,
     },
   },

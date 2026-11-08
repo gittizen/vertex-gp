@@ -24,7 +24,7 @@ export class Vehicle {
   readonly physics: VehiclePhysics
   readonly info: DriverInfo
   kind: VehicleKind = 'street'
-  neonColor = 0xff2bd6
+  neonColor = 0x7a8fa8
   lap = 0
   checkpoint = 0
   raceDistance = 0
@@ -89,12 +89,25 @@ export class Vehicle {
    * `hoodZ` / `hoodY` v lokálním prostoru meshe (+Z dopředu).
    */
   hoodCam = { hoodZ: 1.2, hoodY: 0.85 }
+  /** Měkký contact stín pod autem — stabilní i když directional shadow map blbne. */
+  private contactShadow: THREE.Mesh
 
   constructor(info: DriverInfo, tuning?: Partial<VehicleTuning>, kind: VehicleKind = 'street') {
     this.info = info
     this.physics = new VehiclePhysics(tuning)
     this.kind = kind
     this.mesh = createVehicleMesh(kind, info.color)
+    this.contactShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(1.55, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+      }),
+    )
+    this.contactShadow.rotation.x = -Math.PI / 2
+    this.contactShadow.renderOrder = 1
     this.applyMeshShadows()
     this.bakeHoodCam()
   }
@@ -130,14 +143,23 @@ export class Vehicle {
     this.hoodCam = { hoodZ, hoodY: Math.max(0.35, hoodY) }
   }
 
+  private shadowCast = false
+
   private applyMeshShadows(): void {
-    // Stíny vypnuté defaultně (FPS) — cast jen když uživatel zapne shadows v Atmosféře
     this.mesh.traverse((obj) => {
       const m = obj as THREE.Mesh
-      if (!m.isMesh) return
-      m.castShadow = false
-      m.receiveShadow = false
+      if (!m.isMesh || m === this.contactShadow) return
+      m.castShadow = this.shadowCast
+      m.receiveShadow = this.shadowCast
     })
+    this.contactShadow.castShadow = false
+    this.contactShadow.receiveShadow = false
+  }
+
+  /** Zapne/vypne stín auta (vizuál Shadows) — bez terénních z-fightů. */
+  setCastShadow(on: boolean): void {
+    this.shadowCast = on
+    this.applyMeshShadows()
   }
 
   reset(x: number, z: number, heading: number, raceTimeMs: number): void {
@@ -218,20 +240,17 @@ export class Vehicle {
     return this.kind === 'monster' || this.kind === 'truck' || this.kind === 'tank'
   }
 
-  /** Tachometr: skate ~60 (Shift až 72), kolo max 80. */
+  /**
+   * Tachometr — vždy skutečná rychlost (m/s × 3.6).
+   * Stejná fyzická rychlost = stejné číslo u auta i skatu. Žádný přepočet podle peklostroje.
+   */
   get displaySpeedKmh(): number {
-    const raw = this.physics.speedKmh
-    if (this.kind === 'skate') return Math.min(72, Math.round(raw))
-    if (this.kind === 'bike') return Math.min(80, Math.round(raw))
-    return Math.round(raw)
+    return Math.round(Math.abs(this.physics.speed) * 3.6)
   }
 
-  /** Soft cap aktuálního peklostroje (km/h). */
+  /** Cruise max (plyn dopředu) — pro popisy / UI, ne přepočet tachometru. */
   get displayMaxKmh(): number {
-    const raw = this.physics.maxSpeedAbs * 3.6
-    if (this.kind === 'skate') return Math.min(72, Math.round(raw))
-    if (this.kind === 'bike') return Math.min(80, Math.round(raw))
-    return Math.round(raw)
+    return Math.round(this.physics.maxSpeedAbs * 3.6)
   }
 
   update(dt: number, controls: VehicleControls, track: Track): void {
@@ -771,6 +790,12 @@ export class Vehicle {
     this.mesh.rotation.order = 'YXZ'
     this.mesh.rotation.y = this.physics.heading + this.trickBody.yaw
     this.mesh.rotation.x = this.pitch - this.wheeliePitch + this.trickBody.pitch
+    // Contact blob na zemi ve world space (ne child meshe → neklopí se s autem)
+    const host = this.mesh.parent
+    if (host && this.contactShadow.parent !== host) host.add(this.contactShadow)
+    this.contactShadow.position.set(this.physics.x, this.groundY + 0.04, this.physics.z)
+    this.contactShadow.rotation.set(-Math.PI / 2, 0, 0)
+    this.contactShadow.visible = air < 1.2
     // roll z lean + trik se sčítá níže
 
     const bike = this.wantsBikeLean()
