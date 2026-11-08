@@ -4,10 +4,10 @@ Formát: co hráč / návštěvník / pohovor pozná. Technické detaily jsou ve
 
 ---
 
-## [0.5.0] — 2026-11-08 · *AI tempo, atmosféra, demo polish*
+## [0.5.0] — 2026-11-08 · *AI tempo, atmosféra, produktový polish*
 
 ### Proč tahle verze existuje
-Hra má obstát při **demo**, **pohovoru** a když se na ni kouká někdo, kdo nehraje závody denně: čitelnější tratě, živější AI, menu jako produkt, easter eggy a příběh vývoje.
+Čitelnější tratě, živější AI, menu jako produkt, easter eggy a srozumitelná dokumentace — aby šla hra ukázat i lidem mimo racing komunitu.
 
 ### Herní AI (live data)
 - AI soupeři **sbírají tempo z dojetých závodů** (community / pace kalibrace) a upravují cílové časy.
