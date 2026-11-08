@@ -8,6 +8,7 @@
     "server": "node server/index.mjs",
     "dev:all": "node scripts/dev-all.mjs",
     "build": "tsc && vite build",
+    "build:pages": "node scripts/build-version-pages.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

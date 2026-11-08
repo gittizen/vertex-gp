@@ -1,7 +1,10 @@
 # Klec GP / Vertex GP — verze
 
-Přečíslování (jen pojmenování): **0.4 → 0.1**, **1.0 → 0.2**, **1.1 (+ současná)** → **0.3**.  
+Přečíslování: **0.4 → 0.1**, **1.0 → 0.2**, **1.1 (+ současná)** → **0.3**.  
 Historie commitů v gitu zůstává; staré tagy se nemažou.
+
+**Hub (všechny verze):** https://gittizen.github.io/vertex-gp/  
+**Složky:** [versions/](./versions/)
 
 ---
 
@@ -9,12 +12,13 @@ Historie commitů v gitu zůstává; staré tagy se nemažou.
 
 | **0.1** — Vertex GP (základ) | **0.2** — Klec GP (identita) | **0.3** — současná (hra + polish) |
 | --- | --- | --- |
+| [Hrát 0.1](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát 0.2](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát 0.3](https://gittizen.github.io/vertex-gp/0.3/) · [Tourmaline](https://tourmaline-gingersnap-268fa6.netlify.app/) |
 | Vite + TypeScript + Three.js | Rebrand **Klec GP** (logo, intro, watermark) | Mobilní řízení (volant, stick, náklon, ťukání) |
 | Tratě jako data (`TrackDefs`) + mesh generátor | Freestyle / skate / Plácek + triky A–Z | Hosting na Netlify (root `base`) |
 | AI Lehká / Střední / Těžká | Atmosféra menu (Klecany, asfalt, kalendář…) | Community AI learning až po dojetí |
 | Solo + online WS (max 4, host tunnel) | Online hub (presence, rooms, ready, laps) | Šampionát, Serpentiny, pace kalibrace |
 | Tuning rozpočet + barvy | Sjednocená verze UI ↔ `package.json` | Menu: vozidlo → tuning → domů, neon v tuningu |
-| První „pustit kamarádům“ milestone | GitHub Pages mirror `/vertex-gp/` | Watermark crossfade, Esc→menu, restart po dojetí |
+| První „pustit kamarádům“ milestone | GitHub Pages `/vertex-gp/0.2/` | Watermark crossfade, Esc→menu, restart po dojetí |
 | Commit: *Launch Vertex GP…* | Commit: *Release Klec GP 1.0…* | Asfalt/světlo, HUD, FPS, QA průchod |
 
 ---
@@ -66,13 +70,13 @@ Historie commitů v gitu zůstává; staré tagy se nemažou.
 
 **Postup**
 1. UI verze = `src/ui/GameVersion.ts` + `package.json` → **0.3**.
-2. Cursor Origin repo `filip-xvnz7/vertex-gp` drží větve / labely **0.1 · 0.2 · 0.3**.
-3. GitHub zatím neaktualizovat, dokud to výslovně neřekneš.
+2. Hratelné archivy: `node scripts/build-version-pages.mjs` → GitHub Pages `/0.1` `/0.2` `/0.3`.
+3. Produkční Netlify: Tourmaline (aktuální 0.3).
 
 ---
 
 ## Pravidlo pro další verze
 
 - Nepřepisovat staré tagy / force-push historii kvůli „úklidu“.
-- README + tento soubor: krátce *proč*, ne jen changelog diff.
+- README + tento soubor + `versions/`: krátce *proč*, ne jen changelog diff.
 - UI verze = `src/ui/GameVersion.ts` + `package.json`.

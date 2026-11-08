@@ -19,17 +19,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+      - name: Ensure version branches exist
+        run: |
+          git branch -f 0.1 6f21368 || git branch 0.1 6f21368
+          git branch -f 0.2 54d764a || git branch 0.2 54d764a
       - run: npm ci
-      - run: npm run build
-        env:
-          VITE_BASE: /vertex-gp/
+      - name: Build version pages (0.1 / 0.2 / 0.3 + hub)
+        run: node scripts/build-version-pages.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build

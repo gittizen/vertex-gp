@@ -1,6 +1,10 @@
 node_modules
 dist
+site
+.worktrees
 .DS_Store
 *.local
 .vite
 .netlify
+community-learn.json
+pace-cal.json
