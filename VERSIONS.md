@@ -17,15 +17,15 @@ Historie commitů v gitu zůstává; staré tagy se nemažou.
 
 ---
 
-## 0.5 — AI, atmosféra, pohovorový polish *(současná)*
+## 0.5 — AI, atmosféra, produktový polish *(současná)*
 
-**Cíl:** hra obstojí při demo a pohovoru; AI a menu působí „živě“.
+**Cíl:** živější AI a menu, čitelnější tratě, hratelná produkce + archivy.
 
 - Community / pace learning → úprava jezdců podle dat
 - Default: náhodní AI soupeři každý solo závod
-- Kalendář s holkama, Klecany garage = Volvo V70 1. gen
+- Menu styl Kalendář; Klecany garage = Volvo V70 1. gen
 - Opravy terénu (Námko), noční kontrast, AI launch/lean
-- Dokumentace: README pro laiky, CHANGELOG, RECREATE_PROMPT
+- Dokumentace: README, CHANGELOG, RECREATE_PROMPT
 
 **Postup release**
 1. `GameVersion.ts` + `package.json` → **0.5**

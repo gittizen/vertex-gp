@@ -1,13 +1,13 @@
 # Changelog — Klec GP
 
-Formát: co hráč / návštěvník / pohovor pozná. Technické detaily jsou ve zdrojákách.
+Formát: co hráč a návštěvník pozná. Technické detaily jsou ve zdrojákách.
 
 ---
 
 ## [0.5.0] — 2026-11-08 · *AI tempo, atmosféra, produktový polish*
 
 ### Proč tahle verze existuje
-Čitelnější tratě, živější AI, menu jako produkt, easter eggy a srozumitelná dokumentace — aby šla hra ukázat i lidem mimo racing komunitu.
+Čitelnější tratě, živější AI, menu jako produkt, easter eggy a srozumitelná dokumentace.
 
 ### Herní AI (live data)
 - AI soupeři **sbírají tempo z dojetých závodů** (community / pace kalibrace) a upravují cílové časy.
@@ -15,7 +15,7 @@ Formát: co hráč / návštěvník / pohovor pozná. Technické detaily jsou ve
 - Launch feel a lean motorek laděné tak, aby start nebyl „všichni stejně rychlí“ a motorka se nelámlala jako tyčka.
 
 ### Atmosféra & menu (UI/UX)
-- Tón **Kalendář s holkama** + sady (Klasika / Blondýny / Zrzky / Černošky & Asiatky).
+- Menu styl **Kalendář** — varianty Klasika / Blondýny / Zrzky / Globál.
 - Klecany — dlaždice peklostroje: **Volvo V70 1. gen (~1999), tmavě modrá**.
 - Mobile back navigace, pořadí tratí (Námko první, Plácek poslední), kontrast nočního města.
 
@@ -24,10 +24,10 @@ Formát: co hráč / návštěvník / pohovor pozná. Technické detaily jsou ve
 - Noční Klecany: čitelný asfalt × terén; Novostavby: světlejší okolí.
 - Variabilita domů (HouseKit), méně hitchů na city/loop.
 
-### Easter eggy & „proč to není jen template“
-- **Koloběžka** — chyták v garáži (nejezdí; dialogy).
+### Easter eggy & extra
+- **Koloběžka** — easter egg v garáži (nejezdí; dialogy).
 - **Soutěže / šampionát**, žebříčky, freestyle body na skate/kole.
-- Atmosférické styly menu (neon, mech, led, kalendář…) — ne jedna generická obrazovka.
+- Atmosférické styly menu (neon, mech, led, kalendář…).
 
 ### Co jsme dlouho řešili
 - Z-fight a „voda“ místo země (Standard + fog na flat meshích).

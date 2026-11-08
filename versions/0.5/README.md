@@ -1,6 +1,6 @@
 # 0.5 — AI tempo, atmosféra, demo polish *(současná)*
 
-Hra připravená ukázat lidem, co neumí „jen otevřít Unity template“.
+Aktuální produkční větev Klec GP.
 
 ## Hrát
 - GitHub Pages: https://gittizen.github.io/vertex-gp/0.5/
@@ -8,8 +8,8 @@ Hra připravená ukázat lidem, co neumí „jen otevřít Unity template“.
 
 ## Patří sem
 - Live kalibrace AI z dat závodů + náhodní soupeři každý solo race
-- Kalendář s holkama, Volvo V70 na Klecanech (garage)
-- Opravy terénu / noci / AI feel; dokumentace pro pohovor
+- Menu styl Kalendář; Volvo V70 na Klecanech (garage)
+- Opravy terénu / noci / AI feel; lidská dokumentace
 - UI `v0.5` / `package.json` `0.5.0`
 
 ## Screenshot

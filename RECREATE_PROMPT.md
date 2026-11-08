@@ -34,7 +34,7 @@ AI
 UI/UX
 - Entry splash → home dlaždice (Závod / Trať / Peklostroj / Žebříček / Nastavení).
 - Atmosféra: tóny (klecany, neon, ember, ice, moss, asphalt, calendar…).
-- „Kalendář s holkama“: packy classic/blonde/redhead/global; art per slot (bg/race/garage/tracks/settings/board).
+- Calendar atmosphere packs: classic/blonde/redhead/global; art per slot (bg/race/garage/tracks/settings/board).
 - Klecany garage tile: tmavě modré Volvo V70 1. gen ~1999.
 - Mobile: back tlačítka ve všech submenu; touch schémata v Ovládání.
 - HUD: rychlost, kolo, čas, náskok/ztráta, FPS v dev.
@@ -47,7 +47,7 @@ TECHNICKÉ PASTI, KTERÉ UŽ MÁME VYŘEŠENÉ (neopakuj)
 
 POLISH / PRODUKT
 - Version hub: VERSIONS.md, versions/0.x, build-version-pages.mjs → site/ pro GH Pages.
-- CHANGELOG lidsky; README pro laiky i pohovor (co, proč, jak testovat).
+- CHANGELOG lidsky; README pro laiky (co, proč, jak testovat).
 - Easter eggy: koloběžka dialogy, soutěže, watermark tratí, atmosférické fotky.
 
 Výstup: hratelný npm run dev:all, české UI default, verze 0.5.0 v GameVersion.ts + package.json.

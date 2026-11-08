@@ -26,7 +26,7 @@ Autor: **Filip Khunt** · ve hře věkové omezení **16+** · repozitář histo
 | **UI / UX** | Mobilní navigace zpět, schémata řízení, kontrast silnice / auto / terén, CS + EN |
 | **3D / engine** | Tratě z dat (křivka → silnice + terén), stíny, výkonnostní režimy |
 | **AI** | Soupeři ve stejné kategorii vozidla; live kalibrace cílových časů z dat závodů |
-| **Síť** | Vlastní WebSocket lobby (max 4), ne jen hotový multiplayer SaaS |
+| **Síť** | Vlastní WebSocket lobby (max 4 hráčů) |
 | **Proces** | Changelog, version hub, opakované herní testování a opravy |
 
 ---
@@ -37,9 +37,9 @@ Autor: **Filip Khunt** · ve hře věkové omezení **16+** · repozitář histo
 - **Vozidla** od formule po skate; tuning s rozpočtem bodů  
 - **AI** — Lehká / Střední / Těžká; default *každý solo závod jiní soupeři*  
 - **Online** — založ místnost, pošli odkaz  
-- **Menu** — volitelné vizuální styly (včetně pin-up atmosféry)
+- **Menu** — volitelné vizuální styly (neon, mech, led, kalendář…)
 
-**Drobnosti pro hráče:** koloběžka v garáži (chyták), soutěže / žebříčky, watermark tratí, ostrý CS/EN copy.
+**Drobnosti pro hráče:** koloběžka v garáži (easter egg), soutěže / žebříčky, watermark tratí, CS + EN.
 
 ---
 
