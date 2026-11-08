@@ -1,5 +1,22 @@
-export type VehicleKind = 'street' | 'formula' | 'rally'
-export type WorldKind = 'city' | 'circuit' | 'ice'
+export type VehicleKind =
+  | 'moto'
+  | 'formula'
+  | 'monster'
+  | 'street'
+  | 'skate'
+  | 'bike'
+  | 'truck'
+  | 'tank'
+  | 'limo'
+  | 'scooter'
+export type WorldKind = 'city' | 'town' | 'rally' | 'climb' | 'plaza'
+export type SkyBody = 'sun' | 'moon'
+
+/**
+ * Sytá střední šedá asfaltu — čitelná proti trávě, noci i horám.
+ * Render přes MeshBasicMaterial (bez zatemnění světlem).
+ */
+export const ASPHALT_GREY = 0x9a9aa4
 
 export type TrackTheme = {
   road: number
@@ -22,22 +39,141 @@ export type TrackDef = {
   tension: number
   vehicle: VehicleKind
   world: WorldKind
-  /** 1 = suchý asfalt, ~0.45 = led */
+  /** true = okruh, false = start→cíl */
+  loop: boolean
   surfaceGrip: number
+  aiSpeedMult: number
+  /** Násobitel stropu rychlosti všech jezdců na této trati (1 = beze změny). */
+  playerSpeedMult?: number
+  skyBody: SkyBody
+  heights?: number[]
   points: [number, number][]
   theme: TrackTheme
+  /** Předpokládaný čas závodu (2 kola / etapa) */
+  estTime: string
+  /**
+   * Volná plocha (ne závod) — Plácek apod.
+   * Hranice v metrech kolem středu (0,0).
+   */
+  sandbox?: boolean
+  sandboxBounds?: { halfX: number; halfZ: number }
+  /**
+   * Drift mapa (NFS Carbon): Space = e-brake, body za smyk.
+   * Freestyle režim na této mapě = klasické řízení.
+   */
+  drift?: boolean
+}
+
+/**
+ * Kruhový objezd — body na kružnici (stupně, CCW kladně).
+ * ~300° = jasný kruháč; reverse tratě = průjezd opačným směrem.
+ */
+function rbt(
+  cx: number,
+  cz: number,
+  r: number,
+  startDeg: number,
+  sweepDeg: number,
+  steps = 14,
+): [number, number][] {
+  const out: [number, number][] = []
+  for (let i = 0; i <= steps; i++) {
+    const a = ((startDeg + (sweepDeg * i) / steps) * Math.PI) / 180
+    out.push([cx + Math.cos(a) * r, cz + Math.sin(a) * r])
+  }
+  return out
 }
 
 export const TRACKS: TrackDef[] = [
   {
+    id: 'klecanek',
+    name: 'Do Klecánek',
+    blurb: 'Ostře z Povltavské do kopce — dole ztráta nervů, nahoře hřbitov',
+    halfWidth: 7.2,
+    tension: 0.22,
+    vehicle: 'street',
+    world: 'climb',
+    loop: false,
+    surfaceGrip: 1,
+    aiSpeedMult: 1.15,
+    skyBody: 'sun',
+    estTime: '0:20',
+    // OSRM: Klecánky → ostrá Povltavská → Do Klecánek (serpentiny) → Čsl. armády → U Hřbitova
+    points: [
+      [0, 0],
+      [-24.6, 11.3],
+      [-46, 51.4],
+      [-64, 86.9],
+      [-66.5, 116.2],
+      [-36.9, 132],
+      [-7.9, 142.2],
+      [-11.9, 172.6],
+      [5.3, 196.9],
+      [31.6, 207.8],
+      [55.6, 221.7],
+      [80.3, 232.9],
+      [102.8, 247.3],
+      [116.3, 269],
+      [120.2, 294.6],
+      [136.1, 314.6],
+      [153.7, 332.6],
+      [172.3, 349],
+      [190.3, 365.4],
+      [201.5, 386.6],
+      [211.3, 408.3],
+      [231.5, 411.5],
+      [249.8, 397.3],
+      [269.8, 386.6],
+      [291.8, 380.6],
+      [313.6, 375.4],
+      [335.3, 370.7],
+      [356.3, 376.1],
+      [371, 391.7],
+      [380.1, 411.4],
+      [388.5, 431.1],
+      [397.5, 450.3],
+      [414.6, 462.3],
+      [434.4, 469],
+      [454.3, 475.1],
+      [474, 481.1],
+      [493.7, 486.6],
+      [513.2, 485.4],
+      [532.3, 478.9],
+      [551.1, 471.8],
+      [568.3, 461.8],
+      [581.2, 449.6],
+    ],
+    heights: [
+      0, 1, 2.1, 3.2, 4.4, 5.7, 6.9, 8.2, 9.5, 10.8, 12.2, 13.5, 14.9, 16.2, 17.6, 19, 20.4, 21.8,
+      23.2, 24.6, 26.1, 27.5, 28.9, 30.4, 31.9, 33.3, 34.8, 36.3, 37.7, 39.2, 40.1, 40.4, 40.6, 40.9,
+      41.2, 41.4, 41.7, 42, 42.2, 42.5, 42.7, 43,
+    ],
+    theme: {
+      road: ASPHALT_GREY,
+      ground: 0x3a4e2c,
+      barrierL: 0xb8a078,
+      barrierR: 0xb8a078,
+      edge: 0xffffff,
+      sky: 0x7eb4d4,
+      fog: 0xb8d0c8,
+      building: 0xc8b8a4,
+      accent: 0xc62828,
+      detail: 0x2f5a32,
+    },
+  },
+  {
     id: 'city',
-    name: 'Downtown Sprint',
-    blurb: 'Úzké noční ulice · vytuněná auta · neon a mlha',
+    name: 'Noční Klecany',
+    blurb: 'Neon, moře a lidi, co ti fandí i když jedeš do zdi',
     halfWidth: 7.2,
     tension: 0.36,
-    vehicle: 'street',
+    vehicle: 'moto',
     world: 'city',
+    loop: true,
     surfaceGrip: 1,
+    aiSpeedMult: 0.9 * 1.15,
+    skyBody: 'moon',
+    estTime: '0:26',
     points: [
       [0, -120],
       [40, -145],
@@ -57,11 +193,11 @@ export const TRACKS: TrackDef[] = [
       [-20, -125],
     ],
     theme: {
-      road: 0x5a5a68,
+      road: ASPHALT_GREY,
       ground: 0x0c0c14,
       barrierL: 0xff2bd6,
       barrierR: 0x2de2e6,
-      edge: 0xffe0ff,
+      edge: 0xffffff,
       sky: 0x080812,
       fog: 0x1a1230,
       building: 0x222030,
@@ -70,85 +206,524 @@ export const TRACKS: TrackDef[] = [
     },
   },
   {
-    id: 'monza',
-    name: 'Monza Parabolica',
-    blurb: 'Klasický F1 okruh · tribuny a fanoušci · formule',
-    halfWidth: 12.5,
-    tension: 0.28,
+    id: 'klecany',
+    name: 'Námko',
+    blurb: 'Vesnický okruh: kostel, zámek a tvoje ego na Topolové',
+    halfWidth: 7.6,
+    tension: 0.32,
     vehicle: 'formula',
-    world: 'circuit',
+    world: 'town',
+    loop: true,
     surfaceGrip: 1,
+    aiSpeedMult: 1,
+    skyBody: 'sun',
+    estTime: '0:33',
+    // Okruh podle ulic Klecan: Do Klecánek → náměstí → Čsl. armády / zámek
+    // → Topolová / NUDZ → sídliště → Přemyšlenská → zpět
     points: [
-      [0, -260],
-      [40, -280],
-      [100, -270],
-      [160, -220],
-      [200, -140],
-      [210, -40],
-      [180, 60],
-      [120, 140],
-      [40, 190],
-      [-60, 200],
-      [-150, 150],
-      [-200, 60],
-      [-210, -40],
-      [-180, -140],
-      [-110, -220],
-      [-40, -255],
+      // Do Klecánek (start)
+      [22, -155],
+      [20, -100],
+      [16, -52],
+      // náměstí V. B. Třebízského (objezd)
+      [-16, -24],
+      [-50, -4],
+      [-58, 32],
+      [-28, 56],
+      [12, 62],
+      [46, 40],
+      // U Školy → Topolová na východ
+      [82, 22],
+      [128, 40],
+      [168, 82],
+      [188, 128],
+      // NUDZ / Topolová otočka
+      [176, 172],
+      [128, 198],
+      [72, 208],
+      // K Sídlišti
+      [16, 200],
+      [-30, 176],
+      // Přemyšlenská / Na Hradišti
+      [-64, 140],
+      [-86, 94],
+      [-92, 48],
+      // Čsl. armády, kostel a zámek — zpět mimo startovní rovinku
+      [-80, 8],
+      [-62, -32],
+      [-42, -88],
+      [-8, -132],
     ],
     theme: {
-      road: 0x2f3338,
-      ground: 0x2f7a3e,
-      barrierL: 0xe10600,
-      barrierR: 0xffffff,
+      road: ASPHALT_GREY,
+      ground: 0x3d522c,
+      barrierL: 0xc4a574,
+      barrierR: 0xc4a574,
       edge: 0xffffff,
-      sky: 0x6eb0e0,
-      fog: 0xa8d0ea,
-      building: 0xc4c4c4,
-      accent: 0xe10600,
-      detail: 0x3a8f4a,
+      sky: 0xff8a52,
+      fog: 0xffc49a,
+      building: 0xc8b8a4,
+      accent: 0xb8860b,
+      detail: 0x4a6a38,
     },
   },
   {
-    id: 'ice',
-    name: 'Alpine Freeze',
-    blurb: 'Široká ledová trať · rallye · hory a jezero',
-    halfWidth: 18,
-    tension: 0.3,
-    vehicle: 'rally',
-    world: 'ice',
-    surfaceGrip: 0.68,
+    id: 'turini',
+    name: 'Novostavby',
+    blurb: 'Bahno, turbo a pocit, že Sauron řídí safety car',
+    halfWidth: 8.5,
+    tension: 0.38,
+    vehicle: 'monster',
+    world: 'rally',
+    loop: false,
+    surfaceGrip: 0.82,
+    // Est. 0:17 (dřív 0:28) → AI tempo ×28/17 vůči původnímu 1.15
+    aiSpeedMult: 1.15 * (28 / 17),
+    skyBody: 'sun',
+    estTime: '0:17',
+    // Stejná trasa — monstertruck aréna
     points: [
-      [0, -280],
-      [70, -310],
-      [170, -290],
-      [250, -200],
-      [280, -60],
-      [240, 80],
-      [140, 180],
-      [20, 240],
-      [-110, 250],
-      [-220, 180],
-      [-280, 40],
-      [-270, -100],
-      [-190, -210],
-      [-80, -270],
+      [0, 0],
+      [10, 80],
+      [18, 170],
+      [60, 220],
+      [120, 240],
+      [175, 280],
+      [200, 350],
+      [185, 430],
+      [170, 520],
+      [110, 560],
+      [40, 545],
+      [-25, 575],
+      [-75, 640],
+      [-95, 730],
+      [-75, 820],
+      [-15, 870],
+      [55, 895],
+      [115, 950],
+      [145, 1040],
+      [130, 1130],
+      [70, 1180],
+      [5, 1200],
+      [-50, 1260],
+      [-80, 1350],
+      [-55, 1440],
+      [10, 1490],
+      [80, 1530],
+      [125, 1600],
+      [140, 1700],
+      [150, 1800],
+      [158, 1900],
+    ],
+    heights: [
+      2, 3, 5, 8, 10, 12, 13, 12, 10, 7, 5, 4, 6, 9, 12, 14, 15, 13, 10, 7, 5, 6, 9, 12, 14, 13,
+      10, 8, 7, 8, 9,
     ],
     theme: {
-      road: 0xb8cce0,
-      ground: 0xe4eef5,
-      barrierL: 0xff6a00,
-      barrierR: 0x2a6aaa,
-      edge: 0xffffff,
-      sky: 0x9ab8d0,
-      fog: 0xd2e2ee,
-      building: 0x8aa0b0,
+      road: ASPHALT_GREY,
+      ground: 0x3a2a18,
+      barrierL: 0xff8a00,
+      barrierR: 0xff8a00,
+      edge: 0xd0a060,
+      sky: 0x2a1810,
+      fog: 0x4a2818,
+      building: 0x3a3a42,
       accent: 0xff6a00,
-      detail: 0x3a6a4a,
+      detail: 0x5a3a22,
+    },
+  },
+  {
+    // OSM: V Mexiku (~50.1735, 14.4189) · U Školky / Na Kopečku — sídliště, Brooklyn nahoře
+    id: 'mexiku',
+    name: 'Mexiko',
+    blurb: 'Brooklyn paneláky × vesnice u vody — 90° bloky, dlouhá zatáčka',
+    halfWidth: 7.0,
+    tension: 0.18,
+    vehicle: 'skate',
+    world: 'climb',
+    loop: false,
+    surfaceGrip: 0.94,
+    // −50 % dříve, teď ještě −30 % AI
+    aiSpeedMult: 1.2 * 1.3 * 0.5 * 0.7,
+    playerSpeedMult: 0.5,
+    skyBody: 'sun',
+    estTime: '0:55',
+    // Sídliště V Mexiku: střídavé 90° L/R (bloky), Brooklyn úplně nahoře, jedna dlouhá zatáčka uprostřed
+    points: [
+      // ——— Brooklyn (nejvyšší) ———
+      [0, 0],
+      [0, 55],
+      [70, 55], // 90° R
+      [70, 110],
+      [-20, 110], // 90° L
+      [-20, 175],
+      [80, 175], // 90° R
+      [80, 240],
+      [-10, 240], // 90° L
+      [-10, 300],
+      [90, 300], // 90° R
+      [90, 355],
+      [20, 355], // 90° L
+      [20, 400],
+      // ——— dlouhá zatáčka uprostřed (jediná táhlá, ne 90°) ———
+      [55, 445],
+      [120, 485],
+      [200, 505],
+      [285, 500],
+      [355, 465],
+      [400, 410],
+      [420, 340],
+      // ——— spodní sídliště — 90° do obou stran ———
+      [420, 270],
+      [330, 270], // 90° L
+      [330, 200],
+      [420, 200], // 90° R
+      [420, 130],
+      [325, 130], // 90° L
+      [325, 55],
+      [420, 55], // 90° R
+      [420, -20],
+      [310, -20], // 90° L
+      [310, -95],
+      [200, -95], // 90° R→L blok
+      [200, -175],
+      [95, -175], // 90° L
+      [95, -255],
+      [-15, -255], // 90° R
+      [-15, -335],
+      [-120, -335], // 90° L
+      [-120, -410],
+      [-40, -450],
+      [40, -490],
+    ],
+    heights: [
+      54, 52, 50, 48, 46, 44, 42, 40, 38, 36, 34, 32, 30, 28, 26, 23, 20, 17, 15, 13, 12, 11, 10, 9.5, 9,
+      8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5,
+    ],
+    theme: {
+      road: ASPHALT_GREY,
+      ground: 0x2a3820,
+      barrierL: 0xe8a020,
+      barrierR: 0xe8a020,
+      edge: 0xffffff,
+      sky: 0x5a8aaa,
+      fog: 0x4a6878,
+      building: 0xc0b098,
+      accent: 0xff6a9a,
+      detail: 0x1e3a22,
+    },
+  },
+  {
+    id: 'hruby',
+    name: 'Hrubý',
+    blurb: 'Sedlec → 3 kruháče → Hrubý → Zdibsko — obousměrně',
+    halfWidth: 8.2,
+    tension: 0.3,
+    vehicle: 'street',
+    world: 'town',
+    loop: true,
+    surfaceGrip: 1,
+    aiSpeedMult: 1.05,
+    skyBody: 'sun',
+    estTime: '0:34',
+    // Sedlec → podjezd → 3× kruháč (~300°, reverse = opačný směr) → Hrubý → Zdibsko → Sedlec
+    points: [
+      // Sedlec — jih (ne Líbeznice)
+      [0, 0],
+      [-6, -70],
+      [-14, -145],
+      [-20, -210],
+      // nájezd na kruháč 1 (Ke Zdibsku / podjezd D8)
+      [-28, -248],
+      ...rbt(-40, -290, 42, 90, 300, 14),
+      // k benzínce Hrubý
+      [-120, -310],
+      [-175, -280],
+      [-215, -255],
+      // kruháč 2 u Hrubý
+      ...rbt(-255, -245, 40, 25, 300, 14),
+      // na Zdibsko
+      [-310, -190],
+      [-345, -120],
+      [-360, -50],
+      [-355, -5],
+      // kruháč 3 Zdibsko
+      ...rbt(-325, 30, 42, -95, 300, 14),
+      // rovinka zpět na Sedlec
+      [-250, 45],
+      [-175, 52],
+      [-100, 55],
+      [-40, 48],
+      [10, 28],
+      [8, 10],
+    ],
+    theme: {
+      road: ASPHALT_GREY,
+      ground: 0x3d522c,
+      barrierL: 0xc4a574,
+      barrierR: 0xc4a574,
+      edge: 0xffffff,
+      sky: 0x8ab4d4,
+      fog: 0xc8d8e8,
+      building: 0xc8b8a4,
+      accent: 0x2e7d32,
+      detail: 0x4a6a38,
+    },
+  },
+  {
+    // OSM: Na Zlatý kopec, Přemyšlení / Zdiby (~50.1586, 14.4270)
+    id: 'zlaty',
+    name: 'Zlatý kopec',
+    blurb: 'Přemyšlení → Zlatý kopec: zlatý výšlap, nahoře se ti to vyplatí',
+    halfWidth: 7.4,
+    tension: 0.22,
+    vehicle: 'street',
+    world: 'climb',
+    loop: false,
+    surfaceGrip: 0.96,
+    aiSpeedMult: 1.12,
+    skyBody: 'sun',
+    estTime: '0:24',
+    // Mírný výšlap (jako Do Klecánek) — bez utopení v terénu
+    points: [
+      [0, 0],
+      [22, 70],
+      [48, 145],
+      [35, 230],
+      [-5, 310],
+      [-48, 380],
+      [-30, 460],
+      [25, 530],
+      [80, 590],
+      [110, 680],
+      [70, 760],
+      [15, 840],
+      [-40, 920],
+      [-20, 1010],
+      [45, 1090],
+      [100, 1170],
+      [130, 1260],
+      [95, 1350],
+      [40, 1430],
+      [10, 1520],
+      [55, 1600],
+      [120, 1680],
+    ],
+    heights: [
+      0, 1.5, 3.2, 5, 7, 9.2, 11.5, 14, 16.5, 19, 21.5, 24, 26.5, 29, 31.5, 34, 36.5, 39, 41, 43, 45,
+      47,
+    ],
+    theme: {
+      road: ASPHALT_GREY,
+      ground: 0x4a3a1a,
+      barrierL: 0xd4a017,
+      barrierR: 0xd4a017,
+      edge: 0xffe08a,
+      sky: 0xffb060,
+      fog: 0xffd9a0,
+      building: 0xc4a878,
+      accent: 0xffc107,
+      detail: 0x5a4a22,
+    },
+  },
+  {
+    // OSM / obecní mapa: Hlavní + Červená Skála, Husinec–Řež (~50.17, 14.36)
+    id: 'serpentiny',
+    name: 'Serpentýny Řež',
+    blurb: 'Husinec → Řež: krpál a vlásenky u Červené skály',
+    halfWidth: 7.0,
+    tension: 0.2,
+    vehicle: 'moto',
+    world: 'climb',
+    loop: false,
+    surfaceGrip: 0.92,
+    aiSpeedMult: 1.08,
+    skyBody: 'sun',
+    estTime: '0:26',
+    // Širší vlásenky + jemný výšlap (bez vertikálního vystřelení křivky)
+    points: [
+      [0, 0],
+      [60, 80],
+      [130, 130],
+      [200, 150],
+      [250, 100],
+      [240, 20],
+      [180, -40],
+      [100, -50],
+      [40, 10],
+      [50, 100],
+      [120, 170],
+      [200, 210],
+      [280, 200],
+      [320, 130],
+      [290, 50],
+      [210, 40],
+      [160, 120],
+      [200, 210],
+      [280, 270],
+      [360, 280],
+      [410, 220],
+      [390, 140],
+      [310, 130],
+      [280, 220],
+      [340, 300],
+      [420, 340],
+      [500, 350],
+      [560, 300],
+      [540, 220],
+      [460, 230],
+      [450, 330],
+      [520, 410],
+      [600, 460],
+      [680, 520],
+    ],
+    heights: [
+      0, 1.2, 2.5, 3.8, 5, 6.3, 7.6, 9, 10.3, 11.6, 13, 14.4, 15.8, 17.2, 18.6, 20, 21.4, 22.8, 24.2,
+      25.6, 27, 28.4, 29.8, 31.2, 32.6, 34, 35.4, 36.8, 38, 39.2, 40.4, 41.6, 42.8, 44,
+    ],
+    theme: {
+      road: ASPHALT_GREY,
+      ground: 0x3a4a28,
+      barrierL: 0xc45c3a,
+      barrierR: 0xc45c3a,
+      edge: 0xffffff,
+      sky: 0x6a9ab8,
+      fog: 0xa8c4c8,
+      building: 0xb8a890,
+      accent: 0xe85a3a,
+      detail: 0x2a4a30,
+    },
+  },
+  {
+    id: 'placek',
+    name: 'Plácek',
+    blurb: 'Volná plocha u vody — jeď čím chceš, freestyle body se sčítají',
+    halfWidth: 12,
+    tension: 0.2,
+    vehicle: 'skate',
+    world: 'plaza',
+    loop: true,
+    sandbox: true,
+    sandboxBounds: { halfX: 170, halfZ: 110 },
+    surfaceGrip: 1.05,
+    aiSpeedMult: 0,
+    skyBody: 'sun',
+    estTime: '∞',
+    // Obvod pro náhled / watermark
+    points: [
+      [-170, -110],
+      [170, -110],
+      [170, 110],
+      [-170, 110],
+    ],
+    theme: {
+      road: ASPHALT_GREY,
+      ground: 0x3e5a32,
+      barrierL: 0xd0c8b0,
+      barrierR: 0xd0c8b0,
+      edge: 0xffffff,
+      sky: 0x7ec8e8,
+      fog: 0xb8d8e8,
+      building: 0xc4b49a,
+      accent: 0x2a8f6e,
+      detail: 0x2f5a28,
+    },
+  },
+  {
+    // Mapy / ÚP: Dolní + Horní kasárny Klecany (~50.18, 14.42) — zimní drift okruh
+    id: 'kasarny',
+    name: 'Kasárny',
+    blurb: 'Zimní drift po areálu kasáren — Space = e-brake, body za smyk',
+    halfWidth: 8.8,
+    tension: 0.38,
+    vehicle: 'street',
+    world: 'town',
+    loop: true,
+    drift: true,
+    surfaceGrip: 0.58,
+    aiSpeedMult: 0.92,
+    playerSpeedMult: 0.96,
+    skyBody: 'moon',
+    estTime: '0:40',
+    // Parade ground: jih → východ → sever → západ, ostré rohy + střední kink
+    points: [
+      [0, 0],
+      [70, -4],
+      [130, 8],
+      [175, 35],
+      [195, 85],
+      [200, 140],
+      [185, 190],
+      [145, 225],
+      [85, 240],
+      [20, 245],
+      [-45, 235],
+      [-100, 210],
+      [-140, 165],
+      [-160, 110],
+      [-165, 55],
+      [-145, 10],
+      [-100, -15],
+      [-40, -18],
+      [15, -8],
+      // vnitřní kink (bývalá spojka Horní/Dolní)
+      [55, 40],
+      [95, 70],
+      [90, 115],
+      [50, 145],
+      [5, 150],
+      [-35, 125],
+      [-50, 80],
+      [-25, 45],
+      [20, 35],
+      [55, 20],
+      [40, 5],
+      [0, 0],
+    ],
+    theme: {
+      road: 0xb8c4d0,
+      ground: 0xe8eef4,
+      barrierL: 0x8a9aaa,
+      barrierR: 0x8a9aaa,
+      edge: 0xffffff,
+      sky: 0x6a8498,
+      fog: 0xc8d4e0,
+      building: 0x9aa4ae,
+      accent: 0x5eb0e0,
+      detail: 0xd0d8e0,
     },
   },
 ]
 
 export function getTrackDef(id: string): TrackDef {
   return TRACKS.find((t) => t.id === id) ?? TRACKS[0]
+}
+
+export const VEHICLE_KINDS: VehicleKind[] = [
+  'moto',
+  'formula',
+  'monster',
+  'truck',
+  'tank',
+  'street',
+  'limo',
+  'skate',
+  'bike',
+  'scooter',
+]
+
+/** Soupeři / závod — bez koloběžky (trap). */
+export const RACE_VEHICLE_KINDS: VehicleKind[] = VEHICLE_KINDS.filter((k) => k !== 'scooter')
+
+/** Freestyle peklostroje. */
+export const FREESTYLE_VEHICLE_KINDS: VehicleKind[] = ['skate', 'bike']
+
+/** Otočí body (a výšky) — jízda v opačném směru. */
+export function resolveTrackDef(def: TrackDef, reverse: boolean): TrackDef {
+  if (!reverse || def.sandbox) return def
+  return {
+    ...def,
+    points: [...def.points].reverse() as [number, number][],
+    heights: def.heights ? [...def.heights].reverse() : undefined,
+  }
 }

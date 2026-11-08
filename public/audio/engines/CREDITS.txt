@@ -1,0 +1,5 @@
+﻿# Engine samples
+- car-idle/mid/high/top + loop*: domasx2 racing car engine loops (OGA) CC0
+- car-start: looneybits CC0
+- heavy: Nayckron / qubodup CC-BY 3.0
+- bass-rumble: qubodup car engine loop preview (OGA) CC-BY 3.0

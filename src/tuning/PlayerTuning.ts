@@ -1,22 +1,28 @@
+import { t } from '../i18n/i18n'
+
 export type PlayerTuningValues = {
   power: number
   brakes: number
   downforce: number
   grip: number
+  steer: number
+  lightness: number
 }
 
-/** Celkový rozpočet bodů — na max (100) můžeš mít jen jednu věc, zbytek na 0. */
-export const TUNING_BUDGET = 100
+/** Celkový rozpočet bodů — na max můžeš mít jen jednu věc, zbytek nízko. */
+export const TUNING_BUDGET = 250
 
 export const DEFAULT_PLAYER_TUNING: PlayerTuningValues = {
-  power: 25,
-  brakes: 25,
-  downforce: 25,
-  grip: 25,
+  power: 42,
+  brakes: 42,
+  downforce: 38,
+  grip: 42,
+  steer: 40,
+  lightness: 36,
 }
 
-export function tuningSum(t: PlayerTuningValues): number {
-  return t.power + t.brakes + t.downforce + t.grip
+export function tuningSum(vals: PlayerTuningValues): number {
+  return vals.power + vals.brakes + vals.downforce + vals.grip + vals.steer + vals.lightness
 }
 
 /**
@@ -36,7 +42,6 @@ export function setTuningStat(
   if (overflow <= 0) return next
 
   const others = (Object.keys(next) as (keyof PlayerTuningValues)[]).filter((k) => k !== key)
-  // Ber nejdřív z nejvyšších ostatních
   others.sort((a, b) => next[b] - next[a])
 
   for (const k of others) {
@@ -53,40 +58,31 @@ export function setTuningStat(
   return next
 }
 
-export function tuningToPhysics(t: PlayerTuningValues) {
+export function tuningToPhysics(vals: PlayerTuningValues) {
+  const k = 1.3
   return {
-    // Základ −30 %, pak +10 % akcelerace; nižší drag = vyšší top speed
-    power: (58 + t.power * 0.4) * 0.7 * 1.1,
-    brakeForce: 70 + t.brakes * 0.45,
-    downforce: 0.95 + t.downforce * 0.009,
-    grip: 1.05 + t.grip * 0.0055,
-    drag: 0.2 - t.power * 0.0004 + t.downforce * 0.00035,
+    power: (58 + vals.power * 0.4 * k) * 0.7 * 1.1,
+    brakeForce: 70 + vals.brakes * 0.45 * k,
+    downforce: 0.95 + vals.downforce * 0.009 * k,
+    grip: 1.05 + vals.grip * 0.0055 * k,
+    drag: 0.2 - vals.power * 0.0004 * k + vals.downforce * 0.00035 * k,
+    steerResp: 0.7 + vals.steer * 0.007 * k,
+    mass: 1.2 - vals.lightness * 0.0042 * k,
   }
 }
 
-export function tuningHint(t: PlayerTuningValues): string {
-  const sum = tuningSum(t)
+export function tuningHint(vals: PlayerTuningValues): string {
+  const sum = tuningSum(vals)
   const left = TUNING_BUDGET - sum
-  const maxed = (Object.keys(t) as (keyof PlayerTuningValues)[]).find((k) => t[k] >= 95)
+  const maxed = (Object.keys(vals) as (keyof PlayerTuningValues)[]).find((k) => vals[k] >= 95)
 
   if (maxed) {
-    return `Na maximu: ${labelOf(maxed)} — ostatní musí zůstat nízko (rozpočet ${TUNING_BUDGET}).`
+    return t('tune.maxed', { stat: t(`tune.stat.${maxed}`), budget: TUNING_BUDGET })
   }
-  if (t.power > 60 && t.grip < 20) return 'Hodně výkonu, málo gripu — pozor ve výjezdech.'
-  if (t.downforce > 60 && t.power < 20) return 'Velký přítlak drží auto, ale bere top speed.'
-  if (left > 0) return `Zbývá ${left} bodů z ${TUNING_BUDGET}. Na max můžeš vytáhnout jen jednu věc.`
-  return 'Rozpočet plný — přidej jednu věc jen když něco jiného snížíš.'
-}
-
-function labelOf(k: keyof PlayerTuningValues): string {
-  switch (k) {
-    case 'power':
-      return 'výkon'
-    case 'brakes':
-      return 'brzdy'
-    case 'downforce':
-      return 'přítlak'
-    case 'grip':
-      return 'grip'
-  }
+  if (vals.power > 60 && vals.grip < 20) return t('tune.powerGrip')
+  if (vals.downforce > 60 && vals.power < 20) return t('tune.dfPower')
+  if (vals.steer > 70 && vals.grip < 25) return t('tune.steerGrip')
+  if (vals.lightness > 70 && vals.grip < 25) return t('tune.lightGrip')
+  if (left > 0) return t('tune.left', { left, budget: TUNING_BUDGET })
+  return t('tune.full')
 }

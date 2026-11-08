@@ -1,0 +1,89 @@
+import type { VehicleKind } from '../track/TrackDefs'
+import { GAME_STORAGE_NS } from '../input/KeyBindings'
+
+const STORAGE_KEY = `${GAME_STORAGE_NS}.records`
+
+export type RecordEntry = {
+  player: string
+  trackId: string
+  vehicle: VehicleKind
+  /** Nejlepší čas závodu (ms), nižší = lepší */
+  bestTimeMs: number
+  /** Nejvyšší freestyle skóre (triky + umístění) */
+  bestFsScore: number
+  /** Nejvíc bodů jen z triků */
+  bestTrickPts: number
+  at: number
+}
+
+export type RecordsStore = {
+  entries: RecordEntry[]
+}
+
+function loadStore(): RecordsStore {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { entries: [] }
+    const parsed = JSON.parse(raw) as RecordsStore
+    return { entries: Array.isArray(parsed.entries) ? parsed.entries : [] }
+  } catch {
+    return { entries: [] }
+  }
+}
+
+function saveStore(store: RecordsStore): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+}
+
+export function submitRaceRecord(input: {
+  player: string
+  trackId: string
+  vehicle: VehicleKind
+  timeMs: number
+  fsScore: number
+  trickPts: number
+}): RecordEntry {
+  const store = loadStore()
+  const player = (input.player || 'Hráč').trim().slice(0, 24)
+  const existing = store.entries.find(
+    (e) => e.player === player && e.trackId === input.trackId && e.vehicle === input.vehicle,
+  )
+  if (existing) {
+    if (input.timeMs > 0 && (existing.bestTimeMs <= 0 || input.timeMs < existing.bestTimeMs)) {
+      existing.bestTimeMs = input.timeMs
+    }
+    if (input.fsScore > existing.bestFsScore) existing.bestFsScore = input.fsScore
+    if (input.trickPts > existing.bestTrickPts) existing.bestTrickPts = input.trickPts
+    existing.at = Date.now()
+    saveStore(store)
+    return existing
+  }
+  const entry: RecordEntry = {
+    player,
+    trackId: input.trackId,
+    vehicle: input.vehicle,
+    bestTimeMs: input.timeMs > 0 ? input.timeMs : 0,
+    bestFsScore: input.fsScore,
+    bestTrickPts: input.trickPts,
+    at: Date.now(),
+  }
+  store.entries.push(entry)
+  saveStore(store)
+  return entry
+}
+
+export function recordsFor(trackId?: string, vehicle?: VehicleKind): RecordEntry[] {
+  let list = loadStore().entries
+  if (trackId) list = list.filter((e) => e.trackId === trackId)
+  if (vehicle) list = list.filter((e) => e.vehicle === vehicle)
+  return [...list].sort((a, b) => {
+    if (b.bestFsScore !== a.bestFsScore) return b.bestFsScore - a.bestFsScore
+    if (a.bestTimeMs <= 0) return 1
+    if (b.bestTimeMs <= 0) return -1
+    return a.bestTimeMs - b.bestTimeMs
+  })
+}
+
+export function topRecords(limit = 20): RecordEntry[] {
+  return recordsFor().slice(0, limit)
+}

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { WorldKind } from '../track/TrackDefs'
 
 const textureCache = new Map<string, THREE.CanvasTexture>()
 
@@ -42,6 +43,11 @@ export function noiseTexture(
   return tex
 }
 
+/** Asfalt bez vlivu světel a fogu — sytá šedá zůstane čitelná. */
+export function matAsphalt(color: number = 0xa8a8b0): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({ color, fog: false, side: THREE.DoubleSide })
+}
+
 export function matLambert(
   color: number,
   opts: { map?: THREE.Texture; emissive?: number; emissiveIntensity?: number; flat?: boolean } = {},
@@ -52,6 +58,31 @@ export function matLambert(
     emissive: opts.emissive !== undefined ? new THREE.Color(opts.emissive) : undefined,
     emissiveIntensity: opts.emissiveIntensity ?? 0,
     flatShading: opts.flat ?? false,
+  })
+}
+
+/**
+ * Lak peklostroje — bez sdílené mapy (dispose tratě/preview ji nesmí zničit).
+ * Jemný emisní nádech ve stylu menu neonu.
+ */
+export function matPaint(
+  color: number,
+  opts: { emissive?: number; emissiveIntensity?: number } = {},
+): THREE.MeshLambertMaterial {
+  const em = opts.emissive ?? color
+  return new THREE.MeshLambertMaterial({
+    color,
+    emissive: new THREE.Color(em),
+    emissiveIntensity: opts.emissiveIntensity ?? 0.1,
+  })
+}
+
+/** Neon / chrome akcenty. */
+export function matAccent(color: number, intensity = 0.55): THREE.MeshLambertMaterial {
+  return new THREE.MeshLambertMaterial({
+    color,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: intensity,
   })
 }
 
@@ -69,25 +100,16 @@ export function matPhong(
   })
 }
 
-export function roadMap(world: 'city' | 'circuit' | 'ice'): THREE.CanvasTexture {
-  if (world === 'ice') {
-    const t = noiseTexture('road-ice', '#c5d6e8', { speck: 2400, speckAlpha: 0.12 })
-    t.repeat.set(24, 24)
-    return t
-  }
-  if (world === 'city') {
-    const t = noiseTexture('road-city', '#2e2e36', { speck: 2200, speckAlpha: 0.1 })
-    t.repeat.set(18, 18)
-    return t
-  }
-  const t = noiseTexture('road-circuit', '#32363c', { speck: 2000, speckAlpha: 0.09 })
+export function roadMap(world: WorldKind): THREE.CanvasTexture {
+  void world
+  const t = noiseTexture('road-asphalt', '#a8a8b0', { speck: 1800, speckAlpha: 0.08 })
   t.repeat.set(20, 20)
   return t
 }
 
-export function groundMap(world: 'city' | 'circuit' | 'ice'): THREE.CanvasTexture {
-  if (world === 'ice') {
-    const t = noiseTexture('ground-snow', '#e8f2f8', { speck: 2800, speckAlpha: 0.07 })
+export function groundMap(world: WorldKind): THREE.CanvasTexture {
+  if (world === 'rally') {
+    const t = noiseTexture('ground-rally', '#3a4a32', { speck: 2800, speckAlpha: 0.07 })
     t.repeat.set(40, 40)
     return t
   }
@@ -96,7 +118,7 @@ export function groundMap(world: 'city' | 'circuit' | 'ice'): THREE.CanvasTextur
     t.repeat.set(30, 30)
     return t
   }
-  const t = noiseTexture('ground-grass', '#2d7540', { speck: 2600, speckAlpha: 0.11 })
+  const t = noiseTexture('ground-dawn', '#2e3a24', { speck: 2400, speckAlpha: 0.1 })
   t.repeat.set(36, 36)
   return t
 }

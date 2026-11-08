@@ -8,8 +8,11 @@ export type Standing = {
   place: number
 }
 
+/** Solo: hned po dojetí hráče. Multi: 15 s od prvního člověka, nebo všichni lidé. */
+export type FinishPolicy = 'solo' | 'multi'
+
 export class RaceManager {
-  readonly totalLaps = 3
+  totalLaps = 2
   phase: RacePhase = 'countdown'
   countdown = 3
   private countdownAcc = 0
@@ -19,13 +22,20 @@ export class RaceManager {
   private readonly vehicles: Vehicle[]
   private readonly lastT = new Map<Vehicle, number>()
   private finishGraceStartedAt = -1
+  finishPolicy: FinishPolicy = 'solo'
+  readonly isStage: boolean
+  /** Volná plocha (Plácek) — bez kol / cíle, skóre = triky. */
+  readonly isSandbox: boolean
 
   constructor(track: Track, vehicles: Vehicle[]) {
     this.track = track
     this.vehicles = vehicles
+    this.isSandbox = !!track.def.sandbox
+    this.isStage = !this.isSandbox && !track.def.loop
+    this.totalLaps = this.isStage ? 1 : 2
   }
 
-  start(): void {
+  start(opts?: { skipCountdown?: boolean; laps?: number }): void {
     this.phase = 'countdown'
     this.countdown = 3
     this.countdownAcc = 0
@@ -33,12 +43,30 @@ export class RaceManager {
     this.standings = []
     this.finishGraceStartedAt = -1
     this.lastT.clear()
+    if (this.isStage) {
+      this.totalLaps = 1
+    } else if (typeof opts?.laps === 'number' && Number.isFinite(opts.laps)) {
+      this.totalLaps = Math.max(1, Math.min(5, Math.round(opts.laps)))
+    } else {
+      this.totalLaps = 2
+    }
 
     this.vehicles.forEach((v, i) => {
       const pose = this.track.getStartPose(i)
       v.reset(pose.x, pose.z, pose.heading, 0)
+      v.groundY = pose.y
       this.lastT.set(v, this.track.progressAt(pose.x, pose.z))
     })
+
+    if (opts?.skipCountdown) {
+      this.phase = 'racing'
+      this.countdown = 0
+      this.raceTimeMs = 0
+      for (const v of this.vehicles) {
+        v.currentLapStart = 0
+        this.lastT.set(v, this.track.progressAt(v.physics.x, v.physics.z))
+      }
+    }
   }
 
   update(dt: number): void {
@@ -67,26 +95,41 @@ export class RaceManager {
     }
 
     this.standings = this.computeStandings()
+    this.tryEndRace()
+  }
 
-    const player = this.vehicles.find((v) => v.info.isPlayer)
-    if (player?.finished) {
-      if (this.finishGraceStartedAt < 0) {
-        this.finishGraceStartedAt = this.raceTimeMs
-      }
-      const allDone = this.vehicles.every((v) => v.finished)
-      // Delší grace — rail AI stihne dojet pevným tempem
-      const graceOver = this.raceTimeMs - this.finishGraceStartedAt > 50000
-      if (allDone || graceOver) {
-        for (const v of this.vehicles) {
-          if (!v.finished) {
-            v.finished = true
-            v.finishTime = this.raceTimeMs
-          }
-        }
+  private tryEndRace(): void {
+    if (this.isSandbox) return
+
+    if (this.finishPolicy === 'solo') {
+      const player = this.vehicles.find((v) => v.info.isPlayer)
+      if (player?.finished) {
         this.phase = 'finished'
         this.standings = this.computeStandings()
       }
-    } else if (this.vehicles.every((v) => v.finished)) {
+      return
+    }
+
+    // Multiplayer: lidé (ne boti)
+    const humans = this.vehicles.filter((v) => !v.info.isBot)
+    if (humans.length === 0) {
+      if (this.vehicles.every((v) => v.finished)) {
+        this.phase = 'finished'
+        this.standings = this.computeStandings()
+      }
+      return
+    }
+
+    const anyHumanDone = humans.some((v) => v.finished)
+    if (!anyHumanDone) return
+
+    if (this.finishGraceStartedAt < 0) {
+      this.finishGraceStartedAt = this.raceTimeMs
+    }
+
+    const allHumansDone = humans.every((v) => v.finished)
+    const graceOver = this.raceTimeMs - this.finishGraceStartedAt >= 15000
+    if (allHumansDone || graceOver) {
       this.phase = 'finished'
       this.standings = this.computeStandings()
     }
@@ -100,11 +143,29 @@ export class RaceManager {
     v.trackT = t
     this.lastT.set(v, t)
 
+    if (this.isSandbox) {
+      v.raceDistance = v.trickPoints
+      v.lap = 0
+      return
+    }
+
+    if (this.isStage) {
+      v.raceDistance = t
+      v.lap = t >= 0.97 ? 1 : 0
+      v.checkpoint = Math.floor(t * this.track.checkpoints.length)
+      if (t >= 0.97) {
+        v.finished = true
+        v.finishTime = this.raceTimeMs
+        v.physics.speed *= 0.45
+        if (this.raceTimeMs < v.bestLapMs) v.bestLapMs = this.raceTimeMs
+      }
+      return
+    }
+
     if (t > 0.45 && t < 0.9) {
       v.armedForLap = true
     }
 
-    // Crossing start/finish forward only after mid-lap
     if (v.armedForLap && prevT > 0.82 && t < 0.18) {
       const lapTime = this.raceTimeMs - v.currentLapStart
       if (v.lap >= 1 && lapTime > 8000 && lapTime < v.bestLapMs) {
@@ -128,6 +189,10 @@ export class RaceManager {
 
   computeStandings(): Standing[] {
     const sorted = [...this.vehicles].sort((a, b) => {
+      if (this.isSandbox) {
+        if (b.trickPoints !== a.trickPoints) return b.trickPoints - a.trickPoints
+        return a.info.name.localeCompare(b.info.name)
+      }
       if (a.finished && b.finished) return a.finishTime - b.finishTime
       if (a.finished) return -1
       if (b.finished) return 1
@@ -141,7 +206,35 @@ export class RaceManager {
     return s?.place ?? 1
   }
 
+  /**
+   * Časový odstup: na jezdce vpředu (−), nebo náskok když jsi 1. (+).
+   * null ve sandboxu / bez soupeře.
+   */
+  playerGap(): { ms: number; ahead: boolean; name: string } | null {
+    if (this.isSandbox || this.phase === 'countdown') return null
+    const standings = this.standings
+    if (standings.length < 2) return null
+    const meIdx = standings.findIndex((s) => s.vehicle.info.isPlayer)
+    if (meIdx < 0) return null
+    const me = standings[meIdx]!
+    const rival =
+      me.place === 1 ? standings[1]! : standings.find((s) => s.place === me.place - 1) ?? null
+    if (!rival) return null
+    const gapUnits = Math.abs(me.vehicle.raceDistance - rival.vehicle.raceDistance)
+    const speed = Math.max(
+      8,
+      (Math.abs(me.vehicle.physics.speed) + Math.abs(rival.vehicle.physics.speed)) * 0.5,
+    )
+    const ms = (gapUnits * this.track.length) / speed * 1000
+    return {
+      ms,
+      ahead: me.place === 1,
+      name: rival.vehicle.info.name,
+    }
+  }
+
   displayLap(vehicle: Vehicle): number {
+    if (this.isSandbox || this.isStage) return 1
     return Math.min(Math.max(vehicle.lap + 1, 1), this.totalLaps)
   }
 }

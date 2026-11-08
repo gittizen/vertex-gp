@@ -1,6 +1,7 @@
 import * as THREE from 'three'
-import { matLambert } from '../render/Materials'
-import type { TrackDef } from './TrackDefs'
+import { matAsphalt, matLambert } from '../render/Materials'
+import type { DecorLevel } from '../render/AtmosphereSettings'
+import { ASPHALT_GREY, type TrackDef } from './TrackDefs'
 
 export type TrackSample = {
   position: THREE.Vector3
@@ -9,9 +10,22 @@ export type TrackSample = {
   t: number
 }
 
-type LutPoint = { x: number; z: number; nx: number; nz: number; tx: number; tz: number }
+type LutPoint = { x: number; y: number; z: number; nx: number; nz: number; tx: number; tz: number }
 
-/** Lehká trať — méně meshů, LUT pro progress, sdílené materiály. */
+/** Obdélníková rampa / kicker — launch při průjezdu. */
+export type JumpPad = {
+  minX: number
+  maxX: number
+  minZ: number
+  maxZ: number
+  /** Vertikální složka skoku (m/s při 1 m/s rychlosti) */
+  launch: number
+  /** Extra přední boost */
+  boost: number
+  /** Minimální |speed| pro odraz */
+  minSpeed: number
+}
+
 export class Track {
   readonly def: TrackDef
   readonly curve: THREE.CatmullRomCurve3
@@ -19,52 +33,93 @@ export class Track {
   readonly group = new THREE.Group()
   readonly checkpoints: THREE.Vector3[] = []
   readonly length: number
+  readonly jumpPads: JumpPad[] = []
   private readonly scene: THREE.Scene
   private readonly lut: LutPoint[] = []
-  private readonly lutN = 96
+  private readonly lutN: number
   private readonly tmpPos = new THREE.Vector3()
   private readonly tmpTan = new THREE.Vector3()
+  private readonly decorRoot = new THREE.Group()
+  /** Override tempa AI (např. po změně vozidla). */
+  aiSpeedMult: number
 
   constructor(scene: THREE.Scene, def: TrackDef) {
     this.scene = scene
     this.def = def
+    this.aiSpeedMult = def.aiSpeedMult
     this.halfWidth = def.halfWidth
-    const pts = def.points.map(([x, z]) => new THREE.Vector3(x, 0, z))
-    this.curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', def.tension)
+    this.lutN = def.loop ? 192 : 384
+    const loop = def.loop
+    const pts = def.points.map(([x, z], i) => {
+      const y = def.heights?.[i] ?? 0
+      return new THREE.Vector3(x, y, z)
+    })
+    const curveType = def.heights ? 'centripetal' : 'catmullrom'
+    this.curve = new THREE.CatmullRomCurve3(pts, loop, curveType, def.tension)
     this.length = this.curve.getLength()
     this.buildLut()
     this.buildMeshes()
     this.buildCheckpoints()
+    this.decorRoot.name = 'worldDecor'
+    this.group.add(this.decorRoot)
     this.addWorld()
+    this.addSkyBody()
     scene.add(this.group)
   }
 
   dispose(): void {
+    // Nejdřív platné pozadí — disposed textura = bílý / prázdný frame
+    const prevBg = this.scene.background
+    this.scene.background = new THREE.Color(this.def.theme.sky)
+    if (prevBg instanceof THREE.Texture) prevBg.dispose()
+    this.scene.fog = this.scene.fog // no-op keep; applyTheme nastaví znovu
     this.scene.remove(this.group)
+    const seenGeo = new Set<THREE.BufferGeometry>()
+    const seenMat = new Set<THREE.Material>()
     this.group.traverse((obj) => {
-      if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.LineSegments) {
+      if (!(obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.LineSegments)) {
+        return
+      }
+      if (!seenGeo.has(obj.geometry)) {
+        seenGeo.add(obj.geometry)
         obj.geometry.dispose()
-        const mat = obj.material
-        if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
-        else mat.dispose()
+      }
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+      for (const m of mats) {
+        if (seenMat.has(m)) continue
+        seenMat.add(m)
+        m.dispose()
       }
     })
   }
 
-  setDecorQuality(dense: boolean): void {
-    this.group.traverse((obj) => {
-      if (obj.userData.decorTier === 'extra') obj.visible = dense
+  setDecorQuality(level: DecorLevel): void {
+    if (level === 'off') {
+      this.decorRoot.visible = false
+      return
+    }
+    this.decorRoot.visible = true
+    this.decorRoot.children.forEach((child, i) => {
+      // simple = každá druhá dekorace; rich = vše
+      child.visible = level === 'rich' || i % 2 === 0
     })
   }
 
   private buildLut(): void {
-    for (let i = 0; i < this.lutN; i++) {
-      const t = i / this.lutN
-      const p = this.curve.getPointAt(t)
-      const tan = this.curve.getTangentAt(t).normalize()
-      const nx = -tan.z
-      const nz = tan.x
-      this.lut.push({ x: p.x, z: p.z, nx, nz, tx: tan.x, tz: tan.z })
+    const n = this.lutN
+    for (let i = 0; i < n; i++) {
+      const t = this.def.loop ? i / n : i / (n - 1)
+      const p = this.curve.getPointAt(Math.min(1, t))
+      const tan = this.curve.getTangentAt(Math.min(1, t)).normalize()
+      this.lut.push({
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        nx: -tan.z,
+        nz: tan.x,
+        tx: tan.x,
+        tz: tan.z,
+      })
     }
   }
 
@@ -73,27 +128,42 @@ export class Track {
   }
 
   private buildMeshes(): void {
-    const segments = 120
+    if (this.def.sandbox) {
+      this.buildSandboxMeshes()
+      return
+    }
+    const segments = this.def.loop ? 180 : 320
     const theme = this.def.theme
     const roadPositions: number[] = []
     const roadIndices: number[] = []
     const barrierL: number[] = []
     const barrierR: number[] = []
-    const city = this.def.world === 'city'
-    const wallH = city ? 0.55 : this.def.world === 'ice' ? 0.5 : 1.0
-    const roadY = city ? 0.08 : 0.05
+    const world = this.def.world
+    const wallH = world === 'city' ? 0.45 : 0.4
+    const bermW = 2.5
+    const bermLpos: number[] = []
+    const bermRpos: number[] = []
 
     for (let i = 0; i <= segments; i++) {
       const t = i / segments
-      const p = this.curve.getPointAt(t)
-      const tangent = this.curve.getTangentAt(t).normalize()
+      const p = this.curve.getPointAt(Math.min(1, t))
+      const tangent = this.curve.getTangentAt(Math.min(1, t)).normalize()
       const n = this.sideNormal(tangent)
+      const y = p.y + 0.28
       const left = p.clone().addScaledVector(n, this.halfWidth)
       const right = p.clone().addScaledVector(n, -this.halfWidth)
-      roadPositions.push(left.x, roadY, left.z, right.x, roadY, right.z)
+      roadPositions.push(left.x, y, left.z, right.x, y, right.z)
 
-      barrierL.push(left.x + n.x * 0.3, 0, left.z + n.z * 0.3, left.x + n.x * 0.3, wallH, left.z + n.z * 0.3)
-      barrierR.push(right.x - n.x * 0.3, 0, right.z - n.z * 0.3, right.x - n.x * 0.3, wallH, right.z - n.z * 0.3)
+      const by = p.y + 0.08
+      const lIn = p.clone().addScaledVector(n, this.halfWidth + 0.04)
+      const lOut = p.clone().addScaledVector(n, this.halfWidth + bermW)
+      const rIn = p.clone().addScaledVector(n, -(this.halfWidth + 0.04))
+      const rOut = p.clone().addScaledVector(n, -(this.halfWidth + bermW))
+      bermLpos.push(lOut.x, by, lOut.z, lIn.x, by, lIn.z)
+      bermRpos.push(rIn.x, by, rIn.z, rOut.x, by, rOut.z)
+
+      barrierL.push(left.x + n.x * 0.28, p.y, left.z + n.z * 0.28, left.x + n.x * 0.28, p.y + wallH, left.z + n.z * 0.28)
+      barrierR.push(right.x - n.x * 0.28, p.y, right.z - n.z * 0.28, right.x - n.x * 0.28, p.y + wallH, right.z - n.z * 0.28)
 
       if (i < segments) {
         const a = i * 2
@@ -105,54 +175,35 @@ export class Track {
     roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPositions, 3))
     roadGeo.setIndex(roadIndices)
     roadGeo.computeVertexNormals()
-    this.group.add(
-      new THREE.Mesh(
-        roadGeo,
-        city
-          ? matLambert(theme.road, { emissive: 0x2a2a40, emissiveIntensity: 0.25 })
-          : matLambert(theme.road),
-      ),
-    )
+    // MeshBasic = sytá šedá nezávislá na světle / okolí
+    this.group.add(new THREE.Mesh(roadGeo, matAsphalt(ASPHALT_GREY)))
 
+    const bermGeoL = new THREE.BufferGeometry()
+    bermGeoL.setAttribute('position', new THREE.Float32BufferAttribute(bermLpos, 3))
+    bermGeoL.setIndex(roadIndices)
+    bermGeoL.computeVertexNormals()
+    this.group.add(new THREE.Mesh(bermGeoL, matAsphalt(0x12140f)))
+    const bermGeoR = new THREE.BufferGeometry()
+    bermGeoR.setAttribute('position', new THREE.Float32BufferAttribute(bermRpos, 3))
+    bermGeoR.setIndex(roadIndices)
+    bermGeoR.computeVertexNormals()
+    this.group.add(new THREE.Mesh(bermGeoR, matAsphalt(0x12140f)))
+
+    const groundSize =
+      (world === 'rally' || world === 'climb') && !this.def.loop ? 2400 : world === 'town' ? 720 : 560
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(480, 32),
+      new THREE.CircleGeometry(groundSize, 36),
       matLambert(theme.ground),
     )
     ground.rotation.x = -Math.PI / 2
-    ground.position.y = -0.02
+    ground.position.y = -0.5
+    if ((world === 'rally' || world === 'climb') && !this.def.loop) {
+      const mid = this.sample(0.5).position
+      ground.position.set(mid.x, -0.5, mid.z)
+    }
     this.group.add(ground)
 
-    const edgeOpacity = city ? 1 : 0.65
-    const edgeMat = new THREE.LineBasicMaterial({
-      color: theme.edge,
-      transparent: !city,
-      opacity: edgeOpacity,
-    })
-    const leftEdge: THREE.Vector3[] = []
-    const rightEdge: THREE.Vector3[] = []
-    const centerDash: THREE.Vector3[] = []
-    for (let i = 0; i <= 100; i++) {
-      const s = this.sample(i / 100)
-      leftEdge.push(s.position.clone().addScaledVector(s.normal, this.halfWidth - 0.2).setY(roadY + 0.05))
-      rightEdge.push(s.position.clone().addScaledVector(s.normal, -(this.halfWidth - 0.2)).setY(roadY + 0.05))
-      if (city && i % 2 === 0 && i < 100) {
-        centerDash.push(s.position.clone().setY(roadY + 0.06))
-        centerDash.push(this.sample((i + 0.45) / 100).position.clone().setY(roadY + 0.06))
-      }
-    }
-    this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftEdge), edgeMat))
-    this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightEdge), edgeMat.clone()))
-    if (city && centerDash.length) {
-      this.group.add(
-        new THREE.LineSegments(
-          new THREE.BufferGeometry().setFromPoints(centerDash),
-          new THREE.LineBasicMaterial({ color: 0xfff66a }),
-        ),
-      )
-      // Široké světlé okraje tratě (zvýraznění)
-      this.addCityEdgeGlow(theme.accent, 1)
-      this.addCityEdgeGlow(theme.detail, -1)
-    }
+    this.addRoadMarkings()
 
     this.addBarrierRibbon(barrierL, theme.barrierL)
     this.addBarrierRibbon(barrierR, theme.barrierR)
@@ -165,18 +216,402 @@ export class Track {
       )
       stripe.position.set(
         start.position.x + start.normal.x * i * (this.halfWidth / 3.5),
-        0.1,
+        start.position.y + 0.1,
         start.position.z + start.normal.z * i * (this.halfWidth / 3.5),
       )
       stripe.rotation.y = Math.atan2(start.tangent.x, start.tangent.z)
       this.group.add(stripe)
     }
+
+    if (!this.def.loop) {
+      const fin = this.sample(1)
+      const arch = new THREE.Mesh(
+        new THREE.BoxGeometry(this.halfWidth * 2.2, 0.4, 0.4),
+        matLambert(theme.accent),
+      )
+      arch.position.set(fin.position.x, fin.position.y + 4, fin.position.z)
+      this.group.add(arch)
+    }
+  }
+
+  /** Volná plocha (Plácek) — velký asfaltový pad, bez závodní pásky. */
+  private buildSandboxMeshes(): void {
+    const theme = this.def.theme
+    const b = this.def.sandboxBounds ?? { halfX: 170, halfZ: 110 }
+    const padW = b.halfX * 2
+    const padD = b.halfZ * 2
+
+    const pad = new THREE.Mesh(
+      new THREE.PlaneGeometry(padW, padD),
+      matAsphalt(ASPHALT_GREY),
+    )
+    pad.rotation.x = -Math.PI / 2
+    pad.position.y = 0.28
+    this.group.add(pad)
+
+    // Světlé čáry — mřížka na freestyle
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xe8e8ec, transparent: true, opacity: 0.55 })
+    for (let i = -3; i <= 3; i++) {
+      if (i === 0) continue
+      const x = (i / 3) * b.halfX * 0.85
+      const z = (i / 3) * b.halfZ * 0.85
+      const hx = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-b.halfX * 0.92, 0.34, z),
+        new THREE.Vector3(b.halfX * 0.92, 0.34, z),
+      ])
+      const hz = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x, 0.34, -b.halfZ * 0.92),
+        new THREE.Vector3(x, 0.34, b.halfZ * 0.92),
+      ])
+      this.group.add(new THREE.Line(hx, lineMat))
+      this.group.add(new THREE.Line(hz, lineMat.clone()))
+    }
+    // Středový kruh
+    const ringPts: THREE.Vector3[] = []
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2
+      ringPts.push(new THREE.Vector3(Math.cos(a) * 18, 0.35, Math.sin(a) * 18))
+    }
+    this.group.add(
+      new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(ringPts),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
+      ),
+    )
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(520, 40),
+      matLambert(theme.ground),
+    )
+    ground.rotation.x = -Math.PI / 2
+    ground.position.y = -0.5
+    this.group.add(ground)
+
+    // Nízký okraj plochy (vizuální curb)
+    const curbH = 0.35
+    const curbMat = matLambert(theme.barrierL)
+    const edges: Array<[number, number, number, number]> = [
+      [0, -b.halfZ - 0.4, padW + 1.2, 0.8],
+      [0, b.halfZ + 0.4, padW + 1.2, 0.8],
+      [-b.halfX - 0.4, 0, 0.8, padD + 1.2],
+      [b.halfX + 0.4, 0, 0.8, padD + 1.2],
+    ]
+    for (const [cx, cz, w, d] of edges) {
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(w, curbH, d), curbMat)
+      curb.position.set(cx, curbH * 0.5, cz)
+      this.group.add(curb)
+    }
+  }
+
+  /** Markování silnice podle typu tratě (město / Klecany / rally). */
+  private addRoadMarkings(): void {
+    const world = this.def.world
+    const hw = this.halfWidth
+
+    if (world === 'city' || world === 'town' || world === 'climb') {
+      // Městská: plná krajnice + přerušovaná středová
+      const solidL: THREE.Vector3[] = []
+      const solidR: THREE.Vector3[] = []
+      const dash: THREE.Vector3[] = []
+      for (let i = 0; i <= 120; i++) {
+        const s = this.sample(i / 120)
+        const y = s.position.y + 0.34
+        solidL.push(s.position.clone().addScaledVector(s.normal, hw - 0.35).setY(y))
+        solidR.push(s.position.clone().addScaledVector(s.normal, -(hw - 0.35)).setY(y))
+        if (i % 2 === 0 && i < 120) {
+          dash.push(s.position.clone().setY(y))
+          dash.push(this.sample((i + 0.55) / 120).position.clone().setY(y))
+        }
+      }
+      const white = new THREE.LineBasicMaterial({ color: 0xffffff })
+      this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(solidL), white))
+      this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(solidR), white.clone()))
+      this.group.add(
+        new THREE.LineSegments(
+          new THREE.BufferGeometry().setFromPoints(dash),
+          new THREE.LineBasicMaterial({ color: 0xf0f0f0 }),
+        ),
+      )
+      return
+    }
+
+    // Rally: měkké okraje
+    const softL: THREE.Vector3[] = []
+    const softR: THREE.Vector3[] = []
+    for (let i = 0; i <= 100; i++) {
+      const s = this.sample(i / 100)
+      const y = s.position.y + 0.34
+      softL.push(s.position.clone().addScaledVector(s.normal, hw - 0.2).setY(y))
+      softR.push(s.position.clone().addScaledVector(s.normal, -(hw - 0.2)).setY(y))
+    }
+    const edge = new THREE.LineBasicMaterial({ color: 0xd0d0d4, transparent: true, opacity: 0.7 })
+    this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(softL), edge))
+    this.group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(softR), edge.clone()))
+  }
+
+  private addSkyBody(): void {
+    if (this.def.world === 'town') {
+      const sun = new THREE.Mesh(
+        new THREE.SphereGeometry(24, 12, 12),
+        matLambert(0xff6a28, { emissive: 0xff4a10, emissiveIntensity: 1.15 }),
+      )
+      sun.position.set(-90, 22, 140)
+      this.group.add(sun)
+      return
+    }
+    if (this.def.world === 'rally') {
+      // Monsterstruck — oranžové arénové světlo nízko nad horizontem
+      const blaze = new THREE.Mesh(
+        new THREE.SphereGeometry(22, 12, 12),
+        matLambert(0xff6a18, { emissive: 0xff3a00, emissiveIntensity: 1.2 }),
+      )
+      blaze.position.set(120, 28, -60)
+      this.group.add(blaze)
+      return
+    }
+    const moon = this.def.skyBody === 'moon'
+    const col = moon ? 0xe8e8f0 : 0xffe08a
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(moon ? 14 : 18, 12, 12),
+      matLambert(col, { emissive: col, emissiveIntensity: moon ? 0.55 : 0.85 }),
+    )
+    body.position.set(moon ? -120 : 160, moon ? 90 : 110, moon ? -80 : -40)
+    this.group.add(body)
   }
 
   private addWorld(): void {
-    if (this.def.world === 'city') this.buildCity()
-    else if (this.def.world === 'circuit') this.buildCircuit()
-    else this.buildIce()
+    // Veškeré this.group.add během world buildu → dekorace (lze vypnout v nastavení)
+    const savedAdd = this.group.add.bind(this.group)
+    this.group.add = ((...objs: THREE.Object3D[]) => {
+      for (const o of objs) this.decorRoot.add(o)
+      return this.group
+    }) as typeof this.group.add
+    try {
+      if (this.def.world === 'city') this.buildCity()
+      else if (this.def.world === 'town') {
+        this.buildTown()
+        if (this.def.drift) this.buildBarracksWinter()
+      } else if (this.def.world === 'climb') {
+        if (this.def.id === 'mexiku') this.buildMexiku()
+        else this.buildClimb()
+      } else if (this.def.world === 'plaza') this.buildPlaza()
+      else this.buildRally()
+    } finally {
+      this.group.add = savedAdd
+    }
+  }
+
+  /** Zimní kasárny — dlouhé budovy + sníh kolem drift okruhu. */
+  private buildBarracksWinter(): void {
+    const theme = this.def.theme
+    const wall = matLambert(theme.building)
+    const roof = matLambert(0x6a7888)
+    const snow = matLambert(0xf2f6fa)
+    const samples = 10
+    for (let i = 0; i < samples; i++) {
+      const t = (i + 0.5) / samples
+      const s = this.sample(t)
+      const side = i % 2 === 0 ? 1 : -1
+      const lat = this.safeLateral(s, side, 18 + (i % 3) * 4)
+      const g = new THREE.Group()
+      const body = new THREE.Mesh(new THREE.BoxGeometry(28, 5.5, 10), wall)
+      body.position.y = 2.75
+      g.add(body)
+      const top = new THREE.Mesh(new THREE.BoxGeometry(29, 0.35, 11), roof)
+      top.position.y = 5.7
+      g.add(top)
+      const drift = new THREE.Mesh(new THREE.BoxGeometry(32, 0.2, 14), snow)
+      drift.position.y = 0.05
+      g.add(drift)
+      g.position.set(
+        s.position.x + s.normal.x * lat,
+        0,
+        s.position.z + s.normal.z * lat,
+      )
+      g.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(g)
+    }
+    // Parade patch uprostřed
+    const mid = this.sample(0.35)
+    const pad = new THREE.Mesh(new THREE.PlaneGeometry(70, 45), snow)
+    pad.rotation.x = -Math.PI / 2
+    pad.position.set(mid.position.x, 0.03, mid.position.z)
+    this.group.add(pad)
+  }
+
+  /** Plácek — voda, tráva, stromy, lavičky; volný freestyle areál. */
+  private buildPlaza(): void {
+    const b = this.def.sandboxBounds ?? { halfX: 170, halfZ: 110 }
+    const theme = this.def.theme
+
+    // Jezero / řeka na jihu
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(420, 160),
+      matLambert(0x2a6a8a, { emissive: 0x143848, emissiveIntensity: 0.35 }),
+    )
+    water.rotation.x = -Math.PI / 2
+    water.position.set(0, -0.35, b.halfZ + 95)
+    this.group.add(water)
+
+    const shore = new THREE.Mesh(
+      new THREE.PlaneGeometry(430, 18),
+      matLambert(0xc2b89a),
+    )
+    shore.rotation.x = -Math.PI / 2
+    shore.position.set(0, -0.2, b.halfZ + 12)
+    this.group.add(shore)
+
+    // Mola
+    for (const ox of [-40, 20, 70]) {
+      const pier = new THREE.Mesh(new THREE.BoxGeometry(6, 0.35, 22), matLambert(0x8a6a48))
+      pier.position.set(ox, 0.05, b.halfZ + 18)
+      this.group.add(pier)
+    }
+
+    // Trávník kolem plochy
+    const lawnMat = matLambert(theme.detail)
+    for (const [lx, lz, lw, ld] of [
+      [0, -b.halfZ - 28, b.halfX * 2.2, 40],
+      [-b.halfX - 32, 0, 48, b.halfZ * 2.1],
+      [b.halfX + 32, 0, 48, b.halfZ * 2.1],
+      [0, b.halfZ + 6, b.halfX * 2.05, 10],
+    ] as const) {
+      const lawn = new THREE.Mesh(new THREE.PlaneGeometry(lw, ld), lawnMat)
+      lawn.rotation.x = -Math.PI / 2
+      lawn.position.set(lx, -0.15, lz)
+      this.group.add(lawn)
+    }
+
+    // Stromy kolem
+    const trunkMat = matLambert(0x5a3a22)
+    const leafMat = matLambert(0x2f6a38, { emissive: 0x1a3a20, emissiveIntensity: 0.15 })
+    const treeSpots: Array<[number, number]> = []
+    for (let i = 0; i < 28; i++) {
+      const ang = (i / 28) * Math.PI * 2
+      const r = Math.max(b.halfX, b.halfZ) + 22 + (i % 5) * 6
+      treeSpots.push([Math.cos(ang) * r * 0.95, Math.sin(ang) * r * 0.7])
+    }
+    for (const [tx, tz] of treeSpots) {
+      if (tz > b.halfZ + 5) continue // ne do vody
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 4.2, 6), trunkMat)
+      trunk.position.set(tx, 2.1, tz)
+      this.group.add(trunk)
+      const crown = new THREE.Mesh(new THREE.SphereGeometry(2.4 + (Math.abs(tx) % 7) * 0.12, 8, 6), leafMat)
+      crown.position.set(tx, 5.2, tz)
+      this.group.add(crown)
+    }
+
+    // Lavičky u břehu
+    const benchMat = matLambert(0x6a5040)
+    for (let i = -3; i <= 3; i++) {
+      const bx = i * 22
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.22, 0.7), benchMat)
+      seat.position.set(bx, 0.55, b.halfZ - 4)
+      this.group.add(seat)
+      const back = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.7, 0.12), benchMat)
+      back.position.set(bx, 0.95, b.halfZ - 3.65)
+      this.group.add(back)
+    }
+
+    // Curb rail (vizuál) + skoková rampa s fyzikou
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(14, 0.18, 0.35),
+      matLambert(0xb0b8c0, { emissive: 0x404850, emissiveIntensity: 0.2 }),
+    )
+    rail.position.set(-35, 0.55, -20)
+    this.group.add(rail)
+
+    const rampX = 40
+    const rampZ = 15
+    const rampW = 5.5
+    const rampD = 8
+    const rampH = 1.6
+    // Klínová rampa (vyšší na +Z)
+    const rampGeo = new THREE.BufferGeometry()
+    const hw = rampW / 2
+    const hd = rampD / 2
+    const verts = new Float32Array([
+      // top wedge face
+      -hw, 0.08, -hd, hw, 0.08, -hd, hw, rampH, hd, -hw, rampH, hd,
+    ])
+    rampGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3))
+    rampGeo.setIndex([0, 1, 2, 0, 2, 3])
+    rampGeo.computeVertexNormals()
+    const kicker = new THREE.Mesh(rampGeo, matLambert(0x8a9098))
+    kicker.position.set(rampX, 0.28, rampZ)
+    this.group.add(kicker)
+    // Bočnice
+    for (const side of [-1, 1]) {
+      const sideM = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25, rampH, rampD),
+        matLambert(0x6a7078),
+      )
+      sideM.position.set(rampX + side * (hw + 0.1), rampH * 0.5, rampZ)
+      this.group.add(sideM)
+    }
+    this.jumpPads.push({
+      minX: rampX - hw,
+      maxX: rampX + hw,
+      minZ: rampZ - hd,
+      maxZ: rampZ + hd,
+      launch: 0.55,
+      boost: 4.5,
+      minSpeed: 8,
+    })
+
+    // Druhá menší rampa naproti
+    const r2x = -50
+    const r2z = 25
+    const k2 = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.1, 6), matLambert(0x888890))
+    k2.position.set(r2x, 0.55, r2z)
+    k2.rotation.x = -0.28
+    this.group.add(k2)
+    this.jumpPads.push({
+      minX: r2x - 2.4,
+      maxX: r2x + 2.4,
+      minZ: r2z - 3.2,
+      maxZ: r2z + 3.2,
+      launch: 0.42,
+      boost: 3.2,
+      minSpeed: 7,
+    })
+
+    // Domky v dálce (siluety)
+    const houseMat = matLambert(theme.building)
+    for (let i = 0; i < 8; i++) {
+      const hx = -150 + i * 38 + (i % 2) * 8
+      const hz = -b.halfZ - 55 - (i % 3) * 10
+      const h = 6 + (i % 4) * 2.5
+      const house = new THREE.Mesh(new THREE.BoxGeometry(10, h, 8), houseMat)
+      house.position.set(hx, h * 0.5, hz)
+      this.group.add(house)
+      const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(7, 3.2, 4),
+        matLambert(theme.accent),
+      )
+      roof.position.set(hx, h + 1.4, hz)
+      roof.rotation.y = Math.PI / 4
+      this.group.add(roof)
+    }
+
+    // Lampy
+    const poleMat = matLambert(0x333840)
+    const lampMat = matLambert(0xffe8a0, { emissive: 0xffcc66, emissiveIntensity: 0.85 })
+    for (const [lx, lz] of [
+      [-b.halfX + 8, -b.halfZ + 8],
+      [b.halfX - 8, -b.halfZ + 8],
+      [-b.halfX + 8, b.halfZ - 8],
+      [b.halfX - 8, b.halfZ - 8],
+      [0, -b.halfZ + 6],
+      [0, b.halfZ - 6],
+    ] as const) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 5.5, 6), poleMat)
+      pole.position.set(lx, 2.75, lz)
+      this.group.add(pole)
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), lampMat)
+      bulb.position.set(lx, 5.5, lz)
+      this.group.add(bulb)
+    }
   }
 
   private buildCity(): void {
@@ -186,62 +621,67 @@ export class Track {
     const wallMats = facades.map((c) => matLambert(c))
     const neonMats = neons.map((c) => matLambert(c, { emissive: c, emissiveIntensity: 0.7 }))
 
-    for (let i = 0; i < 18; i++) {
-      const s = this.sample(i / 18)
-      for (const side of [-1, 1] as const) {
-        const dist = this.halfWidth + 7 + (i % 2) * 8
-        const floors = 3 + ((i + (side > 0 ? 1 : 0)) % 5)
-        const h = floors * 3.2
-        const w = 6 + (i % 3)
-        const d = 5.5
-        const block = new THREE.Group()
+    this.addCitySideStreets()
 
-        const wall = new THREE.Mesh(
-          new THREE.BoxGeometry(w, h, d),
-          wallMats[(i + (side > 0 ? 1 : 0)) % wallMats.length],
-        )
-        wall.position.y = h / 2
-        block.add(wall)
+    // Moře z jedné strany
+    const sea = new THREE.Mesh(
+      new THREE.CircleGeometry(220, 28),
+      matLambert(0x1a3a5a, { emissive: 0x0a2040, emissiveIntensity: 0.2 }),
+    )
+    sea.rotation.x = -Math.PI / 2
+    sea.position.set(180, -0.3, 20)
+    this.group.add(sea)
+    const shore = new THREE.Mesh(new THREE.RingGeometry(200, 220, 28), matLambert(0x3a3a42))
+    shore.rotation.x = -Math.PI / 2
+    shore.position.set(180, -0.25, 20)
+    this.group.add(shore)
 
-        // Jedna neonová „okna“ deska místo stovek meshů
-        const neon = neons[i % neons.length]
-        const windows = new THREE.Mesh(
-          new THREE.BoxGeometry(w * 0.75, h * 0.7, 0.12),
-          neonMats[i % neonMats.length],
-        )
-        windows.position.set(0, h * 0.5, d / 2 + 0.05)
-        block.add(windows)
-
-        if (i % 3 === 0) {
-          const sign = new THREE.Mesh(
-            new THREE.BoxGeometry(w * 0.55, 0.4, 0.1),
-            matLambert(neon, { emissive: neon, emissiveIntensity: 0.9 }),
-          )
-          sign.position.set(0, h * 0.72, d / 2 + 0.12)
-          block.add(sign)
-        }
-
-        block.position.set(
-          s.position.x + s.normal.x * dist * side,
-          0,
-          s.position.z + s.normal.z * dist * side,
-        )
-        block.rotation.y = Math.atan2(s.tangent.x, s.tangent.z) + (side > 0 ? 0 : Math.PI)
-        if (i >= 14) block.userData.decorTier = 'extra'
-        this.group.add(block)
-      }
+    for (let i = 0; i < 16; i++) {
+      const s = this.sample(i / 16)
+      // Budovy hlavně od moře pryč (záporný normal / inland) — mimo vozovku
+      const side = -1
+      const dist = this.halfWidth + 20 + (i % 2) * 9
+      const floors = 3 + (i % 5)
+      const h = floors * 3.2
+      const w = 6 + (i % 3)
+      const d = 5.5
+      const block = new THREE.Group()
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMats[i % wallMats.length])
+      wall.position.y = h / 2
+      block.add(wall)
+      const windows = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 0.75, h * 0.7, 0.12),
+        neonMats[i % neonMats.length],
+      )
+      windows.position.set(0, h * 0.5, d / 2 + 0.05)
+      block.add(windows)
+      block.position.set(
+        s.position.x + s.normal.x * dist * side,
+        0,
+        s.position.z + s.normal.z * dist * side,
+      )
+      block.rotation.y = Math.atan2(s.tangent.x, s.tangent.z) + Math.PI
+      this.group.add(block)
     }
 
+    // Tribuny — podélné i příčné, více typů
+    this.addGrandstand(0.08, 1, 'long')
+    this.addGrandstand(0.22, 1, 'tier')
+    this.addGrandstand(0.38, -1, 'long')
+    this.addGrandstand(0.55, 1, 'cross')
+    this.addGrandstand(0.72, -1, 'tier')
+    this.addGrandstand(0.88, 1, 'cross')
+
     const poleM = matLambert(0x2a2a30)
-    for (let i = 0; i < 14; i++) {
-      const s = this.sample(i / 14)
+    for (let i = 0; i < 12; i++) {
+      const s = this.sample(i / 12)
       const side = i % 2 === 0 ? 1 : -1
       const neon = i % 2 === 0 ? theme.accent : theme.detail
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 5.5, 5), poleM)
       pole.position.set(
-        s.position.x + s.normal.x * (this.halfWidth + 2.2) * side,
+        s.position.x + s.normal.x * (this.halfWidth + 5.5) * side,
         2.75,
-        s.position.z + s.normal.z * (this.halfWidth + 2.2) * side,
+        s.position.z + s.normal.z * (this.halfWidth + 5.5) * side,
       )
       this.group.add(pole)
       const lamp = new THREE.Mesh(
@@ -253,174 +693,863 @@ export class Track {
     }
   }
 
-  private buildCircuit(): void {
-    const theme = this.def.theme
-    const stepM = matLambert(0x555555)
-    const baseM = matLambert(0x4a4a4a)
-    const roofM = matLambert(theme.accent)
-    const crowdM = matLambert(0xc62828)
-    const trunk = matLambert(0x5a3a22)
-    const leaf = matLambert(theme.detail)
+  /** Dekorativní odbočky a postranní ulice (nejsou sjízdné) — odsazené od vozovky. */
+  private addCitySideStreets(): void {
+    const asphalt = matLambert(0x5a5a62)
+    const curbMat = matLambert(0x8a8a92)
+    const clearance = 3.2
 
-    for (let i = 0; i < 6; i++) {
-      const s = this.sample(0.06 + i * 0.14)
-      const side = i % 2 === 0 ? -1 : 1
-      const stand = new THREE.Group()
-      const base = new THREE.Mesh(new THREE.BoxGeometry(20, 1.2, 6), baseM)
+    for (let i = 0; i < 14; i++) {
+      const t = (i + 0.4) / 14
+      const s = this.sample(t)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const branchLen = 22 + (i % 4) * 9
+      const branchW = this.halfWidth * 0.72
+      const start = this.halfWidth + clearance
+
+      // Odbočka kolmo z hlavní tratě
+      const branch = new THREE.Mesh(new THREE.BoxGeometry(branchW, 0.07, branchLen), asphalt)
+      branch.position.set(
+        s.position.x + s.normal.x * (start + branchLen / 2) * side,
+        0.035,
+        s.position.z + s.normal.z * (start + branchLen / 2) * side,
+      )
+      branch.rotation.y = Math.atan2(s.normal.x, s.normal.z)
+      this.group.add(branch)
+
+      // Obrubník na konci odbočky
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(branchW + 0.4, 0.12, 0.35), curbMat)
+      curb.position.set(
+        s.position.x + s.normal.x * (start + branchLen + 0.4) * side,
+        0.08,
+        s.position.z + s.normal.z * (start + branchLen + 0.4) * side,
+      )
+      curb.rotation.y = branch.rotation.y
+      this.group.add(curb)
+
+      // Postranní ulice rovnoběžná s tratí
+      if (i % 2 === 0) {
+        const sideLen = 36 + (i % 3) * 8
+        const parallel = new THREE.Mesh(
+          new THREE.BoxGeometry(branchW * 0.9, 0.07, sideLen),
+          asphalt.clone(),
+        )
+        const dist = start + branchLen + 6
+        parallel.position.set(
+          s.position.x + s.normal.x * dist * side + s.tangent.x * 4,
+          0.035,
+          s.position.z + s.normal.z * dist * side + s.tangent.z * 4,
+        )
+        parallel.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+        this.group.add(parallel)
+
+        // Krátká spojka k další „křižovatce“
+        const stub = new THREE.Mesh(
+          new THREE.BoxGeometry(branchW * 0.65, 0.07, 14),
+          asphalt.clone(),
+        )
+        stub.position.set(
+          parallel.position.x + s.normal.x * 10 * side,
+          0.035,
+          parallel.position.z + s.normal.z * 10 * side,
+        )
+        stub.rotation.y = Math.atan2(s.normal.x, s.normal.z)
+        this.group.add(stub)
+      }
+    }
+  }
+
+  private addGrandstand(t: number, side: 1 | -1, kind: 'long' | 'tier' | 'cross'): void {
+    const s = this.sample(t)
+    const stand = new THREE.Group()
+    const baseM = matLambert(0x3a3a44)
+    const seatM = matLambert(kind === 'tier' ? 0xc62828 : kind === 'cross' ? 0x1565c0 : 0x555560)
+    const roofM = matLambert(this.def.theme.accent)
+
+    if (kind === 'long') {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(28, 1.2, 5), baseM)
+      base.position.y = 0.6
+      stand.add(base)
+      for (let r = 0; r < 3; r++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(28, 0.55, 1.1), seatM)
+        step.position.set(0, 1.2 + r * 0.6, -1.2 - r * 0.75)
+        stand.add(step)
+      }
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(29, 0.25, 6), roofM)
+      roof.position.set(0, 3.4, -1.5)
+      stand.add(roof)
+    } else if (kind === 'tier') {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(16, 1.4, 8), baseM)
+      base.position.y = 0.7
+      stand.add(base)
+      for (let r = 0; r < 5; r++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(16, 0.5, 1.2), seatM)
+        step.position.set(0, 1.3 + r * 0.55, -1.5 - r * 0.85)
+        stand.add(step)
+      }
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(17, 0.3, 8), roofM)
+      roof.position.set(0, 4.4, -2)
+      stand.add(roof)
+    } else {
+      // Příčná — kolmo k trati
+      const base = new THREE.Mesh(new THREE.BoxGeometry(8, 1.2, 18), baseM)
       base.position.y = 0.6
       stand.add(base)
       for (let r = 0; r < 4; r++) {
-        const step = new THREE.Mesh(new THREE.BoxGeometry(20, 0.6, 1.1), stepM)
-        step.position.set(0, 1.2 + r * 0.65, -1.3 - r * 0.8)
+        const step = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 18), seatM)
+        step.position.set(-1.2 - r * 0.9, 1.2 + r * 0.55, 0)
         stand.add(step)
-        // Jeden pruh „fanoušků“ místo jednotlivých figurek
-        const crowd = new THREE.Mesh(new THREE.BoxGeometry(18, 0.55, 0.5), crowdM)
-        crowd.position.set(0, 1.65 + r * 0.65, -1.3 - r * 0.8)
-        stand.add(crowd)
       }
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(21, 0.3, 7), roofM)
-      roof.position.set(0, 4.4, -2)
-      stand.add(roof)
-      stand.position.set(
-        s.position.x + s.normal.x * (this.halfWidth + 10) * side,
-        0,
-        s.position.z + s.normal.z * (this.halfWidth + 10) * side,
+    }
+
+    stand.position.set(
+      s.position.x + s.normal.x * (this.halfWidth + 22) * side,
+      0,
+      s.position.z + s.normal.z * (this.halfWidth + 12) * side,
+    )
+    stand.rotation.y =
+      Math.atan2(s.tangent.x, s.tangent.z) + (kind === 'cross' ? Math.PI / 2 : 0)
+    this.group.add(stand)
+  }
+
+  /** Klecany za úsvitu — náměstí, kostel, zámek, Topolová, sídliště, Vltava. */
+  /** Min. vzdálenost bodu od středové linie (LUT). */
+  private minRoadDist(x: number, z: number): number {
+    let best = Infinity
+    for (const p of this.lut) {
+      const d = Math.hypot(x - p.x, z - p.z)
+      if (d < best) best = d
+    }
+    return best
+  }
+
+  /**
+   * Laterál od středu tratě tak, aby střed objektu (+ footprint) nezasahoval do asfaltu
+   * ani do jiné části okruhu.
+   */
+  private safeLateral(s: TrackSample, side: 1 | -1, footprint: number): number {
+    const need = this.halfWidth + footprint + 4
+    let lat = need
+    for (let i = 0; i < 16; i++) {
+      const x = s.position.x + s.normal.x * lat * side
+      const z = s.position.z + s.normal.z * lat * side
+      if (this.minRoadDist(x, z) >= need) return lat
+      lat += 5
+    }
+    return lat
+  }
+
+  private buildTown(): void {
+    const theme = this.def.theme
+    const winter = !!this.def.drift
+    const plaster = (winter ? [0x9aa4ae, 0xa8b0b8, 0x8e98a2, 0xb0b8c0] : [0xc8b8a4, 0xd4c4b0, 0xb8a890, 0xccc0b0]).map(
+      (c) => matLambert(c),
+    )
+    const roof = matLambert(winter ? 0x6a7888 : 0xa04532)
+    const roofDark = matLambert(winter ? 0x4a5868 : 0x6a2a22)
+    const stone = matLambert(winter ? 0x8a929a : 0x8a8074)
+    const panel = (winter ? [0xa8b0b8, 0x9aa2aa, 0xb4bcc4] : [0xb8b0a4, 0xa8a094, 0xc0b8ac]).map((c) =>
+      matLambert(c),
+    )
+    const field = matLambert(winter ? 0xe2e8f0 : 0x3a4a28)
+    const trunk = matLambert(0x5a3a22)
+    const leaf = matLambert(winter ? 0xd8e0e8 : theme.detail)
+
+    if (!winter) {
+      const river = new THREE.Mesh(
+        new THREE.PlaneGeometry(90, 420),
+        matLambert(0x3a5a72, { emissive: 0x1a3048, emissiveIntensity: 0.15 }),
       )
-      stand.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      this.group.add(stand)
+      river.rotation.x = -Math.PI / 2
+      river.position.set(-220, -0.35, 20)
+      this.group.add(river)
+    }
+
+    const square = this.sample(0.12)
+    const plazaLat = this.safeLateral(square, 1, 12)
+    const plaza = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.12, 12), matLambert(0x9a8a78))
+    plaza.position.set(
+      square.position.x + square.normal.x * plazaLat,
+      0.02,
+      square.position.z + square.normal.z * plazaLat,
+    )
+    this.group.add(plaza)
+    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.8, 1.2, 8), stone)
+    fountain.position.set(plaza.position.x, 0.7, plaza.position.z)
+    this.group.add(fountain)
+
+    const churchS = this.sample(0.88)
+    const churchLat = this.safeLateral(churchS, 1, 10)
+    const church = new THREE.Group()
+    const nave = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 14), plaster[0])
+    nave.position.y = 3.5
+    church.add(nave)
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(4, 14, 4), plaster[1])
+    tower.position.set(0, 7, 6)
+    church.add(tower)
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(2.4, 5, 4), roofDark)
+    spire.position.set(0, 16.5, 6)
+    church.add(spire)
+    const naveRoof = new THREE.Mesh(new THREE.ConeGeometry(6, 3.5, 4), roof)
+    naveRoof.rotation.y = Math.PI / 4
+    naveRoof.position.set(0, 8.5, -1)
+    church.add(naveRoof)
+    church.position.set(
+      churchS.position.x + churchS.normal.x * churchLat,
+      0,
+      churchS.position.z + churchS.normal.z * churchLat,
+    )
+    church.rotation.y = Math.atan2(churchS.tangent.x, churchS.tangent.z)
+    this.group.add(church)
+
+    const castleS = this.sample(0.92)
+    const castleLat = this.safeLateral(castleS, -1, 14)
+    const castle = new THREE.Group()
+    const keep = new THREE.Mesh(new THREE.BoxGeometry(16, 8, 10), plaster[2])
+    keep.position.y = 4
+    castle.add(keep)
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 12), plaster[3])
+    wing.position.set(10, 3, 2)
+    castle.add(wing)
+    const cRoof = new THREE.Mesh(new THREE.BoxGeometry(17, 0.4, 11), roof)
+    cRoof.position.y = 8.2
+    castle.add(cRoof)
+    castle.position.set(
+      castleS.position.x + castleS.normal.x * castleLat * -1,
+      0,
+      castleS.position.z + castleS.normal.z * castleLat * -1,
+    )
+    castle.rotation.y = Math.atan2(castleS.tangent.x, castleS.tangent.z)
+    this.group.add(castle)
+
+    const nudzS = this.sample(0.42)
+    const nudzLat = this.safeLateral(nudzS, 1, 8)
+    // Úzká hloubka kolmo k trati, délka podél — neprotíná asfalt
+    const nudz = new THREE.Mesh(new THREE.BoxGeometry(12, 9, 28), plaster[0])
+    nudz.position.set(
+      nudzS.position.x + nudzS.normal.x * nudzLat,
+      4.5,
+      nudzS.position.z + nudzS.normal.z * nudzLat,
+    )
+    nudz.rotation.y = Math.atan2(nudzS.tangent.x, nudzS.tangent.z)
+    this.group.add(nudz)
+    const nudzRoof = new THREE.Mesh(new THREE.BoxGeometry(13, 0.3, 29), matLambert(0x6a6a62))
+    nudzRoof.position.copy(nudz.position)
+    nudzRoof.position.y = 9.2
+    nudzRoof.rotation.y = nudz.rotation.y
+    this.group.add(nudzRoof)
+
+    for (let i = 0; i < 5; i++) {
+      const s = this.sample(0.52 + i * 0.025)
+      const h = 12 + (i % 3) * 3
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const lat = this.safeLateral(s, side, 7)
+      const block = new THREE.Mesh(new THREE.BoxGeometry(10, h, 14), panel[i % panel.length])
+      block.position.set(
+        s.position.x + s.normal.x * lat * side,
+        h / 2,
+        s.position.z + s.normal.z * lat * side,
+      )
+      block.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(block)
+    }
+
+    for (let i = 0; i < 18; i++) {
+      const s = this.sample(i / 18)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const w = 6 + (i % 3)
+      const d = 8 + (i % 2) * 2
+      const lat = this.safeLateral(s, side, Math.max(w, d) * 0.55)
+      const house = new THREE.Group()
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 4.2, d), plaster[i % plaster.length])
+      body.position.y = 2.1
+      house.add(body)
+      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, 2.6, 4), i % 3 === 0 ? roofDark : roof)
+      r.rotation.y = Math.PI / 4
+      r.position.y = 5.4
+      house.add(r)
+      house.position.set(
+        s.position.x + s.normal.x * lat * side,
+        0,
+        s.position.z + s.normal.z * lat * side,
+      )
+      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      if (this.minRoadDist(house.position.x, house.position.z) < this.halfWidth + 5) continue
+      this.group.add(house)
+    }
+
+    for (let i = 0; i < 10; i++) {
+      const s = this.sample((i + 0.3) / 10)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const radius = 14 + (i % 3) * 4
+      const lat = this.safeLateral(s, side, radius + 2)
+      const patch = new THREE.Mesh(new THREE.CircleGeometry(radius, 8), field)
+      patch.rotation.x = -Math.PI / 2
+      patch.position.set(
+        s.position.x + s.normal.x * lat * side,
+        -0.42,
+        s.position.z + s.normal.z * lat * side,
+      )
+      this.group.add(patch)
+    }
+
+    for (let i = 0; i < 14; i++) {
+      const s = this.sample(0.05 + i / 16)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const lat = this.safeLateral(s, side, 3.5)
+      const tree = new THREE.Group()
+      const bole = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.35, 3.2, 5), trunk)
+      bole.position.y = 1.6
+      tree.add(bole)
+      const canopy = new THREE.Mesh(new THREE.SphereGeometry(2.0, 6, 6), leaf)
+      canopy.position.y = 4.2
+      tree.add(canopy)
+      tree.position.set(
+        s.position.x + s.normal.x * lat * side,
+        0,
+        s.position.z + s.normal.z * lat * side,
+      )
+      if (this.minRoadDist(tree.position.x, tree.position.z) < this.halfWidth + 4) continue
+      this.group.add(tree)
+    }
+
+    // Lampy až za bermou, s kontrolou proti jiné části okruhu
+    for (let i = 0; i < 14; i++) {
+      const s = this.sample(i / 14)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const lat = this.safeLateral(s, side, 1.2)
+      const x = s.position.x + s.normal.x * lat * side
+      const z = s.position.z + s.normal.z * lat * side
+      if (this.minRoadDist(x, z) < this.halfWidth + 3.5) continue
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.2, 5), stone)
+      pole.position.set(x, 2.1, z)
+      this.group.add(pole)
+      const lamp = new THREE.Mesh(
+        new THREE.SphereGeometry(0.28, 6, 6),
+        matLambert(0xffc070, { emissive: 0xff8a40, emissiveIntensity: 0.9 }),
+      )
+      lamp.position.set(x, 4.3, z)
+      this.group.add(lamp)
+    }
+  }
+
+  /** Do Klecánek — etapa Klecánky → U Hřbitova, BMW v první čtvrtině vpravo. */
+  private buildClimb(): void {
+    const theme = this.def.theme
+    const plaster = [0xc8b8a4, 0xd4c4b0, 0xb8a890, 0xccc0b0].map((c) => matLambert(c))
+    const roof = matLambert(0xa04532)
+    const hedge = matLambert(0x24301c)
+    const trunk = matLambert(0x5a3a22)
+    const leaf = matLambert(theme.detail)
+    const rock = matLambert(0x6a6a62)
+
+    const start = this.sample(0)
+    const river = new THREE.Mesh(
+      new THREE.PlaneGeometry(140, 280),
+      matLambert(0x3a5a72, { emissive: 0x1a3048, emissiveIntensity: 0.12 }),
+    )
+    river.rotation.x = -Math.PI / 2
+    river.position.set(start.position.x - 90, start.position.y - 0.4, start.position.z - 20)
+    this.group.add(river)
+
+    this.addBusShelter(0, 1)
+    this.addBusShelter(1, -1)
+
+    for (let i = 0; i < 10; i++) {
+      const s = this.sample(0.02 + i * 0.012)
+      const side = i % 2 === 0 ? 1 : -1
+      const house = new THREE.Group()
+      const w = 6 + (i % 3)
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 4, 8), plaster[i % plaster.length])
+      body.position.y = 2
+      house.add(body)
+      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.7, 2.4, 4), roof)
+      r.rotation.y = Math.PI / 4
+      r.position.y = 5.1
+      house.add(r)
+      house.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 14) * side,
+        s.position.y,
+        s.position.z + s.normal.z * (this.halfWidth + 14) * side,
+      )
+      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(house)
+    }
+
+    const bmwColors = [0x1a1a1a, 0xc8c8c8, 0x1565c0, 0xf2f2f0, 0x2a2a32, 0xb0b8c0, 0x0d47a1, 0x424242, 0xd8d8d8]
+    for (let i = 0; i < bmwColors.length; i++) {
+      const t = 0.16 + i * 0.014
+      const s = this.sample(t)
+      const car = this.parkedSedan(bmwColors[i])
+      // Pravá strana ve směru jízdy (+normal)
+      const dist = this.halfWidth + 4.2
+      car.position.set(
+        s.position.x + s.normal.x * dist,
+        s.position.y,
+        s.position.z + s.normal.z * dist,
+      )
+      car.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(car)
+    }
+
+    for (let i = 0; i < 16; i++) {
+      const s = this.sample(0.28 + i * 0.028)
+      const bank = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.2 + (i % 4) * 0.4, 6), rock)
+      bank.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 5),
+        s.position.y + 0.4,
+        s.position.z + s.normal.z * (this.halfWidth + 5),
+      )
+      bank.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(bank)
+    }
+
+    for (let i = 0; i < 12; i++) {
+      const s = this.sample(0.55 + i * 0.018)
+      const side = i % 2 === 0 ? 1 : -1
+      const house = new THREE.Group()
+      const w = 7 + (i % 2)
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 4.4, 9), plaster[(i + 2) % plaster.length])
+      body.position.y = 2.2
+      house.add(body)
+      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.68, 2.5, 4), roof)
+      r.rotation.y = Math.PI / 4
+      r.position.y = 5.4
+      house.add(r)
+      house.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 16) * side,
+        s.position.y,
+        s.position.z + s.normal.z * (this.halfWidth + 16) * side,
+      )
+      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(house)
+    }
+
+    const square = this.sample(0.72)
+    const plaza = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 0.12, 12), matLambert(0x9a8a78))
+    plaza.position.set(
+      square.position.x + square.normal.x * 16,
+      square.position.y + 0.02,
+      square.position.z + square.normal.z * 16,
+    )
+    this.group.add(plaza)
+
+    const fin = this.sample(1)
+    const yard = new THREE.Group()
+    const wall = matLambert(0x6a6860)
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(28, 1.6, 0.45), wall)
+    ring.position.y = 0.8
+    yard.add(ring)
+    const ringB = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.6, 22), wall)
+    ringB.position.set(-13.5, 0.8, -4)
+    yard.add(ringB)
+    const ringC = ringB.clone()
+    ringC.position.x = 13.5
+    yard.add(ringC)
+    const chapel = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 8), plaster[1])
+    chapel.position.set(0, 2.5, -8)
+    yard.add(chapel)
+    const capRoof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 3.2, 4), matLambert(0x4a3a32))
+    capRoof.rotation.y = Math.PI / 4
+    capRoof.position.set(0, 6.6, -8)
+    yard.add(capRoof)
+    for (let i = 0; i < 14; i++) {
+      const stoneM = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.9, 0.18), matLambert(0x8a8680))
+      stoneM.position.set(-10 + (i % 7) * 3.2, 0.45, -2 - Math.floor(i / 7) * 5)
+      yard.add(stoneM)
+    }
+    const cypress = matLambert(0x1e3a24)
+    for (const x of [-12, 12]) {
+      const tree = new THREE.Mesh(new THREE.ConeGeometry(1.4, 6, 5), cypress)
+      tree.position.set(x, 3.2, -6)
+      yard.add(tree)
+    }
+    yard.position.set(
+      fin.position.x + fin.normal.x * (this.halfWidth + 20),
+      fin.position.y,
+      fin.position.z + fin.normal.z * (this.halfWidth + 20),
+    )
+    yard.rotation.y = Math.atan2(fin.tangent.x, fin.tangent.z)
+    this.group.add(yard)
+
+    for (let i = 0; i < 36; i++) {
+      const s = this.sample(i / 36)
+      const side = i % 2 === 0 ? 1 : -1
+      const tree = new THREE.Group()
+      const bole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.8, 5), trunk)
+      bole.position.y = 1.4
+      tree.add(bole)
+      const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.8, 6, 6), leaf)
+      canopy.position.y = 3.6
+      tree.add(canopy)
+      tree.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 10 + (i % 3) * 4) * side,
+        s.position.y,
+        s.position.z + s.normal.z * (this.halfWidth + 10 + (i % 3) * 4) * side,
+      )
+      this.group.add(tree)
     }
 
     for (let i = 0; i < 24; i++) {
       const s = this.sample(i / 24)
-      const side = i % 2 === 0 ? 1 : -1
-      const dist = this.halfWidth + 16 + (i % 3) * 4
-      const tree = new THREE.Group()
-      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.32, 2.8, 5), trunk)
-      t.position.y = 1.4
-      tree.add(t)
-      const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.7, 6, 6), leaf)
-      canopy.position.y = 3.5
-      tree.add(canopy)
-      tree.position.set(
-        s.position.x + s.normal.x * dist * side,
-        0,
-        s.position.z + s.normal.z * dist * side,
-      )
-      if (i >= 16) tree.userData.decorTier = 'extra'
-      this.group.add(tree)
-    }
-
-    for (let i = 0; i < 12; i++) {
-      const s = this.sample(0.2 + i * 0.05)
-      const side = i % 2 === 0 ? 1 : -1
-      const curb = new THREE.Mesh(
-        new THREE.BoxGeometry(2.2, 0.25, 0.7),
-        matLambert(i % 2 === 0 ? 0xe10600 : 0xffffff),
-      )
-      curb.position.set(
-        s.position.x + s.normal.x * (this.halfWidth + 0.6) * side,
-        0.15,
-        s.position.z + s.normal.z * (this.halfWidth + 0.6) * side,
-      )
-      curb.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      this.group.add(curb)
+      for (const side of [-1, 1] as const) {
+        const hdg = new THREE.Mesh(new THREE.BoxGeometry(1, 0.65, 3.8), hedge)
+        hdg.position.set(
+          s.position.x + s.normal.x * (this.halfWidth + 3.3) * side,
+          s.position.y + 0.3,
+          s.position.z + s.normal.z * (this.halfWidth + 3.3) * side,
+        )
+        hdg.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+        this.group.add(hdg)
+      }
     }
   }
 
-  private buildIce(): void {
+  /**
+   * Mexiko — stejná stavba jako climb: boxy / InstancedMesh.
+   * +N = Brooklyn + vyšší paneláky · −N = vesnice, pláž, moře.
+   */
+  private buildMexiku(): void {
     const theme = this.def.theme
-    const rock = matLambert(0x6a7580)
-    const snow = matLambert(0xeef5fa)
-    const pine = matLambert(theme.detail)
-    const trunk = matLambert(0x4a3220)
-    const marker = matLambert(theme.accent)
+    const plaster = [0xc8b8a4, 0xd4c4b0, 0xb8a890, 0xccc0b0].map((c) => matLambert(c))
+    const panel = [0x9aa0a8, 0xb0b4bc, 0x8a9098].map((c) => matLambert(c))
+    const roof = matLambert(0xa04532)
+    const hedge = matLambert(0x24301c)
+    const trunk = matLambert(0x5a3a22)
+    const leaf = matLambert(theme.detail)
+    const sand = matLambert(0xc2b090)
+    const water = matLambert(0x3a6a82, { emissive: 0x1a3048, emissiveIntensity: 0.12 })
+    const accent = matLambert(theme.accent, { emissive: theme.accent, emissiveIntensity: 0.35 })
+    const dummy = new THREE.Object3D()
 
-    for (let i = 0; i < 8; i++) {
-      const ang = (i / 8) * Math.PI * 2
-      const r = 340 + (i % 3) * 40
-      const h = 60 + (i % 4) * 22
-      const mountain = new THREE.Group()
-      const peak = new THREE.Mesh(new THREE.ConeGeometry(42, h, 5), rock)
-      peak.position.y = h / 2
-      mountain.add(peak)
-      const cap = new THREE.Mesh(new THREE.ConeGeometry(20, h * 0.3, 5), snow)
-      cap.position.y = h * 0.78
-      mountain.add(cap)
-      mountain.position.set(Math.cos(ang) * r, 0, Math.sin(ang) * r)
-      if (i >= 6) mountain.userData.decorTier = 'extra'
-      this.group.add(mountain)
+    // Brooklyn cedule (start, city strana)
+    const start = this.sample(0)
+    const sign = new THREE.Group()
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 3.4, 5), matLambert(0x5a5858))
+    pole.position.y = 1.7
+    sign.add(pole)
+    const canvas = document.createElement('canvas')
+    canvas.width = 256
+    canvas.height = 64
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.fillStyle = '#1a1018'
+      ctx.fillRect(0, 0, 256, 64)
+      ctx.strokeStyle = '#ff6a9a'
+      ctx.lineWidth = 4
+      ctx.strokeRect(4, 4, 248, 56)
+      ctx.fillStyle = '#f7f1ea'
+      ctx.font = 'bold 36px Impact, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('BROOKLYN', 128, 34)
+      const tex = new THREE.CanvasTexture(canvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.generateMipmaps = false
+      const label = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.2, 0.8),
+        new THREE.MeshBasicMaterial({ map: tex }),
+      )
+      label.position.set(0, 3.2, 0.08)
+      sign.add(label)
+    }
+    sign.position.set(
+      start.position.x + start.normal.x * (this.halfWidth + 6),
+      start.position.y,
+      start.position.z + start.normal.z * (this.halfWidth + 6),
+    )
+    this.group.add(sign)
+
+    this.addBusShelter(0.05, 1)
+    this.addBusShelter(0.95, -1)
+
+    // City strana (+normal): vyšší bloky
+    for (let i = 0; i < 10; i++) {
+      const s = this.sample(0.05 + i * 0.085)
+      const w = 7 + (i % 3)
+      const h = 7 + (i % 4) * 1.6
+      const house = new THREE.Group()
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, 9), panel[i % panel.length])
+      body.position.y = h / 2
+      house.add(body)
+      const top = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, 0.35, 9.2), accent)
+      top.position.y = h + 0.1
+      house.add(top)
+      const dist = this.halfWidth + 14 + (i % 2) * 4
+      house.position.set(
+        s.position.x + s.normal.x * dist,
+        s.position.y,
+        s.position.z + s.normal.z * dist,
+      )
+      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(house)
     }
 
-    const lake = new THREE.Mesh(new THREE.CircleGeometry(50, 20), matLambert(0x3a7aaa))
-    lake.rotation.x = -Math.PI / 2
-    lake.position.set(120, 0.03, -40)
-    this.group.add(lake)
+    // Vesnice (−normal): nižší domky
+    for (let i = 0; i < 9; i++) {
+      const s = this.sample(0.08 + i * 0.09)
+      const w = 5.5 + (i % 2)
+      const house = new THREE.Group()
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 3.6, 7), plaster[i % plaster.length])
+      body.position.y = 1.8
+      house.add(body)
+      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.68, 2.1, 4), roof)
+      r.rotation.y = Math.PI / 4
+      r.position.y = 4.5
+      house.add(r)
+      const dist = this.halfWidth + 13 + (i % 2) * 3
+      house.position.set(
+        s.position.x - s.normal.x * dist,
+        s.position.y,
+        s.position.z - s.normal.z * dist,
+      )
+      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(house)
+    }
 
-    for (let i = 0; i < 20; i++) {
-      const s = this.sample(i / 20)
-      const side = i % 2 === 0 ? 1 : -1
-      const dist = this.halfWidth + 14 + (i % 4) * 5
-      const tree = new THREE.Group()
-      const bole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.28, 2.2, 5), trunk)
-      bole.position.y = 1.1
-      tree.add(bole)
-      const layer = new THREE.Mesh(new THREE.ConeGeometry(1.5, 3.2, 5), pine)
-      layer.position.y = 3.2
-      tree.add(layer)
-      tree.position.set(
+    // Moře + pláž (−normal)
+    const mid = this.sample(0.55)
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), water)
+    sea.rotation.x = -Math.PI / 2
+    sea.position.set(
+      mid.position.x - mid.normal.x * 95,
+      mid.position.y - 0.45,
+      mid.position.z - mid.normal.z * 95,
+    )
+    this.group.add(sea)
+    const beach = new THREE.Mesh(new THREE.PlaneGeometry(90, 28), sand)
+    beach.rotation.x = -Math.PI / 2
+    beach.position.set(
+      mid.position.x - mid.normal.x * 42,
+      mid.position.y - 0.35,
+      mid.position.z - mid.normal.z * 42,
+    )
+    this.group.add(beach)
+
+    // Stromy — InstancedMesh (1 draw call)
+    const boleGeo = new THREE.CylinderGeometry(0.22, 0.28, 2.6, 5)
+    const canopyGeo = new THREE.SphereGeometry(1.6, 6, 6)
+    const nTrees = 18
+    const boles = new THREE.InstancedMesh(boleGeo, trunk, nTrees)
+    const canopies = new THREE.InstancedMesh(canopyGeo, leaf, nTrees)
+    for (let i = 0; i < nTrees; i++) {
+      const s = this.sample(i / nTrees)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const dist = this.halfWidth + 9 + (i % 3) * 3
+      dummy.position.set(
         s.position.x + s.normal.x * dist * side,
-        0,
+        s.position.y + 1.3,
         s.position.z + s.normal.z * dist * side,
       )
-      if (i >= 14) tree.userData.decorTier = 'extra'
-      this.group.add(tree)
+      dummy.rotation.set(0, 0, 0)
+      dummy.updateMatrix()
+      boles.setMatrixAt(i, dummy.matrix)
+      dummy.position.y = s.position.y + 3.3
+      dummy.updateMatrix()
+      canopies.setMatrixAt(i, dummy.matrix)
+    }
+    boles.instanceMatrix.needsUpdate = true
+    canopies.instanceMatrix.needsUpdate = true
+    this.group.add(boles, canopies)
+
+    // Živé ploty — InstancedMesh
+    const hdgGeo = new THREE.BoxGeometry(1, 0.6, 3.4)
+    const nHedge = 12
+    const hedges = new THREE.InstancedMesh(hdgGeo, hedge, nHedge * 2)
+    let hi = 0
+    for (let i = 0; i < nHedge; i++) {
+      const s = this.sample(i / nHedge)
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z)
+      for (const side of [-1, 1] as const) {
+        dummy.position.set(
+          s.position.x + s.normal.x * (this.halfWidth + 3.3) * side,
+          s.position.y + 0.28,
+          s.position.z + s.normal.z * (this.halfWidth + 3.3) * side,
+        )
+        dummy.rotation.set(0, yaw, 0)
+        dummy.updateMatrix()
+        hedges.setMatrixAt(hi++, dummy.matrix)
+      }
+    }
+    hedges.instanceMatrix.needsUpdate = true
+    this.group.add(hedges)
+  }
+
+  private addBusShelter(t: number, side: 1 | -1): void {
+    const s = this.sample(t)
+    const glass = matLambert(0x88a0b0)
+    const metal = matLambert(0x3a3a3a)
+    const g = new THREE.Group()
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.12, 1.6), metal)
+    roof.position.y = 2.4
+    g.add(roof)
+    const back = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.2, 0.08), glass)
+    back.position.set(0, 1.2, -0.7)
+    g.add(back)
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.2, 6), metal)
+    pole.position.set(2.4, 1.6, 0.2)
+    g.add(pole)
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.08), matLambert(0xd4a017))
+    sign.position.set(2.4, 3.1, 0.2)
+    g.add(sign)
+    const dist = this.halfWidth + 5.5
+    g.position.set(
+      s.position.x + s.normal.x * dist * side,
+      s.position.y,
+      s.position.z + s.normal.z * dist * side,
+    )
+    g.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+    this.group.add(g)
+  }
+
+  private parkedSedan(color: number): THREE.Group {
+    const g = new THREE.Group()
+    const body = matLambert(color)
+    const dark = matLambert(0x1a1a1a)
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.5, 4.4), body)
+    chassis.position.y = 0.55
+    g.add(chassis)
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.55, 1.8), matLambert(0x5a7388))
+    cabin.position.set(0, 1.05, -0.1)
+    g.add(cabin)
+    const kidneyL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.1), dark)
+    kidneyL.position.set(-0.2, 0.55, 2.22)
+    g.add(kidneyL)
+    const kidneyR = kidneyL.clone()
+    kidneyR.position.x = 0.2
+    g.add(kidneyR)
+    const tire = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 8)
+    tire.rotateZ(Math.PI / 2)
+    for (const [x, z] of [
+      [-0.95, 1.3],
+      [0.95, 1.3],
+      [-0.95, -1.35],
+      [0.95, -1.35],
+    ]) {
+      const w = new THREE.Mesh(tire, dark)
+      w.position.set(x, 0.38, z)
+      g.add(w)
+    }
+    return g
+  }
+
+  /** Monsterstruck — bahnitá aréna, pneumatiky, rampy, reflektory. */
+  private buildRally(): void {
+    const theme = this.def.theme
+    const dirt = matLambert(theme.ground)
+    const mud = matLambert(0x2a1a0c)
+    const rust = matLambert(0x6a3a22)
+    const metal = matLambert(0x3a3a42)
+    const tireMat = matLambert(0x121212)
+    const neon = matLambert(theme.accent, { emissive: theme.accent, emissiveIntensity: 0.75 })
+
+    for (let i = 0; i < 14; i++) {
+      const s = this.sample(i / 14)
+      const side = i % 2 === 0 ? 1 : -1
+      const h = 28 + (i % 4) * 12
+      const dune = new THREE.Mesh(new THREE.ConeGeometry(40 + (i % 3) * 14, h, 5), rust)
+      dune.position.set(
+        s.position.x + s.normal.x * (95 + (i % 3) * 30) * side,
+        s.position.y + h * 0.35,
+        s.position.z + s.normal.z * (95 + (i % 3) * 30) * side,
+      )
+      this.group.add(dune)
     }
 
-    for (let i = 0; i < 16; i++) {
-      const s = this.sample(i / 16)
+    for (let i = 0; i < 22; i++) {
+      const s = this.sample(i / 22)
+      const side = i % 2 === 0 ? 1 : -1
+      const stack = new THREE.Group()
+      const layers = 2 + (i % 3)
+      for (let y = 0; y < layers; y++) {
+        for (let n = 0; n < 3; n++) {
+          const tire = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.22, 6, 10), tireMat)
+          tire.rotation.x = Math.PI / 2
+          tire.position.set((n - 1) * 1.15, 0.35 + y * 0.7, 0)
+          stack.add(tire)
+        }
+      }
+      const dist = this.halfWidth + 10 + (i % 3) * 4
+      stack.position.set(
+        s.position.x + s.normal.x * dist * side,
+        s.position.y,
+        s.position.z + s.normal.z * dist * side,
+      )
+      stack.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(stack)
+    }
+
+    for (let i = 0; i < 8; i++) {
+      const s = this.sample(0.08 + i * 0.11)
+      const side = i % 2 === 0 ? 1 : -1
+      const ramp = new THREE.Mesh(new THREE.BoxGeometry(6, 0.35, 10), metal)
+      ramp.rotation.x = -0.22
+      ramp.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 14) * side,
+        s.position.y + 1.2,
+        s.position.z + s.normal.z * (this.halfWidth + 14) * side,
+      )
+      ramp.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      this.group.add(ramp)
+    }
+
+    for (let i = 0; i < 24; i++) {
+      const s = this.sample(i / 24)
       for (const side of [-1, 1] as const) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.3, 5), marker)
+        const bank = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.55, 4.5), dirt)
+        bank.position.set(
+          s.position.x + s.normal.x * (this.halfWidth + 2.6) * side,
+          s.position.y + 0.1,
+          s.position.z + s.normal.z * (this.halfWidth + 2.6) * side,
+        )
+        bank.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+        this.group.add(bank)
+      }
+    }
+
+    for (let i = 0; i < 12; i++) {
+      const s = this.sample(0.04 + i / 13)
+      const side = i % 2 === 0 ? 1 : -1
+      const puddle = new THREE.Mesh(new THREE.CircleGeometry(3 + (i % 3), 8), mud)
+      puddle.rotation.x = -Math.PI / 2
+      puddle.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 8 + (i % 2) * 5) * side,
+        s.position.y - 0.35,
+        s.position.z + s.normal.z * (this.halfWidth + 8 + (i % 2) * 5) * side,
+      )
+      this.group.add(puddle)
+    }
+
+    for (let i = 0; i < 10; i++) {
+      const s = this.sample(0.05 + i / 11)
+      const side = i % 2 === 0 ? 1 : -1
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 14, 5), metal)
+      const dist = this.halfWidth + 16
+      pole.position.set(
+        s.position.x + s.normal.x * dist * side,
+        s.position.y + 7,
+        s.position.z + s.normal.z * dist * side,
+      )
+      this.group.add(pole)
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.25, 0.6), neon)
+      lamp.position.copy(pole.position)
+      lamp.position.y = 14.2
+      this.group.add(lamp)
+    }
+
+    const stake = matLambert(theme.accent)
+    for (let i = 0; i < 30; i++) {
+      const s = this.sample(i / 30)
+      for (const side of [-1, 1] as const) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.2, 5), stake)
         pole.position.set(
-          s.position.x + s.normal.x * (this.halfWidth + 1.1) * side,
-          0.65,
-          s.position.z + s.normal.z * (this.halfWidth + 1.1) * side,
+          s.position.x + s.normal.x * (this.halfWidth + 2.0) * side,
+          s.position.y + 0.6,
+          s.position.z + s.normal.z * (this.halfWidth + 2.0) * side,
         )
         this.group.add(pole)
       }
     }
-  }
-
-  /** Neonové pruhy podél městské tratě — trať je jasně čitelná. */
-  private addCityEdgeGlow(color: number, side: 1 | -1): void {
-    const positions: number[] = []
-    const indices: number[] = []
-    const segs = 80
-    const w = 0.55
-    for (let i = 0; i <= segs; i++) {
-      const s = this.sample(i / segs)
-      const ox = s.normal.x * (this.halfWidth - 0.1) * side
-      const oz = s.normal.z * (this.halfWidth - 0.1) * side
-      const ix = s.normal.x * (this.halfWidth - 0.1 - w) * side
-      const iz = s.normal.z * (this.halfWidth - 0.1 - w) * side
-      positions.push(
-        s.position.x + ox, 0.12, s.position.z + oz,
-        s.position.x + ix, 0.12, s.position.z + iz,
-      )
-      if (i < segs) {
-        const a = i * 2
-        indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
-      }
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-    geo.setIndex(indices)
-    geo.computeVertexNormals()
-    this.group.add(
-      new THREE.Mesh(
-        geo,
-        matLambert(color, { emissive: color, emissiveIntensity: 0.85 }),
-      ),
-    )
   }
 
   private addBarrierRibbon(positions: number[], color: number): void {
@@ -438,26 +1567,92 @@ export class Track {
   }
 
   private buildCheckpoints(): void {
-    for (let i = 0; i < 20; i++) this.checkpoints.push(this.curve.getPointAt(i / 20))
+    // ~⅓ dřívější hustoty (okruh 20→7, etapa 40→13)
+    const n = this.def.loop ? 7 : 13
+    for (let i = 0; i < n; i++) {
+      const t = this.def.loop ? i / n : i / (n - 1)
+      this.checkpoints.push(this.curve.getPointAt(Math.min(1, t)))
+    }
+    this.addCheckpointVisuals()
+  }
+
+  /** Viditelné brány na tratích (mimo start/cíl). */
+  private addCheckpointVisuals(): void {
+    const theme = this.def.theme
+    const n = this.checkpoints.length
+    for (let i = 1; i < n; i++) {
+      if (!this.def.loop && i === n - 1) continue
+      const t = this.def.loop ? i / n : i / (n - 1)
+      const s = this.sample(t)
+      const gate = new THREE.Group()
+      gate.userData.decorTier = 'standard'
+      const postMat = matLambert(theme.accent, { emissive: theme.accent, emissiveIntensity: 0.25 })
+      const beamMat = matLambert(theme.detail, { emissive: theme.detail, emissiveIntensity: 0.15 })
+      for (const side of [-1, 1] as const) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 2.4, 6), postMat)
+        post.position.set(
+          s.position.x + s.normal.x * (this.halfWidth + 0.35) * side,
+          s.position.y + 1.2,
+          s.position.z + s.normal.z * (this.halfWidth + 0.35) * side,
+        )
+        gate.add(post)
+      }
+      const beam = new THREE.Mesh(
+        new THREE.BoxGeometry(this.halfWidth * 2 + 1.2, 0.12, 0.12),
+        beamMat,
+      )
+      beam.position.set(s.position.x, s.position.y + 2.35, s.position.z)
+      beam.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      gate.add(beam)
+      // Číslo checkpointu — tenký „vlajkový“ bloček
+      const flag = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.35, 0.06),
+        matLambert(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.2 }),
+      )
+      flag.position.set(
+        s.position.x + s.normal.x * (this.halfWidth + 0.55),
+        s.position.y + 2.0,
+        s.position.z + s.normal.z * (this.halfWidth + 0.55),
+      )
+      gate.add(flag)
+      this.group.add(gate)
+    }
+
+    // Cíl i na okruhu (u startu)
+    if (this.def.loop) {
+      const fin = this.sample(0)
+      const arch = new THREE.Mesh(
+        new THREE.BoxGeometry(this.halfWidth * 2.2, 0.35, 0.35),
+        matLambert(theme.accent, { emissive: theme.accent, emissiveIntensity: 0.35 }),
+      )
+      arch.position.set(fin.position.x, fin.position.y + 3.6, fin.position.z)
+      arch.rotation.y = Math.atan2(fin.tangent.x, fin.tangent.z)
+      this.group.add(arch)
+    }
   }
 
   sample(t: number): TrackSample {
-    const tt = ((t % 1) + 1) % 1
+    let tt = t
+    if (this.def.loop) tt = ((t % 1) + 1) % 1
+    else tt = Math.max(0, Math.min(1, t))
     const position = this.curve.getPointAt(tt, this.tmpPos).clone()
     const tangent = this.curve.getTangentAt(tt, this.tmpTan).clone().normalize()
     return { position, tangent, normal: this.sideNormal(tangent), t: tt }
   }
 
-  /** Rychlý progress přes LUT (+ volitelný hint z minulého framu). */
   progressAt(x: number, z: number, hint?: number): number {
     const n = this.lutN
     let bestI = 0
     let bestD = Infinity
 
     if (hint !== undefined) {
-      const start = Math.floor((((hint % 1) + 1) % 1) * n)
-      for (let k = -10; k <= 10; k++) {
-        const i = (start + k + n) % n
+      const start = Math.floor(
+        this.def.loop
+          ? (((hint % 1) + 1) % 1) * n
+          : Math.max(0, Math.min(1, hint)) * (n - 1),
+      )
+      for (let k = -12; k <= 12; k++) {
+        const i = this.def.loop ? (start + k + n) % n : Math.max(0, Math.min(n - 1, start + k))
         const p = this.lut[i]
         const d = (p.x - x) ** 2 + (p.z - z) ** 2
         if (d < bestD) {
@@ -480,43 +1675,103 @@ export class Track {
       }
     }
 
-    // Jemná interpolace mezi sousedy
     const i0 = bestI
-    const i1 = (bestI + 1) % n
+    const i1 = this.def.loop ? (bestI + 1) % n : Math.min(n - 1, bestI + 1)
     const a = this.lut[i0]
     const b = this.lut[i1]
     const abx = b.x - a.x
     const abz = b.z - a.z
     const len2 = abx * abx + abz * abz || 1
     const u = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / len2))
-    return (i0 + u) / n
+    if (this.def.loop) return (i0 + u) / n
+    return (i0 + u) / Math.max(1, n - 1)
   }
 
-  constrain(x: number, z: number, hint?: number): { x: number; z: number; hit: boolean; t: number } {
+  findJumpPad(x: number, z: number): JumpPad | null {
+    for (const p of this.jumpPads) {
+      if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ) return p
+    }
+    return null
+  }
+
+  constrain(
+    x: number,
+    z: number,
+    hint?: number,
+  ): { x: number; z: number; hit: boolean; t: number; nx: number; nz: number } {
+    if (this.def.sandbox) {
+      const b = this.def.sandboxBounds ?? { halfX: 170, halfZ: 110 }
+      let cx = x
+      let cz = z
+      let nx = 0
+      let nz = 0
+      let hit = false
+      if (x > b.halfX) {
+        cx = b.halfX
+        nx = -1
+        hit = true
+      } else if (x < -b.halfX) {
+        cx = -b.halfX
+        nx = 1
+        hit = true
+      }
+      if (z > b.halfZ) {
+        cz = b.halfZ
+        nz = -1
+        hit = true
+      } else if (z < -b.halfZ) {
+        cz = -b.halfZ
+        nz = 1
+        hit = true
+      }
+      const t = this.progressAt(cx, cz, hint)
+      return { x: cx, z: cz, hit, t, nx, nz }
+    }
+
     const t = this.progressAt(x, z, hint)
-    const idx = Math.floor(t * this.lutN) % this.lutN
+    const idx = this.def.loop
+      ? Math.floor(t * this.lutN) % this.lutN
+      : Math.max(0, Math.min(this.lutN - 1, Math.floor(t * (this.lutN - 1))))
     const p = this.lut[idx]
     const lateral = (x - p.x) * p.nx + (z - p.z) * p.nz
     const limit = this.halfWidth + 0.55
-    if (Math.abs(lateral) <= limit) return { x, z, hit: false, t }
-    const clamped = Math.sign(lateral) * limit
+    if (Math.abs(lateral) <= limit) return { x, z, hit: false, t, nx: 0, nz: 0 }
+    const side = Math.sign(lateral) || 1
+    const clamped = side * limit
+    // Normála stěny směrem dovnitř tratě (odražení zpět na vozovku)
     return {
       x: p.x + p.nx * clamped,
       z: p.z + p.nz * clamped,
       hit: true,
       t,
+      nx: -p.nx * side,
+      nz: -p.nz * side,
     }
   }
 
-  getStartPose(gridIndex: number): { x: number; z: number; heading: number } {
+  getStartPose(gridIndex: number): { x: number; z: number; y: number; heading: number } {
+    if (this.def.sandbox) {
+      const row = Math.floor(gridIndex / 2)
+      const side = gridIndex % 2 === 0 ? -1 : 1
+      return {
+        x: side * 4.5,
+        z: -18 - row * 7,
+        y: 0,
+        heading: 0, // směr k vodě (+Z)
+      }
+    }
+    // 2×2 grid: řada 0 (0|1) vpředu, řada 1 (2|3) za nimi — stejná „lajna“
+    const baseT = this.def.loop ? 0.018 : 0.012
     const row = Math.floor(gridIndex / 2)
     const side = gridIndex % 2 === 0 ? -1 : 1
-    const t = 0.012 + row * 0.018
-    const s = this.sample(t)
-    const lateral = side * Math.min(this.def.vehicle === 'rally' ? 4.2 : 3.2, this.halfWidth * 0.28)
+    const s = this.sample(baseT)
+    const lateral = side * Math.min(3.4, this.halfWidth * 0.32)
+    const gap = Math.max(5.5, this.halfWidth * 0.85)
+    const along = -row * gap
     return {
-      x: s.position.x + s.normal.x * lateral,
-      z: s.position.z + s.normal.z * lateral,
+      x: s.position.x + s.normal.x * lateral + s.tangent.x * along,
+      z: s.position.z + s.normal.z * lateral + s.tangent.z * along,
+      y: s.position.y,
       heading: Math.atan2(s.tangent.x, s.tangent.z),
     }
   }
