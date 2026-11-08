@@ -4,6 +4,8 @@ export type AudioSettingsValues = {
   master: number
   music: number
   sfx: number
+  /** Kliky / UI v menu (0–100) */
+  menu: number
   track: MusicId
   /** Vypnout veškerý zvuk */
   muted: boolean
@@ -22,6 +24,7 @@ export const DEFAULT_AUDIO: AudioSettingsValues = {
   master: 42,
   music: 28,
   sfx: 38,
+  menu: 55,
   track: 'techno',
   muted: false,
 }
@@ -36,6 +39,7 @@ export function loadAudioSettings(): AudioSettingsValues {
       master: clampVol(parsed.master ?? DEFAULT_AUDIO.master),
       music: clampVol(parsed.music ?? DEFAULT_AUDIO.music),
       sfx: clampVol(parsed.sfx ?? DEFAULT_AUDIO.sfx),
+      menu: clampVol(parsed.menu ?? DEFAULT_AUDIO.menu),
       track,
       muted: Boolean(parsed.muted),
     }

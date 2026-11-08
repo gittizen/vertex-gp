@@ -174,9 +174,15 @@ function createMotorcycle(color: number, neon = 0x7a8fa8): THREE.Group {
   wheelGeo.rotateZ(Math.PI / 2)
   const front = new THREE.Mesh(wheelGeo, dark)
   front.position.set(0, 0.38, 1.05)
+  front.userData.spinWheel = true
+  front.userData.spinAxis = 'x'
+  front.userData.spinRadius = 0.38
   g.add(front)
   const rear = new THREE.Mesh(wheelGeo, dark)
   rear.position.set(0, 0.38, -0.85)
+  rear.userData.spinWheel = true
+  rear.userData.spinAxis = 'x'
+  rear.userData.spinRadius = 0.38
   g.add(rear)
 
   addNeon(g, neon, 0.2, 1.6, 0.18)
@@ -465,7 +471,7 @@ function createScooter(color: number, _neon = 0x7a8fa8): THREE.Group {
 
 /**
  * Skateboard — board v pivotu (kickflip / impossible),
- * jezdec −30 % (scale 2.1), nohy na decku.
+ * jezdec stejné měřítko jako kolo (průměr 2.1 ↔ 1.15 → 1.625).
  */
 function createSkateboard(color: number, neon = 0x7a8fa8): THREE.Group {
   const g = new THREE.Group()
@@ -497,6 +503,9 @@ function createSkateboard(color: number, neon = 0x7a8fa8): THREE.Group {
   ]) {
     const w = new THREE.Mesh(wheelGeo, dark)
     w.position.set(wx, 0.26, wz)
+    w.userData.spinWheel = true
+    w.userData.spinAxis = 'x'
+    w.userData.spinRadius = 0.1
     boardPivot.add(w)
   }
   g.add(boardPivot)
@@ -504,9 +513,8 @@ function createSkateboard(color: number, neon = 0x7a8fa8): THREE.Group {
 
   const rider = new THREE.Group()
   rider.userData.skateRider = true
-  // −30 % oproti dřívějšímu 3× → 2.1; nohy na desce
-  rider.scale.setScalar(2.1)
-  rider.position.set(0, 0.4, 0)
+  rider.scale.setScalar(1.625)
+  rider.position.set(0, 0.48, 0)
 
   const backLeg = new THREE.Group()
   backLeg.userData.ollieBackLeg = true
@@ -581,11 +589,17 @@ function createBicycle(color: number, neon = 0x7a8fa8): THREE.Group {
   front.rotation.y = Math.PI / 2
   front.position.set(0, wr, 0.72)
   front.userData.wheelPaint = true
+  front.userData.spinWheel = true
+  front.userData.spinAxis = 'z'
+  front.userData.spinRadius = wr
   boardPivot.add(front)
   const rear = new THREE.Mesh(wheelGeo.clone(), wheelMat.clone())
   rear.rotation.y = Math.PI / 2
   rear.position.set(0, wr, -0.72)
   rear.userData.wheelPaint = true
+  rear.userData.spinWheel = true
+  rear.userData.spinAxis = 'z'
+  rear.userData.spinRadius = wr
   boardPivot.add(rear)
 
   const topTube = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.05, 6), frame)
@@ -619,11 +633,11 @@ function createBicycle(color: number, neon = 0x7a8fa8): THREE.Group {
   g.add(boardPivot)
   // Kolo: žádný neon — barva kol = „neon“ volba
 
-  // Jezdec v sedě — měřítko k rámu (ne 2.1 jako u skate)
+  // Jezdec v sedě — stejné měřítko jako skate (1.625)
   const rider = new THREE.Group()
   rider.userData.skateRider = true
-  rider.scale.setScalar(1.15)
-  rider.position.set(0, 0.72, -0.22)
+  rider.scale.setScalar(1.625)
+  rider.position.set(0, 0.58, -0.22)
 
   const backLeg = new THREE.Group()
   backLeg.userData.ollieBackLeg = true
@@ -785,9 +799,15 @@ function addWheels(
   ]) {
     const w = new THREE.Mesh(geo, tire)
     w.position.set(wx, radius, wz)
+    w.userData.spinWheel = true
+    w.userData.spinAxis = 'x'
+    w.userData.spinRadius = radius
     g.add(w)
     const cap = new THREE.Mesh(hubGeo, hub)
     cap.position.set(wx, radius, wz)
+    cap.userData.spinWheel = true
+    cap.userData.spinAxis = 'x'
+    cap.userData.spinRadius = radius
     g.add(cap)
   }
 }

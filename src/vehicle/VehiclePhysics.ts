@@ -194,6 +194,7 @@ export class VehiclePhysics {
     }
 
     const maxReverse = 16
+    // Tab/Alt boost strop (+45 % nad cruise) — skate/kolo
     const boostCeil = cruiseMax * 1.45
     this.speed = Math.max(-maxReverse, Math.min(boostCeil, this.speed))
 

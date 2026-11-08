@@ -43,11 +43,13 @@ export class CameraController {
 
   update(dt: number, vehicle: Vehicle): void {
     const p = vehicle.physics
-    const forwardX = Math.sin(p.heading)
-    const forwardZ = Math.cos(p.heading)
-    const y = vehicle.groundY
-    const speed = Math.abs(p.speed)
+    const heading = Number.isFinite(p.heading) ? p.heading : 0
+    const forwardX = Math.sin(heading)
+    const forwardZ = Math.cos(heading)
+    const y = Number.isFinite(vehicle.groundY) ? vehicle.groundY : 0
+    const speed = Math.abs(Number.isFinite(p.speed) ? p.speed : 0)
     const speed01 = Math.min(1, speed / 72)
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) return
 
     let baseFov: number
 

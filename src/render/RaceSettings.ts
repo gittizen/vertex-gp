@@ -15,7 +15,9 @@ export type RaceSettingsValues = {
   freestyle: boolean
   /** Přeskočit odpočet 3–2–1 */
   skipCountdown: boolean
-  /** Peklostroje AI soupeřů (3 sloty) */
+  /** Solo: každý závod nové náhodné AI peklostroje (default) */
+  randomOpponentsEachRace: boolean
+  /** Peklostroje AI soupeřů (3 sloty) — platí když randomOpponentsEachRace=false */
   opponents: [VehicleKind, VehicleKind, VehicleKind]
 }
 
@@ -24,6 +26,7 @@ export const DEFAULT_RACE: RaceSettingsValues = {
   transmission: 'auto',
   freestyle: false,
   skipCountdown: false,
+  randomOpponentsEachRace: true,
   opponents: ['street', 'moto', 'formula'],
 }
 
@@ -84,8 +87,13 @@ export function loadRaceSettings(): RaceSettingsValues {
     return {
       reverse: Boolean(parsed.reverse),
       transmission: normTransmission(parsed.transmission, parsed.manualShift),
-      freestyle: Boolean(parsed.freestyle),
+      freestyle: false, // freestyle závod zrušen — skate/kolo mají triky v klasice
       skipCountdown: Boolean(parsed.skipCountdown),
+      // Chybějící klíč = default true (starší save bez flagu)
+      randomOpponentsEachRace:
+        typeof parsed.randomOpponentsEachRace === 'boolean'
+          ? parsed.randomOpponentsEachRace
+          : true,
       opponents: [
         normOpponent(op[0], DEFAULT_RACE.opponents[0]),
         normOpponent(op[1], DEFAULT_RACE.opponents[1]),

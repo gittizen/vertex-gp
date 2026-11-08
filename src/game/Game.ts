@@ -12,6 +12,7 @@ import {
   lightIntensityScale,
   loadAtmosphereSettings,
   saveAtmosphereSettings,
+  sceneForVisualQuality,
   type AtmosphereSettingsValues,
 } from '../render/AtmosphereSettings'
 import { Actor } from '../engine/Actor'
@@ -20,6 +21,7 @@ import { SceneLightRig } from '../engine/components/SceneLightRig'
 import {
   loadVisualSettings,
   saveVisualSettings,
+  visualFlagsForQuality,
   type VisualSettingsValues,
 } from '../render/VisualSettings'
 import { createSkyGradientTexture, tickSkyBackdrop } from '../render/SkyBackdrop'
@@ -125,6 +127,9 @@ export class Game {
   private escWasDown = false
   /** Po Esc z countdownu neber hned další Esc jako „zpět na entry“. */
   private ignoreEscUntilRelease = false
+  private fpsAcc = 0
+  private fpsFrames = 0
+  private fpsShown = 60
 
   private get scene(): THREE.Scene {
     return this.engine.world.scene
@@ -161,6 +166,7 @@ export class Game {
       this.net.send({ type: 'setLaps', laps })
     })
     this.menu.setOnBrowseOnline(() => void this.ensureHubBrowse())
+    this.menu.setOnBackToEntry(() => this.showEntry())
     this.entry.setOnEnter(() => this.openMenu())
     this.hud.setOnMenuRequest(() => {
       if (this.multiplayer) this.leaveLobby()
@@ -177,6 +183,7 @@ export class Game {
       get: () => this.audio.getSettings(),
       set: (partial) => this.audio.applySettings(partial),
       unlock: () => this.audio.unlock(),
+      playClick: () => this.audio.playMenuClick(),
     })
     this.menu.setAtmosphereApi({
       get: () => ({ ...this.atmosphere }),
@@ -192,10 +199,13 @@ export class Game {
       get: () => ({ ...this.visual }),
       set: (partial) => {
         this.visual = { ...this.visual, ...partial }
-        // Performance default — bloom/stíny jen když je uživatel sám zapne (ne auto při cinematic)
-        if (partial.quality === 'perf') {
-          this.visual.bloom = false
-          this.visual.shadows = false
+        if (partial.quality) {
+          this.visual = { ...this.visual, ...visualFlagsForQuality(partial.quality) }
+          this.atmosphere = { ...this.atmosphere, ...sceneForVisualQuality(partial.quality) }
+          saveAtmosphereSettings(this.atmosphere)
+          applyUiAtmosphere(this.atmosphere)
+          this.track.setDecorQuality(this.atmosphere.decor)
+          this.applyTheme(this.track.def)
         }
         saveVisualSettings(this.visual)
         this.mirror.setEnabled(this.visual.rearMirror)
@@ -563,6 +573,11 @@ export class Game {
     this.multiplayer = false
     this.mpRaceEnded = false
     this.recordsSaved = false
+    // Freestyle závod zrušen — triky zůstávají u skate/kola
+    if (this.raceSettings.freestyle) {
+      this.raceSettings.freestyle = false
+      saveRaceSettings(this.raceSettings)
+    }
     this.hud.setOnlineRace(false)
     this.hud.clearResultsOverlay()
     this.clearPause()
@@ -608,7 +623,7 @@ export class Game {
       this.activeCompetition === 'driftScore'
     for (let i = 0; i < this.vehicles.length; i++) {
       if (i === this.localSlot) continue
-      if (this.track.def.sandbox || this.raceSettings.freestyle || soloChallenge) {
+      if (this.track.def.sandbox || soloChallenge) {
         this.vehicles[i].mesh.visible = false
         this.vehicles[i].finished = true
       } else {
@@ -796,11 +811,12 @@ export class Game {
       !this.input.mobile && transmissionAllowedFor(vehicle)
         ? this.raceSettings.transmission
         : 'auto'
-    // Solo: každý závod noví soupeři (stejná kategorie). Multi: pevní z lobby.
-    const opponents = this.multiplayer
-      ? this.raceSettings.opponents
-      : randomOpponents(vehicle, this.raceSettings.freestyle)
-    if (!this.multiplayer) {
+    // Solo: default každý závod noví soupeři; jinak pevní z nastavení. Multi: lobby.
+    const opponents =
+      this.multiplayer || !this.raceSettings.randomOpponentsEachRace
+        ? this.raceSettings.opponents
+        : randomOpponents(vehicle, false)
+    if (!this.multiplayer && this.raceSettings.randomOpponentsEachRace) {
       this.raceSettings.opponents = opponents
       saveRaceSettings(this.raceSettings)
     }
@@ -841,15 +857,21 @@ export class Game {
     const { fog } = def.theme
     // UE-stylový gradient (equirect) — levnější než sky dome mesh
     const prevBg = this.scene.background
-    this.scene.background = createSkyGradientTexture(def)
+    const skyTex = createSkyGradientTexture(def)
+    this.scene.background = skyTex
     if (prevBg instanceof THREE.Texture && !prevBg.userData.sharedSky) prevBg.dispose()
+    // Reflexe laku = stejné nebe (ne studio RoomEnvironment)
+    this.engine.render.pipeline.attachSkyEnvironment(
+      this.scene,
+      skyTex instanceof THREE.Texture ? skyTex : null,
+    )
     const scale = fogDistanceScale(this.atmosphere.fog)
     // Exp2 = přirozená atmosférická perspektiva (reálný vzduch), ne „bílá stěna“
     if (def.id === 'mexiku') {
       this.scene.fog = null
     } else if (def.world === 'city') {
-      // Slabší noc — silnice nesmí zmizet v černé
-      this.scene.fog = new THREE.FogExp2(fog, 0.0024 / scale)
+      // Slabší mlha = čitelnější silnice vs terén vs domy
+      this.scene.fog = new THREE.FogExp2(fog, 0.00115 / scale)
     } else if (def.world === 'rally') {
       this.scene.fog = new THREE.FogExp2(fog, 0.0014 / scale)
     } else if (def.world === 'climb') {
@@ -873,27 +895,29 @@ export class Game {
     let sunBase = 1.35
     let rimBase = 0.22
     if (def.world === 'city') {
-      ambient?.color.setHex(0x5a6080)
-      hemi?.color.setHex(0x7888b0)
-      hemi?.groundColor.setHex(0x1a1820)
-      sun?.color.setHex(0xd0d8f0)
-      rim?.color.setHex(0x7080b0)
-      ambientBase = 0.42
-      hemiBase = 0.62
-      sunBase = 1.05
-      rimBase = 0.32
-      this.lightRig.setSunOffset(70, 110, 40)
+      // Noční kontrast: světlá silnice (emissive), tmavý terén, teplé lampy
+      ambient?.color.setHex(0x243048)
+      hemi?.color.setHex(0x3a5070)
+      hemi?.groundColor.setHex(0x05060a)
+      sun?.color.setHex(0xb0b8d0)
+      rim?.color.setHex(0xffa060)
+      ambientBase = 0.34
+      hemiBase = 0.48
+      sunBase = 0.48
+      rimBase = 0.42
+      this.lightRig.setSunOffset(90, 140, 60)
     } else if (def.world === 'rally') {
-      ambient?.color.setHex(0xb8b0a4)
-      hemi?.color.setHex(0xd8d0c4)
-      hemi?.groundColor.setHex(0x3a3228)
+      // Novostavby: víc fill lightu, ať stíny nesežerou okolí
+      ambient?.color.setHex(0xd0c8b8)
+      hemi?.color.setHex(0xe8dcc8)
+      hemi?.groundColor.setHex(0x5a4a38)
       sun?.color.setHex(0xffe8d0)
-      rim?.color.setHex(0x8890a0)
-      ambientBase = 0.26
-      hemiBase = 0.58
-      sunBase = 1.28
-      rimBase = 0.24
-      this.lightRig.setSunOffset(130, 85, -70)
+      rim?.color.setHex(0xa0a8b8)
+      ambientBase = 0.42
+      hemiBase = 0.78
+      sunBase = 1.05
+      rimBase = 0.28
+      this.lightRig.setSunOffset(110, 120, -50)
     } else if (def.world === 'climb') {
       ambient?.color.setHex(0xb8c8d8)
       hemi?.color.setHex(0xd0e0f0)
@@ -917,16 +941,16 @@ export class Game {
       rimBase = 0.18
       this.lightRig.setSunOffset(60, 130, 55)
     } else {
-      // town — pozdní odpoledne, stále „venku“, ne neon sunset
+      // town — pozdní odpoledne; rim teplejší (studený rim mačkal terén do navy)
       ambient?.color.setHex(0xc8b8a8)
       hemi?.color.setHex(0xe8d8c4)
-      hemi?.groundColor.setHex(0x3a3024)
+      hemi?.groundColor.setHex(0x4a3a28)
       sun?.color.setHex(0xffd0a0)
-      rim?.color.setHex(0x8898b0)
-      ambientBase = 0.27
-      hemiBase = 0.55
+      rim?.color.setHex(0xc4a888)
+      ambientBase = 0.3
+      hemiBase = 0.58
       sunBase = 1.18
-      rimBase = 0.26
+      rimBase = 0.2
       this.lightRig.setSunOffset(-70, 70, 100)
     }
 
@@ -938,6 +962,17 @@ export class Game {
       this.engine.render.pipeline.configureSunShadow(sun, this.visual)
     }
     if (rim) rim.intensity = rimBase * lightMul
+
+    // City: perf pipeline (bez ACES/bloom) = čitelnost + FPS; cinematic nechá full look
+    if (def.world === 'city' && this.visual.quality !== 'cinematic') {
+      this.engine.render.applyVisual(
+        { quality: 'perf', bloom: false, shadows: false, rearMirror: false },
+        this.lightRig.getSun(),
+      )
+    } else {
+      this.engine.render.applyVisual(this.visual, this.lightRig.getSun())
+    }
+    this.onResize()
   }
 
   private applyVisual(): void {
@@ -950,14 +985,51 @@ export class Game {
     const w = window.innerWidth
     const h = window.innerHeight
     const q = this.visual.quality
-    const scale = q === 'perf' ? (w * h > 1280 * 720 ? 0.75 : 0.9) : q === 'balanced' ? 0.92 : 1
+    const city = this.lastTrackId === 'city'
+    const scale = city
+      ? q === 'cinematic'
+        ? 0.9
+        : 0.78
+      : q === 'perf'
+        ? w * h > 1280 * 720
+          ? 0.75
+          : 0.9
+        : q === 'balanced'
+          ? 0.92
+          : 1
     this.engine.render.resize(w, h, scale)
   }
 
+  private lastDrawCalls = 0
+  private lastTriangles = 0
+
   private draw(): void {
+    const info = this.engine.render.renderer.info
+    info.reset()
     this.engine.render.draw(this.engine.world)
     if (this.mode === 'race' && this.mirror.isEnabled()) {
       this.mirror.render(this.engine.render.renderer, this.scene)
+    }
+    this.lastDrawCalls = info.render.calls
+    this.lastTriangles = info.render.triangles
+  }
+
+  private tickPerf(dt: number): void {
+    this.fpsAcc += dt
+    this.fpsFrames++
+    if (this.fpsAcc < 0.5) return
+    this.fpsShown = Math.round(this.fpsFrames / this.fpsAcc)
+    this.fpsAcc = 0
+    this.fpsFrames = 0
+    this.hud.setPerf(this.fpsShown, this.lastDrawCalls)
+    const w = window as unknown as {
+      __klecPerf?: { fps: number; draws: number; tris: number; track: string }
+    }
+    w.__klecPerf = {
+      fps: this.fpsShown,
+      draws: this.lastDrawCalls,
+      tris: this.lastTriangles,
+      track: this.lastTrackId,
     }
   }
 
@@ -1016,8 +1088,8 @@ export class Game {
       }
       const t = this.engine.world.timeSeconds * 0.15
       this.camera.position.set(Math.sin(t) * 140, 55, Math.cos(t) * 140)
-      this.camera.lookAt(0, 0, 0)
       this.draw()
+      this.tickPerf(dt)
       this.input.endFrame()
       return
     }
@@ -1030,7 +1102,8 @@ export class Game {
       !this.multiplayer &&
       (this.input.actionPressed('restart') || this.input.pressed('KeyR'))
     ) {
-      // Funguje i po dojetí / v pauze — vždy stejná trať
+      // Musí endFrame — jinak KeyR zůstane v justPressed a restart jede každý frame (= freeze)
+      this.input.endFrame()
       this.restartSoloSameRace({ sameTrack: true })
       return
     }
@@ -1065,6 +1138,7 @@ export class Game {
       this.audio.update(this.vehicles, this.player, false)
       this.hud.update(this.player, this.race, this.cams, true)
       this.draw()
+      this.tickPerf(dt)
       this.input.endFrame()
       return
     }
@@ -1090,15 +1164,12 @@ export class Game {
           if (this.input.actionPressed('shiftUp')) v.physics.shiftUp(clutchIn)
           if (this.input.actionPressed('shiftDown')) v.physics.shiftDown(clutchIn)
         }
-        const sandboxFs = !!this.track.def.sandbox
-        const trickHunt = this.activeCompetition === 'trickHunt'
-        const freestyleMode = sandboxFs || this.raceSettings.freestyle || trickHunt
-        // Telefon / tablet: jen klasická jízda — žádné freestyle triky
+        // Freestyle peklostroje (skate/kolo): triky + body vždy (ne jen „freestyle závod“)
         const mobileClassic = this.input.mobile
-        v.freestyleOn =
-          !mobileClassic && freestyleMode && (v.kind === 'skate' || v.kind === 'bike')
-        // Drift e-brake z Ovládání (ne z mapy)
-        v.physics.driftMode = this.controlFeel.driftMode && !freestyleMode && !mobileClassic
+        const boardFs = v.kind === 'skate' || v.kind === 'bike'
+        v.freestyleOn = !mobileClassic && boardFs
+        // Drift e-brake z Ovládání — u board freestyle vypnout
+        v.physics.driftMode = this.controlFeel.driftMode && !v.freestyleOn && !mobileClassic
         const controls =
           this.race.phase === 'racing'
             ? {
@@ -1147,6 +1218,13 @@ export class Game {
     if (this.race.phase === 'racing') {
       // Pozice už drží Vehicle.update (constrain + plynulý odraz)
       this.race.update(dt)
+    }
+
+    // Impact juice — shake + scrape (player only)
+    const impact = this.player.consumeImpact()
+    if (impact > 0.05) {
+      this.cams.addShake(impact)
+      this.audio.playImpact(impact)
     }
 
     tickSkyBackdrop(this.track.skyBackdrop, dt)
@@ -1213,6 +1291,7 @@ export class Game {
     this.audio.update(this.vehicles, this.player, this.race.phase === 'racing')
     this.hud.update(this.player, this.race, this.cams, true)
     this.draw()
+    this.tickPerf(dt)
     this.input.endFrame()
   }
 

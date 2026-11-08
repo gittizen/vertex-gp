@@ -185,6 +185,8 @@ export class Input {
 
   get tab(): number {
     if (this.actionHeld('tab')) return 1
+    // Alt L/R vždy = Tab boost (i když remap druhý slot přepsal AltLeft)
+    if (this.keys.has('AltLeft') || this.keys.has('AltRight')) return 1
     if (this.mobileActive && this.btnBoost > 0) return 1
     return 0
   }

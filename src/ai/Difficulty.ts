@@ -18,31 +18,31 @@ export const DIFFICULTIES: DifficultyDef[] = [
   {
     id: 'superEasy',
     label: 'Super lehká',
-    blurb: 'O 20 % lehčí než lehká',
+    blurb: 'AI ~44 % pomalejší než střední',
     speedScale: 0.56,
   },
   {
     id: 'easy',
     label: 'Lehká',
-    blurb: 'Celé o 30 % lehčí',
+    blurb: 'AI o 30 % pomalejší než střední',
     speedScale: 0.7,
   },
   {
     id: 'normal',
     label: 'Střední',
-    blurb: '1. −10 % času · 2. tvůj čas · 3. −20 % tempa',
+    blurb: '1. +10 % · 2. tvůj čas · 3. −20 %',
     speedScale: 1,
   },
   {
     id: 'hard',
     label: 'Těžká',
-    blurb: 'Celé o 21 % těžší',
+    blurb: 'AI o 21 % rychlejší než střední',
     speedScale: 1.21,
   },
   {
     id: 'superHard',
     label: 'Super těžká',
-    blurb: 'O 40 % těžší než těžká',
+    blurb: 'AI ~69 % rychlejší než střední',
     speedScale: 1.694,
   },
 ]

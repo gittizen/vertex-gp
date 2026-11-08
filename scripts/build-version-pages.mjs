@@ -1,5 +1,5 @@
 /**
- * Build playable static sites for 0.1 / 0.2 / 0.3 / 0.4 into ./site/
+ * Build playable static sites for 0.1 … 0.5 into ./site/
  * GH Pages base: /vertex-gp/<ver>/
  * Kopíruje versions/<ver>/screenshot.webp do hubu, pokud existuje.
  */
@@ -37,10 +37,17 @@ const VERSIONS = [
   },
   {
     id: '0.4',
-    ref: 'HEAD',
+    ref: '0.4',
     base: '/vertex-gp/0.4/',
     title: '0.4 — reálnější svět',
     blurb: 'Okolí, terén, unikátní mapy, stíny bez děr v asfaltu.',
+  },
+  {
+    id: '0.5',
+    ref: 'HEAD',
+    base: '/vertex-gp/0.5/',
+    title: '0.5 — AI + demo polish',
+    blurb: 'Live tempo AI, náhodní soupeři, atmosféra, dokumentace pro pohovor.',
     current: true,
   },
 ]
@@ -187,7 +194,7 @@ function writeHub() {
 <body>
   <main>
     <h1>Klec GP</h1>
-    <p class="sub">Hratelné archivy verzí na GitHub Pages — každá s screenshotem ze hry. Aktuální produkce je 0.4.</p>
+    <p class="sub">Hratelné archivy verzí na GitHub Pages — každá s screenshotem ze hry. Aktuální produkce je 0.5.</p>
     <div class="grid">
 ${cards}
     </div>

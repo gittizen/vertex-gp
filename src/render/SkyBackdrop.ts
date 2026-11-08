@@ -158,7 +158,7 @@ function mountainColor(def: TrackDef, layer: 0 | 1): number {
   const dark = layer === 0 ? 0.28 : 0.42
   const fogW = layer === 0 ? 0.22 : 0.35
   if (def.world === 'city') return layer === 0 ? 0x0e0c16 : 0x161420
-  if (def.world === 'rally') return layer === 0 ? 0x1c100c : 0x2a1812
+  if (def.world === 'rally') return layer === 0 ? 0x4a3828 : 0x5a4834
   if (def.skyBody === 'moon') return layer === 0 ? 0x1a2430 : 0x2a3440
   const r = Math.round(A.r * dark + B.r * fogW)
   const gr = Math.round(A.g * (dark + 0.04) + B.g * fogW)

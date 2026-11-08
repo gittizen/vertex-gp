@@ -8,17 +8,18 @@ import { DEFAULT_PLAYER_TUNING, tuningToPhysics } from '../tuning/PlayerTuning'
  * Tachometr ukazuje vždy skutečnou rychlost (stejná jednotka u všech peklostrojů).
  * Popisy v menu se berou z těchto čísel.
  */
+/** −20 % oproti dřívějšímu katalogu (hráč i AI berou stejný strop). */
 export const CATALOG_MAX_KMH: Record<VehicleKind, number> = {
-  street: 400,
-  moto: 448,
-  formula: 544,
-  monster: 304,
-  truck: 243,
-  tank: 219,
-  limo: 381,
-  skate: 96,
-  bike: 128,
-  scooter: 3,
+  street: 320,
+  moto: 358,
+  formula: 435,
+  monster: 243,
+  truck: 194,
+  tank: 175,
+  limo: 305,
+  skate: 77,
+  bike: 102,
+  scooter: 2,
 }
 
 /** speedCapMult tak, aby (118 + df*5)*1.3*cap*3.6 ≈ targetKmh */

@@ -34,8 +34,11 @@ export class Hud {
   } | null = null
   private built = false
   private elRaceMeta: HTMLElement | null = null
+  private elRaceClock: HTMLElement | null = null
+  private elRaceGap: HTMLElement | null = null
   private elSpeed: HTMLElement | null = null
   private elGear: HTMLElement | null = null
+  private elFps: HTMLElement | null = null
   private lastOverlayKey = ''
   private hudAcc = 0
   private helpKind: VehicleKind | '' = ''
@@ -127,6 +130,19 @@ export class Hud {
     if (paused) this.lastOverlayKey = ''
   }
 
+  /** FPS / draw calls (audit výkonu). */
+  setPerf(fps: number, draws: number): void {
+    if (!this.elFps) {
+      this.elFps = document.createElement('div')
+      this.elFps.className = 'hud-fps'
+      this.elFps.setAttribute('aria-hidden', 'true')
+      this.root.appendChild(this.elFps)
+    }
+    const warn = fps > 0 && fps < 55
+    this.elFps.classList.toggle('hud-fps-low', warn)
+    this.elFps.textContent = `${fps} FPS · ${draws} draw`
+  }
+
   /** Rámeček kolem WebGL scissor zrcátka. */
   setMirrorFrame(on: boolean): void {
     this.mirrorFrame = on
@@ -200,6 +216,31 @@ export class Hud {
           this.elRaceMeta.textContent = `P${place}`
         }
       }
+      if (this.elRaceClock) {
+        if (race.isSandbox || race.phase === 'countdown') {
+          this.elRaceClock.textContent = '—'
+        } else {
+          const clockMs =
+            race.phase === 'finished'
+              ? player.finishTime || race.raceTimeMs
+              : race.raceTimeMs
+          this.elRaceClock.textContent = formatTime(clockMs)
+        }
+      }
+      if (this.elRaceGap) {
+        const gap = race.playerGap()
+        if (!gap || race.isSandbox || race.phase === 'countdown') {
+          this.elRaceGap.hidden = true
+        } else {
+          this.elRaceGap.hidden = false
+          const sec = (gap.ms / 1000).toFixed(1)
+          const sign = gap.ahead ? '+' : '−'
+          const label = gap.ahead ? t('hud.gapLead') : t('hud.gapBehind')
+          this.elRaceGap.textContent = `${label} ${gap.name} ${sign}${sec}s`
+          this.elRaceGap.classList.toggle('gap-lead', gap.ahead)
+          this.elRaceGap.classList.toggle('gap-behind', !gap.ahead)
+        }
+      }
       if (this.elGear) {
         const gear = player.physics.gear < 0 ? 'R' : String(player.physics.gear)
         const tx = player.physics.transmission
@@ -213,7 +254,10 @@ export class Hud {
       this.elSpeed.innerHTML = `${player.displaySpeedKmh}<span>km/h</span>`
     }
 
-    const boosting = player.isMonsterFamily() && player.turboAmount > 0.25
+    const boosting =
+      (player.isMonsterFamily() && player.turboAmount > 0.25) ||
+      player.pushAmount > 0.2 ||
+      player.tabBoostAmount > 0.25
     this.root.classList.toggle('hud-boost', boosting)
     this.root.classList.toggle('hud-fallen', player.fallen)
     const pushEl = this.root.querySelector('[data-h="push"]')
@@ -227,6 +271,9 @@ export class Hud {
       } else if (player.isMonsterFamily() && player.turboAmount > 0.2) {
         pushEl.hidden = false
         pushEl.textContent = 'TURBO'
+      } else if (player.tabBoostAmount > 0.25) {
+        pushEl.hidden = false
+        pushEl.textContent = 'BOOST'
       } else if (player.freestyleOn && player.lastTrickLabel && player.trickLocked) {
         pushEl.hidden = false
         pushEl.textContent = player.lastTrickLabel
@@ -252,11 +299,14 @@ export class Hud {
   private buildShell(kind: VehicleKind, sandbox = false, loopRace = false): void {
     const keepMirror = this.mirrorEl
     this.root.innerHTML = `
+      <div class="hud-fps" data-h="fps" aria-hidden="true">— FPS</div>
       <div class="hud-bottom">
         <div class="hud-speed-row">
           <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
           <div class="hud-race-meta" data-h="raceMeta">—</div>
         </div>
+        <div class="hud-race-clock" data-h="raceClock">0:00.00</div>
+        <div class="hud-race-gap" data-h="raceGap" hidden></div>
         <div class="hud-gear" data-h="gear">${t('hud.gear')}: 1 (${t('hud.auto')})</div>
         <div class="hud-push" data-h="push" hidden>${t('hud.push')}</div>
       </div>
@@ -269,8 +319,11 @@ export class Hud {
       this.setMirrorFrame(true)
     }
     this.elRaceMeta = this.root.querySelector('[data-h="raceMeta"]')
+    this.elRaceClock = this.root.querySelector('[data-h="raceClock"]')
+    this.elRaceGap = this.root.querySelector('[data-h="raceGap"]')
     this.elSpeed = this.root.querySelector('[data-h="speed"]')
     this.elGear = this.root.querySelector('[data-h="gear"]')
+    this.elFps = this.root.querySelector('[data-h="fps"]')
     this.helpKind = kind
     this.shellSandbox = sandbox
     this.shellLoop = loopRace
@@ -284,14 +337,20 @@ export class Hud {
     }
 
     if (race.phase === 'countdown') {
-      const text = race.countdown > 0 ? String(race.countdown) : 'START'
+      const text = race.countdown > 0 ? String(race.countdown) : 'GO'
+      const lit = race.countdown <= 0 ? 3 : Math.max(0, 3 - race.countdown)
       const key = `cd:${text}`
       if (key === this.lastOverlayKey) return
       this.lastOverlayKey = key
       this.overlay.classList.add('visible')
       this.overlay.innerHTML = `
-        <div class="overlay-card">
-          <h1>${text}</h1>
+        <div class="overlay-card overlay-countdown">
+          <div class="start-lights" aria-hidden="true">
+            <span class="start-light ${lit >= 1 ? 'on' : ''}"></span>
+            <span class="start-light ${lit >= 2 ? 'on' : ''}"></span>
+            <span class="start-light ${lit >= 3 ? 'on go' : ''}"></span>
+          </div>
+          <h1 class="${race.countdown <= 0 ? 'go-flash' : ''}">${text}</h1>
           <p>Klec GP — ${this.trackName}</p>
           <p class="overlay-hint">${t('menu.escBack')}</p>
         </div>

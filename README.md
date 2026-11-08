@@ -1,43 +1,81 @@
-# Klec GP · v0.4
+# Klec GP · v0.5
 
-Noční město. Ulice Klecan. Horské rallye. Stoupání Do Klecánek. Freestyle na Plácku.
+**Prohlížečová 2.5D semi-sim závodní hra** ze světa Klecan a okolí. Solo s AI, freestyle triky, online až 4 hráči.
 
-Prohlížečová 2.5D semi-sim hra. Solo s AI, freestyle triky (PC), nebo **online až 4 hráči**.
+> Ne další „racing template“. Je to studentský produkt s vlastní značkou, tratěmi podle reálných míst, UI/UX menu a AI, která se **učí z dojetých časů**.
 
-> Historie: **0.1** Vertex GP → **0.2** Klec GP → **0.3** mobil + polish → **0.4** reálnější svět.  
-> Podrobnosti: **[VERSIONS.md](./VERSIONS.md)** · složky **[versions/](./versions/)**.
+| | |
+|--|--|
+| **Hrát teď (Netlify)** | https://tourmaline-gingersnap-268fa6.netlify.app/ |
+| **Hub verzí (GitHub Pages)** | https://gittizen.github.io/vertex-gp/ |
+| **Archivy** | [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) |
+| **Changelog** | [CHANGELOG.md](./CHANGELOG.md) |
+| **Jak bys hru znovu postavil** | [RECREATE_PROMPT.md](./RECREATE_PROMPT.md) |
 
-**Aktuální web (Netlify):** https://tourmaline-gingersnap-268fa6.netlify.app/  
-**Hub verzí (GitHub Pages):** https://gittizen.github.io/vertex-gp/  
-**Hrát archivy:** [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/)
-
----
-
-## Trať & auta
-
-| Trať | Atmosféra | Poznámka |
-|------|-----------|----------|
-| **Do Klecánek** | Klecánky → U Hřbitova | Klasika |
-| **Noční Klecany** | Úsvit / noc, náměstí | Domácí |
-| **Námko / Novostavby / …** | Město & okolí | Více tratí |
-| **Mexiko** | Skate etapa | Shift odraz |
-| **Kasárny** | Drift | E-brake |
-| **Plácek** | Sandbox u vody | Freestyle body |
-
-Vytvořil **Filip Khunt**.
-
-Obtížnost AI: Lehká / Střední / Těžká. Tuning rozpočet **250 bodů**.
+Autor: **Filip Khunt** · věkové omezení ve hře: **16+**
 
 ---
 
-## Rychlý start (solo)
+## Proč to dává smysl na pohovoru / před vedením
+
+| Téma | Co v projektu uvidíš |
+|------|----------------------|
+| **Produkt** | Entry → home dlaždice → závod; atmosféry menu; verze s hratelnými archivy |
+| **UI / UX** | Mobile back flow, schémata řízení, čitelnost tratí vs auta vs terén, CS/EN |
+| **Engine / 3D** | Generované tratě (křivka → silnice + terén), stíny, výkonnostní režimy |
+| **AI** | Soupeři se stejným „žánrem“ vozidla; live kalibrace tempa z dat závodů |
+| **Síť** | Vlastní WebSocket lobby (ne jen hotový SaaS multiplayer) |
+| **Engineering discipline** | Changelog, version hub, testování ve hře (warp/QA), iterace bugů |
+
+Krátce: umím **dodat hratelnou věc**, ne jen slide.
+
+---
+
+## Co hraješ
+
+- **Tratě** podle Klecan a okolí (Námko, Noční Klecany, Do Klecánek, Novostavby, Serpentýny…) + freestyle Plácek.
+- **Peklostroje** — od formule po skate; tuning s rozpočtem bodů.
+- **AI** — Lehká / Střední / Těžká; default **každý závod jiní soupeři**.
+- **Online** — založ místnost, pošli odkaz (až 4).
+- **Atmosféra** — styly menu včetně „Kalendář s holkama“.
+
+### Easter eggy (spoiler light)
+- **Koloběžka** v garáži — chyták, nejezdí.
+- **Soutěže / šampionát**, žebříčky, watermark tratí.
+- Dialogy a copy, které nejsou „lorem ipsum racing“.
+
+---
+
+## AI, která se učí za běhu
+
+Po dojetí závodu hra umí **zaznamenat tempo** a použít ho při kalibraci AI (`CommunityLearning` / `PaceCalibration`).  
+Soupeři tak nejsou jen pevný násobič rychlosti — cílí na **reálnější časy tratě** a mohou se měnit s tím, jak lidi (nebo ty) jezdíš.
+
+Solo navíc defaultně **losuje jiné peklostroje AI** na každý závod (stejná kategorie jako ty: auto ≠ skate).
+
+---
+
+## Nad čím jsme dlouho bádali (a proč to není „hotové za víkend“)
+
+1. **Terén vs silnice** — na okruhu blanket lezl přes druhý úsek asfaltu; flat ground + fog vypadal jako navy „jezero“.
+2. **Čitelnost noci** — město bez kontrastu silnice / auta / domů.
+3. **FPS** — kdy měřit draw calls, city perf pipeline, stíny na obřím groundu.
+4. **AI feel** — rychlý start vs fér cílové časy; lean motorky bez „snap upright“.
+5. **UI na telefonu** — cesty zpět, ovládání bez klávesnice.
+6. **Verze jako produkt** — archivy 0.1–0.5 na Pages + Netlify produkce.
+
+Detailnější příběh verzí: **[VERSIONS.md](./VERSIONS.md)**.
+
+---
+
+## Rychlý start
 
 ```bash
 npm install
 npm run dev:all
 ```
 
-Otevři **http://localhost:5173** → stiskni klávesu (entry) → **Závod** / **Trať** / **Nastavení**.
+Otevři **http://localhost:5173** → klávesa / tap → **Závod**.
 
 | Klávesa | Akce |
 |---------|------|
@@ -45,45 +83,33 @@ Otevři **http://localhost:5173** → stiskni klávesu (entry) → **Závod** / 
 | R | Restart (solo) |
 | Esc | Pauza → menu |
 
-### Telefon / tablet
+**Telefon:** Nastavení → Ovládání → volant / joystick / náklon / ťukání.
 
-V **Nastavení → Ovládání** přepni režim: volant+pedály · joystick · náklon · ťukání stran.  
-Na mobilu jen **klasická jízda** (+ boost na displeji) — freestyle triky nejsou.
-
----
-
-## Multiplayer
-
-Každý hraje **u sebe**. Server běží u **hostitele**. Kamarádi z jiného internetu se na `localhost` nepřipojí — host vystaví WebSocket ven (tunnel).
+### Multiplayer (zkráceně)
 
 ```bash
 npm run dev:all
-cloudflared tunnel --url http://localhost:8787
+# host vystaví WS (např. cloudflared tunnel na :8787)
 ```
 
-V menu **Online** → do WS pole `wss://….trycloudflare.com` → **Založit místnost** → pošli odkaz.
-
-Max **4 hráči**. Host startuje až jsou všichni Ready.
-
-### Stejná Wi‑Fi
-
-1. Host: `npm run dev:all`
-2. Kamarádi: `http://IP-HOSTA:5173` · WS `ws://IP-HOSTA:8787`
+V menu **Online** → WS adresa → místnost → Ready. Max **4**.
 
 ---
 
-## Stack
+## Stack & build
 
-Vite · TypeScript · Three.js · `ws` server (port 8787)
+Vite · TypeScript · Three.js · `ws`
 
 ```bash
-npm run dev      # frontend
-npm run server   # multiplayer
-npm run dev:all  # obojí
-npm run build    # produkce → dist/ (base / ; pro GH Pages: VITE_BASE=/vertex-gp/)
+npm run build          # → dist/ (Netlify)
+npm run build:pages    # → site/ (hub + archivy pro GH Pages)
 ```
 
 ---
 
-Noční neon. Rovinky. Smyk.  
-Vytvoř místnost, pošli odkaz — a ať vyhraje ten rychlejší.
+## Licence / tón
+
+Hra obsahuje vulgární a nekorektní výrazy (vědomá estetika).  
+Kód je studentský projekt — uč se z něj, forkuj, ale respektuj že **Klec GP** je značka Filipa Khunta.
+
+Noční neon. Rovinky. Smyk. Ať vyhraje ten rychlejší.

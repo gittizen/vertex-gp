@@ -14,14 +14,14 @@ import {
   type VisualSettingsValues,
 } from './VisualSettings'
 
-/** Filmový grade 2026 — méně „candy“, víc kontrastu / chill teal. */
+/** Filmový grade — víc kontrastu / vignette (street-night energy). */
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    uVignette: { value: 0.28 },
-    uContrast: { value: 1.08 },
-    uSat: { value: 0.98 },
-    uWarm: { value: 0.01 },
+    uVignette: { value: 0.34 },
+    uContrast: { value: 1.12 },
+    uSat: { value: 1.04 },
+    uWarm: { value: 0.015 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -89,7 +89,8 @@ export class RenderPipeline {
     this.renderer.shadowMap.enabled = settings.shadows
     this.renderer.shadowMap.type =
       settings.quality === 'perf' ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap
-    this.renderer.info.autoReset = true
+    // Manuální reset — composer jinak hlásí calls=1 (poslední pass)
+    this.renderer.info.autoReset = false
     this.applyPixelRatio(settings.quality)
 
     this.pmrem = new THREE.PMREMGenerator(this.renderer)
@@ -116,16 +117,40 @@ export class RenderPipeline {
     this.composer.addPass(new OutputPass())
   }
 
-  /** Env mapa pro balanced+ (lak aut); perf bez. */
+  /** Env mapa pro balanced+ (lak aut); perf bez. Studio fallback, dokud není sky. */
   attachEnvironment(scene: THREE.Scene): void {
     if (this.settings.quality === 'perf') {
-      scene.environment = null
+      this.clearEnvironment(scene)
       return
     }
     this.pmrem.compileEquirectangularShader()
     const envScene = new RoomEnvironment()
+    const prev = this.envRT
     this.envRT = this.pmrem.fromScene(envScene, 0.04).texture
     scene.environment = this.envRT
+    scene.environmentIntensity = 0.42
+    prev?.dispose()
+  }
+
+  /** IBL ze sky gradientu — reflexe sedí na lokalitu, ne studio. */
+  attachSkyEnvironment(scene: THREE.Scene, skyTex: THREE.Texture | null): void {
+    if (this.settings.quality === 'perf' || !skyTex) {
+      this.clearEnvironment(scene)
+      return
+    }
+    this.pmrem.compileEquirectangularShader()
+    const prev = this.envRT
+    this.envRT = this.pmrem.fromEquirectangular(skyTex).texture
+    scene.environment = this.envRT
+    scene.environmentIntensity = 0.62
+    prev?.dispose()
+  }
+
+  private clearEnvironment(scene: THREE.Scene): void {
+    scene.environment = null
+    scene.environmentIntensity = 1
+    this.envRT?.dispose()
+    this.envRT = null
   }
 
   getSettings(): VisualSettingsValues {
@@ -140,10 +165,19 @@ export class RenderPipeline {
     this.renderer.toneMapping = usePostFx(settings)
       ? THREE.ACESFilmicToneMapping
       : THREE.NoToneMapping
-    this.renderer.toneMappingExposure = 1.0
+    this.renderer.toneMappingExposure =
+      settings.quality === 'cinematic' ? 1.08 : settings.quality === 'balanced' ? 1.04 : 1.0
     this.bloomPass.enabled = settings.bloom
     this.bloomPass.strength = bloomStrengthFor(settings.quality)
     this.gradePass.enabled = settings.quality !== 'perf'
+    if (this.gradePass.uniforms.uVignette) {
+      this.gradePass.uniforms.uVignette.value =
+        settings.quality === 'cinematic' ? 0.4 : settings.quality === 'balanced' ? 0.34 : 0.22
+    }
+    if (this.gradePass.uniforms.uContrast) {
+      this.gradePass.uniforms.uContrast.value =
+        settings.quality === 'cinematic' ? 1.16 : 1.12
+    }
     this.applyPixelRatio(settings.quality)
     if (sun) this.configureSunShadow(sun, settings)
   }

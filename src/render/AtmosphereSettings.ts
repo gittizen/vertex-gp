@@ -125,6 +125,44 @@ export function lightIntensityScale(light: LightLevel): number {
   return 1
 }
 
+/** Pořadí jezdce jasu: noc → tlumené → normální → jasné. */
+const LIGHT_SLIDER: LightLevel[] = ['night', 'dim', 'normal', 'bright']
+const FOG_SLIDER: FogLevel[] = ['low', 'normal', 'high']
+const DECOR_SLIDER: DecorLevel[] = ['off', 'simple', 'rich']
+
+export function lightIndex(light: LightLevel): number {
+  return Math.max(0, LIGHT_SLIDER.indexOf(light))
+}
+
+export function fogIndex(fog: FogLevel): number {
+  return Math.max(0, FOG_SLIDER.indexOf(fog))
+}
+
+export function decorIndex(decor: DecorLevel): number {
+  return Math.max(0, DECOR_SLIDER.indexOf(decor))
+}
+
+export function lightFromIndex(i: number): LightLevel {
+  return LIGHT_SLIDER[Math.max(0, Math.min(LIGHT_SLIDER.length - 1, Math.round(i)))]!
+}
+
+export function fogFromIndex(i: number): FogLevel {
+  return FOG_SLIDER[Math.max(0, Math.min(FOG_SLIDER.length - 1, Math.round(i)))]!
+}
+
+export function decorFromIndex(i: number): DecorLevel {
+  return DECOR_SLIDER[Math.max(0, Math.min(DECOR_SLIDER.length - 1, Math.round(i)))]!
+}
+
+/** Scéna (mlha / dekor / světlo) podle předvolby renderu. */
+export function sceneForVisualQuality(
+  quality: 'perf' | 'balanced' | 'cinematic',
+): Pick<AtmosphereSettingsValues, 'fog' | 'decor' | 'light'> {
+  if (quality === 'perf') return { fog: 'low', decor: 'simple', light: 'normal' }
+  if (quality === 'balanced') return { fog: 'normal', decor: 'rich', light: 'normal' }
+  return { fog: 'normal', decor: 'rich', light: 'bright' }
+}
+
 function calendarArtSuffix(pack: CalendarPack): string {
   return `calendar-${pack}`
 }
@@ -138,6 +176,10 @@ export function menuArtForTone(
   race: string
   garage: string
   tracks: string
+  /** Ozubené kolo — dlaždice Nastavení */
+  settings: string
+  /** Řebříček obecný — dlaždice Žebříček */
+  board: string
 } {
   const key = tone === 'calendar' ? calendarArtSuffix(calendarPack) : tone
   return {
@@ -145,6 +187,8 @@ export function menuArtForTone(
     race: assetUrl(`menu/race-${key}.jpg`),
     garage: assetUrl(`menu/garage-${key}.jpg`),
     tracks: assetUrl(`menu/tracks-${key}.jpg`),
+    settings: assetUrl(`menu/settings-${key}.jpg`),
+    board: assetUrl(`menu/board-${key}.jpg`),
   }
 }
 

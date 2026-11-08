@@ -20,7 +20,6 @@ import {
 } from './TrackWatermark'
 import { VehiclePreview } from './VehiclePreview'
 import {
-  FREESTYLE_VEHICLE_KINDS,
   TRACKS,
   VEHICLE_KINDS,
   type TrackDef,
@@ -44,12 +43,15 @@ import {
   CALENDAR_PACKS,
   DEFAULT_ATMOSPHERE,
   applyUiAtmosphere,
+  decorFromIndex,
+  decorIndex,
+  fogFromIndex,
+  fogIndex,
+  lightFromIndex,
+  lightIndex,
   menuArtForTone,
   type AtmosphereSettingsValues,
   type CalendarPack,
-  type DecorLevel,
-  type FogLevel,
-  type LightLevel,
   type MenuTone,
 } from '../render/AtmosphereSettings'
 import { brandLockupHtml } from './Brand'
@@ -114,12 +116,13 @@ export const NEON_COLOR_CHOICES = [
   0xff2bd6, 0x2de2e6, 0xff6a00, 0x7b61ff, 0x39ff14, 0xffee33, 0xff3366, 0xffffff,
 ]
 
-type RaceModeId = 'classic' | 'freestyle' | 'online'
+type RaceModeId = 'classic' | 'online'
 
 export type MenuAudioApi = {
   get: () => AudioSettingsValues
   set: (partial: Partial<AudioSettingsValues>) => void
   unlock: () => void
+  playClick?: () => void
 }
 
 export type MenuAtmosphereApi = {
@@ -213,6 +216,8 @@ export class Menu {
   private onLobbyTrack: ((trackId: string) => void) | null = null
   private onLobbyLaps: ((laps: number) => void) | null = null
   private onBrowseOnline: (() => void) | null = null
+  /** Telefon: z home zpět na entry (Esc na PC). */
+  private onBackToEntry: (() => void) | null = null
   private onlineBrowser: OnlineBrowserState = {
     connected: false,
     connecting: false,
@@ -302,6 +307,10 @@ export class Menu {
 
   setOnBrowseOnline(cb: () => void): void {
     this.onBrowseOnline = cb
+  }
+
+  setOnBackToEntry(cb: () => void): void {
+    this.onBackToEntry = cb
   }
 
   setOnlineBrowser(state: Partial<OnlineBrowserState>): void {
@@ -397,8 +406,21 @@ export class Menu {
     }
   }
 
-  private settingsEscHint(): string {
-    return `<p class="menu-esc-hint">${t('menu.escBack')}</p>`
+  /**
+   * Viditelné Zpět (hlavně telefon — Esc tam není).
+   * Na PC nechá i jemný Esc hint.
+   */
+  private backRow(to: Screen | 'entry' = 'home'): string {
+    const entry = to === 'entry'
+    const label = entry ? t('menu.backEntry') : t('menu.back')
+    const attr = entry ? 'data-back-entry' : 'data-back'
+    const esc = isMobileClient()
+      ? ''
+      : `<p class="menu-esc-hint">${entry ? t('menu.escHint') : t('menu.escBack')}</p>`
+    return `<div class="menu-nav-back">
+      <button type="button" class="btn-ghost menu-back-btn" ${attr}>${label}</button>
+      ${esc}
+    </div>`
   }
 
   /** Poděkování — pravý dolní roh hlavního Nastavení. */
@@ -600,10 +622,10 @@ export class Menu {
               <strong class="gta-tile-label">${t('menu.vehicleSelect')}</strong>
               <span class="gta-tile-sub">${this.vehicleLabel(this.selectedVehicle)}</span>
             </button>
-            <button type="button" class="gta-tile gta-tile-plain" data-go="records">
+            <button type="button" class="gta-tile" data-go="records" style="--tile:url('${art.board}')">
               <strong class="gta-tile-label">${t('menu.leaderboard')}</strong>
             </button>
-            <button type="button" class="gta-tile gta-tile-plain" data-go="settings">
+            <button type="button" class="gta-tile" data-go="settings" style="--tile:url('${art.settings}')">
               <strong class="gta-tile-label">${t('menu.settings')}</strong>
             </button>
           </div>
@@ -613,10 +635,11 @@ export class Menu {
             · ${t('menu.statusDiff')} <strong>${this.diffLabel()}</strong>
             · ${t('menu.statusTuning')} ${tuningSum(this.tuning)}/${TUNING_BUDGET}
           </p>
-          <p class="menu-esc-hint">${t('menu.escHint')}</p>
+          ${this.backRow('entry')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('entry')
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
           if (btn.dataset.go === 'records') this.recordsBack = 'home'
@@ -629,18 +652,11 @@ export class Menu {
 
     if (this.screen === 'raceMode') {
       const onPhone = isMobileClient()
-      if (onPhone && this.raceModePick === 'freestyle') this.raceModePick = 'classic'
+      if (this.raceModePick !== 'classic' && this.raceModePick !== 'online') {
+        this.raceModePick = 'classic'
+      }
       const modes: { id: RaceModeId; title: string; blurb: string; online?: boolean }[] = [
         { id: 'classic', title: t('menu.raceClassic'), blurb: t('menu.raceClassicBlurb') },
-        ...(onPhone
-          ? []
-          : [
-              {
-                id: 'freestyle' as const,
-                title: t('menu.raceFreestyle'),
-                blurb: t('menu.raceFreestyleBlurb'),
-              },
-            ]),
         {
           id: 'online',
           title: t('menu.online'),
@@ -679,17 +695,18 @@ export class Menu {
               ? `<p class="tune-rules menu-mobile-warn">${t('menu.mobileLimits')}</p>`
               : ''
           }
-          <button type="button" class="btn-ghost" data-back style="margin-top:14px">${t('menu.back')}</button>
+          ${this.backRow('home')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('home')
       const fill = this.root.querySelector<HTMLElement>('[data-hold-fill]')
       const holdTrack = this.root.querySelector<HTMLElement>('.hold-track')
       const titleEl = this.root.querySelector<HTMLElement>('[data-race-title]')
       const blurbEl = this.root.querySelector<HTMLElement>('[data-race-blurb]')
       const hintEl = this.root.querySelector<HTMLElement>('[data-race-hint]')
       const setPick = (id: RaceModeId) => {
-        if (onPhone && id === 'freestyle') id = 'classic'
+        if (id !== 'classic' && id !== 'online') id = 'classic'
         this.clearRaceHold()
         this.clearRaceEnterHits()
         this.raceModePick = id
@@ -763,7 +780,6 @@ export class Menu {
         },
         { signal },
       )
-      this.bindBack('home')
       return
     }
 
@@ -774,6 +790,7 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
+          <p class="tune-rules menu-scroll-hint">${t('menu.tracksScrollHint')}</p>
           <div class="tracks-layout">
             <div class="tracks-list">${TRACKS.map((tr) => this.trackCard(tr)).join('')}</div>
             <div class="tracks-preview-pane">
@@ -797,13 +814,11 @@ export class Menu {
               }
             </div>
           </div>
-          <div class="menu-flow-actions">
-            <button type="button" class="menu-start" data-next>${t('menu.next')}</button>
-            <p class="menu-esc-hint">${t('menu.escBack')}</p>
-          </div>
+          ${this.backRow('home')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('home')
       this.bindTracks()
       this.root.querySelectorAll<HTMLButtonElement>('[data-reverse]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -811,21 +826,6 @@ export class Menu {
           this.render()
         })
       })
-      this.root.querySelector('[data-next]')?.addEventListener('click', () => {
-        this.screen = 'home'
-        this.render()
-      })
-      window.addEventListener(
-        'keydown',
-        (e) => {
-          if (!this.visible || this.screen !== 'tracks') return
-          if (e.code !== 'Enter' && e.code !== 'NumpadEnter') return
-          e.preventDefault()
-          this.screen = 'home'
-          this.render()
-        },
-        { signal },
-      )
       return
     }
 
@@ -840,6 +840,7 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
+          <p class="tune-rules menu-scroll-hint">${t('menu.vehiclesScrollHint')}</p>
           <div class="tracks-layout vehicles-layout">
             <div class="tracks-list">
               ${VEHICLE_KINDS.map((k) => {
@@ -874,12 +875,12 @@ export class Menu {
               <p class="vehicle-lore">${t(`vehicle.${kind}.first`)}</p>
               <p class="tune-rules">${t('menu.vehicleControls')}</p>
               <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>
+              <div class="vehicle-flow-foot">
+                <button type="button" class="btn-ghost vehicle-tuning-link" data-next>${t('menu.tuning')}</button>
+              </div>
             </div>
           </div>
-          <div class="menu-flow-actions">
-            <button type="button" class="menu-start" data-next>${t('menu.next')}</button>
-            <p class="menu-esc-hint">${t('menu.escBack')}</p>
-          </div>
+          ${this.backRow('home')}
         </div>
         ${
           this.scooterPopup
@@ -893,6 +894,7 @@ export class Menu {
         }
       `
       this.bindMuteBar()
+      this.bindBack('home')
       this.root.querySelector('[data-next]')?.addEventListener('click', () => confirmVehicle())
       this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
         this.scooterPopup = null
@@ -909,11 +911,7 @@ export class Menu {
           const race = this.raceApi?.get()
           if (race && this.selectedVehicle !== 'scooter') {
             this.raceApi?.set({
-              opponents: clampOpponentsToCategory(
-                race.opponents,
-                this.selectedVehicle,
-                race.freestyle,
-              ),
+              opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, false),
             })
           }
           this.render()
@@ -1003,12 +1001,13 @@ export class Menu {
             </div>
           </div>
           <div class="menu-flow-actions">
-            <button type="button" class="menu-start" data-next>${t('menu.next')}</button>
-            <p class="menu-esc-hint">${t('menu.escBack')}</p>
+            <button type="button" class="btn-ghost" data-next>${t('menu.tuningDone')}</button>
+            ${this.backRow('vehicles')}
           </div>
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('vehicles')
       this.bindTuning()
       this.root.querySelector('[data-next]')?.addEventListener('click', () => confirmTuning())
       const syncNeonActive = () => {
@@ -1058,25 +1057,21 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel">
+        <div class="menu-shell menu-panel menu-settings-hub">
           <div class="home-actions">
+            <button type="button" class="btn-ghost home-panel" data-go="controls">${t('menu.settingsControls')}</button>
+            <button type="button" class="btn-ghost home-panel" data-go="difficulty">${t('menu.difficulty')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="audio">${t('menu.settingsAudio')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="atmosphere">${t('menu.settingsAtmosphere')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="difficulty">${t('menu.difficulty')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="competitions">${t('menu.settingsCompetitions')}</button>
             <button type="button" class="btn-ghost home-panel" data-go="aiLearn">${t('menu.settingsAiLearn')}</button>
-            <button type="button" class="btn-ghost home-panel" data-go="controls">${t('menu.settingsControls')}</button>
-            ${
-              isMobileClient()
-                ? ''
-                : `<button type="button" class="btn-ghost home-panel" data-go="manual">${t('menu.settingsManual')}</button>`
-            }
           </div>
-          ${this.settingsEscHint()}
+          ${this.backRow('home')}
         </div>
         ${this.settingsThanks()}
       `
       this.bindMuteBar()
+      this.bindBack('home')
       this.bindThanks()
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -1089,26 +1084,43 @@ export class Menu {
 
     if (this.screen === 'competitions') {
       const cur = this.competition.id
+      const pick = COMPETITIONS.find((c) => c.id === cur) ?? COMPETITIONS[0]!
+      const art = menuArtForTone(
+        this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone,
+        this.atmosphereApi?.get().calendarPack ?? DEFAULT_ATMOSPHERE.calendarPack,
+      )
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <p class="tune-rules">${t('menu.compBlurb')}</p>
-          <div class="track-grid">
-            ${COMPETITIONS.map((c) => {
-              const active = c.id === cur ? 'active' : ''
-              return `<button type="button" class="track-card ${active}" data-comp="${c.id}">
-                <strong>${t(`comp.${c.id}`)}</strong>
-                <span>${t(`comp.${c.id}.blurb`)}</span>
-              </button>`
-            }).join('')}
+          <p class="tune-rules menu-scroll-hint">${t('menu.compBlurb')}</p>
+          <div class="tracks-layout">
+            <div class="tracks-list">
+              ${COMPETITIONS.map((c) => {
+                const active = c.id === cur ? 'active' : ''
+                return `<button type="button" class="track-card ${active}" data-comp="${c.id}">
+                  <strong>${t(`comp.${c.id}`)}</strong>
+                  <span>${t(`comp.${c.id}.blurb`)}</span>
+                </button>`
+              }).join('')}
+            </div>
+            <div class="tracks-preview-pane comp-preview-pane" style="--comp-photo:url('${art.race}')">
+              <div class="comp-preview-hero"></div>
+              <div class="track-preview-meta">
+                <strong>${t(`comp.${pick.id}`)}</strong>
+                <span>${t(`comp.${pick.id}.blurb`)}</span>
+              </div>
+              <p class="tune-help">${t(`comp.${pick.id}.help`)}</p>
+            </div>
           </div>
-          ${this.settingsEscHint()}
+          ${this.backRow('settings')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('settings')
       this.root.querySelectorAll<HTMLButtonElement>('[data-comp]').forEach((btn) => {
         btn.addEventListener('click', () => {
+          this.audioApi?.playClick?.()
           const id = (btn.dataset.comp || 'none') as CompetitionId
           this.competition = { id }
           saveCompetitionSettings(this.competition)
@@ -1178,11 +1190,23 @@ export class Menu {
               <tbody>${tableRows || `<tr><td colspan="7">${t('menu.aiLearnEmpty')}</td></tr>`}</tbody>
             </table>
           </div>
-          ${this.settingsEscHint()}
+          <div class="atm-scene-panel" style="margin-top:18px">
+            <p class="atm-scene-title">${t('menu.paceExport')}</p>
+            <p class="tune-help">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
+            <button type="button" class="menu-start" data-pace-export>${t('menu.paceExportBtn')}</button>
+            <p class="tune-rules" data-pace-status style="margin-top:8px"></p>
+            <textarea class="text-input" data-pace-box readonly rows="5" style="width:100%;margin-top:10px;font-size:12px;opacity:0.9" placeholder="${t('menu.paceExportPh')}"></textarea>
+          </div>
+          ${this.backRow('settings')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('settings')
       this.bindAiLearn()
+      this.root.querySelector<HTMLButtonElement>('[data-pace-export]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        void this.exportPaceCalibration()
+      })
       return
     }
 
@@ -1312,7 +1336,28 @@ export class Menu {
               <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
               <p class="tune-rules menu-mobile-warn">${t('menu.ctrlTricksMobileOff')}</p>
             </div>`
-                : `${section(t('menu.ctrlSectionDrive'), drive)}
+                : `<div class="bind-section">
+              <h3 class="bind-section-title">${t('menu.manualTitle')}</h3>
+              <p class="tune-rules">${t('menu.manualBlurb')}</p>
+              <div class="manual-grid">
+                <button type="button" class="track-card ${raceFeel.transmission === 'auto' ? 'active' : ''}" data-tx="auto">
+                  <strong>${t('menu.manual.off')}</strong>
+                  <span>${t('menu.manual.offBlurb')}</span>
+                  <em class="manual-hist">${t('menu.manual.offHist')}</em>
+                </button>
+                <button type="button" class="track-card ${raceFeel.transmission === 'manual' ? 'active' : ''}" data-tx="manual">
+                  <strong>${t('menu.manual.on')}</strong>
+                  <span>${t('menu.manual.onBlurb')}</span>
+                  <em class="manual-hist">${t('menu.manual.onHist')}</em>
+                </button>
+                <button type="button" class="track-card track-card-wide ${raceFeel.transmission === 'clutch' ? 'active' : ''}" data-tx="clutch">
+                  <strong>${t('menu.manual.clutch')}</strong>
+                  <span>${t('menu.manual.clutchBlurb')}</span>
+                  <em class="manual-hist">${t('menu.manual.clutchHist')}</em>
+                </button>
+              </div>
+            </div>
+            ${section(t('menu.ctrlSectionDrive'), drive)}
             ${section(t('menu.ctrlSectionSpecial'), special)}
             ${section(t('menu.ctrlSectionSystem'), system)}
             <div class="bind-section">
@@ -1330,12 +1375,21 @@ export class Menu {
             </div>`
             }
             <button type="button" class="btn-ghost" data-reset-binds style="margin-top:6px">${t('menu.ctrlReset')}</button>
-            ${this.settingsEscHint()}
+            ${this.backRow('settings')}
           </div>
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('settings')
       this.bindControlFeel()
+      this.root.querySelectorAll<HTMLButtonElement>('[data-tx]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const mode = btn.dataset.tx
+          if (mode !== 'auto' && mode !== 'manual' && mode !== 'clutch') return
+          this.raceApi?.set({ transmission: mode })
+          this.render()
+        })
+      })
       type Listen =
         | { kind: 'action'; action: BindAction; slot: 0 | 1 }
         | { kind: 'trick'; letter: string }
@@ -1446,69 +1500,34 @@ export class Menu {
           <p class="tune-rules">${t('menu.lbBlurb')}</p>
           <div class="lb-tabs">${tabs}</div>
           <ol class="records-list lb-list">${rows || `<li>${t('menu.recEmpty')}</li>`}</ol>
-          <button type="button" class="btn-ghost" data-back style="margin-top:14px">${t('menu.back')}</button>
+          ${this.backRow(this.recordsBack)}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack(this.recordsBack)
       this.root.querySelectorAll<HTMLButtonElement>('[data-lb]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.lbTrackId = btn.dataset.lb || ''
           this.render()
         })
       })
-      this.bindBack(this.recordsBack)
       return
     }
 
     if (this.screen === 'manual') {
-      if (isMobileClient()) {
-        this.screen = 'settings'
-        this.render()
-        return
-      }
-      const race = this.raceApi?.get() ?? { ...DEFAULT_RACE }
-      const tx = race.transmission
-      this.root.innerHTML = `
-        ${wm}
-        ${this.muteBar()}
-        <div class="menu-shell menu-panel">
-          <p class="tune-rules">${t('menu.manualBlurb')}</p>
-          <div class="manual-grid">
-            <button type="button" class="track-card ${tx === 'auto' ? 'active' : ''}" data-tx="auto">
-              <strong>${t('menu.manual.off')}</strong>
-              <span>${t('menu.manual.offBlurb')}</span>
-              <em class="manual-hist">${t('menu.manual.offHist')}</em>
-            </button>
-            <button type="button" class="track-card ${tx === 'manual' ? 'active' : ''}" data-tx="manual">
-              <strong>${t('menu.manual.on')}</strong>
-              <span>${t('menu.manual.onBlurb')}</span>
-              <em class="manual-hist">${t('menu.manual.onHist')}</em>
-            </button>
-            <button type="button" class="track-card track-card-wide ${tx === 'clutch' ? 'active' : ''}" data-tx="clutch">
-              <strong>${t('menu.manual.clutch')}</strong>
-              <span>${t('menu.manual.clutchBlurb')}</span>
-              <em class="manual-hist">${t('menu.manual.clutchHist')}</em>
-            </button>
-          </div>
-          ${this.settingsEscHint()}
-        </div>
-      `
-      this.bindMuteBar()
-      this.root.querySelectorAll<HTMLButtonElement>('[data-tx]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const mode = btn.dataset.tx
-          if (mode !== 'auto' && mode !== 'manual' && mode !== 'clutch') return
-          this.raceApi?.set({ transmission: mode })
-          this.render()
-        })
-      })
+      // Manuální řazení je teď v Ovládání
+      this.screen = isMobileClient() ? 'settings' : 'controls'
+      this.render()
       return
     }
 
     if (this.screen === 'difficulty') {
       const race = this.raceApi?.get() ?? { ...DEFAULT_RACE }
-      const pool = soloCategoryPool(this.selectedVehicle, race.freestyle)
-      const opp = clampOpponentsToCategory(race.opponents, this.selectedVehicle, race.freestyle)
+      if (typeof race.randomOpponentsEachRace !== 'boolean') {
+        race.randomOpponentsEachRace = true
+      }
+      const pool = soloCategoryPool(this.selectedVehicle, false)
+      const opp = clampOpponentsToCategory(race.opponents, this.selectedVehicle, false)
       if (
         opp[0] !== race.opponents[0] ||
         opp[1] !== race.opponents[1] ||
@@ -1516,66 +1535,107 @@ export class Menu {
       ) {
         this.raceApi?.set({ opponents: opp })
       }
+      const pick = DIFFICULTIES.find((d) => d.id === this.selectedDifficulty) ?? DIFFICULTIES[2]!
+      const scalePct = Math.round(pick.speedScale * 100)
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <div class="track-grid">
-            ${DIFFICULTIES.map((d) => {
-              const active = d.id === this.selectedDifficulty ? 'active' : ''
-              const blurbKey = `diff.${d.id}Blurb`
-              const blurb = t(blurbKey)
-              return `<button type="button" class="track-card ${active}" data-diff="${d.id}">
-                <strong>${t(`diff.${d.id}`)}</strong>
-                <span>${blurb === blurbKey ? d.blurb : blurb}</span>
-              </button>`
-            }).join('')}
+          <p class="tune-rules menu-scroll-hint">${t('menu.diffBlurb')}</p>
+          <div class="tracks-layout diff-layout">
+            <div class="tracks-list diff-list">
+              ${DIFFICULTIES.map((d) => {
+                const active = d.id === this.selectedDifficulty ? 'active' : ''
+                const pct = Math.round(d.speedScale * 100)
+                return `<button type="button" class="track-card diff-card ${active}" data-diff="${d.id}">
+                  <strong>${t(`diff.${d.id}`)}</strong>
+                  <span class="diff-card-scale">${t('menu.diffAiPace', { pct })}</span>
+                </button>`
+              }).join('')}
+            </div>
+            <div class="tracks-preview-pane diff-preview-pane">
+              <div class="track-preview-meta">
+                <strong>${t(`diff.${pick.id}`)}</strong>
+                <span>${t(`diff.${pick.id}Help`)}</span>
+              </div>
+              <p class="diff-scale-badge">${t('menu.diffAiPace', { pct: scalePct })}</p>
+              <p class="tune-help">${t(`diff.${pick.id}Blurb`)}</p>
+            </div>
           </div>
-          <p class="tune-rules" style="margin-top:16px">${t('menu.opponents')}</p>
-          <p class="tune-help">${t('menu.opponentsBlurb')}</p>
-          ${[0, 1, 2]
-            .map((slot) => {
-              const cur = opp[slot]!
-              return `<div class="opp-row">
-                <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
-                <div class="opp-picks">
-                  ${pool
-                    .map((k) => {
-                      const active = k === cur ? 'active' : ''
-                      return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}">
-                      <strong>${this.vehicleLabel(k)}</strong>
-                    </button>`
-                    })
-                    .join('')}
-                </div>
-              </div>`
-            })
-            .join('')}
-          <button type="button" class="menu-start" data-opp-random style="margin-top:14px">${t('menu.opponentsRandom')}</button>
-          ${this.settingsEscHint()}
+          <div class="atm-scene-panel" style="margin-top:18px">
+            <p class="atm-scene-title">${t('menu.opponents')}</p>
+            <p class="tune-help">${t('menu.opponentsBlurb')}</p>
+            <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+              <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} style="margin-top:4px" />
+              <span>
+                <strong>${t('menu.opponentsRandomEach')}</strong>
+                <span class="tune-help" style="display:block;margin-top:4px">${t('menu.opponentsRandomEachBlurb')}</span>
+              </span>
+            </label>
+            <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
+            ${[0, 1, 2]
+              .map((slot) => {
+                const cur = opp[slot]!
+                return `<div class="opp-row">
+                  <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
+                  <div class="opp-picks">
+                    ${pool
+                      .map((k) => {
+                        const active = k === cur ? 'active' : ''
+                        const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
+                        return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
+                        <strong>${this.vehicleLabel(k)}</strong>
+                      </button>`
+                      })
+                      .join('')}
+                  </div>
+                </div>`
+              })
+              .join('')}
+            <button type="button" class="menu-start" data-opp-random style="margin-top:14px" ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
+            </div>
+          </div>
+          ${this.backRow('settings')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('settings')
       this.root.querySelectorAll<HTMLButtonElement>('[data-diff]').forEach((btn) => {
         btn.addEventListener('click', () => {
+          this.audioApi?.playClick?.()
           this.selectedDifficulty = (btn.dataset.diff as DifficultyId) || 'normal'
           this.render()
         })
       })
+      this.root.querySelector<HTMLInputElement>('[data-opp-random-each]')?.addEventListener(
+        'change',
+        (e) => {
+          this.audioApi?.playClick?.()
+          const on = (e.target as HTMLInputElement).checked
+          this.raceApi?.set({ randomOpponentsEachRace: on })
+          this.render()
+        },
+      )
       this.root.querySelectorAll<HTMLButtonElement>('[data-opp-slot]').forEach((btn) => {
         btn.addEventListener('click', () => {
+          if (btn.disabled) return
+          this.audioApi?.playClick?.()
           const slot = Number(btn.dataset.oppSlot)
           const kind = btn.dataset.oppKind as VehicleKind
           if (slot < 0 || slot > 2 || !kind || !pool.includes(kind)) return
           const next: [VehicleKind, VehicleKind, VehicleKind] = [...opp]
           next[slot] = kind
-          this.raceApi?.set({ opponents: next })
+          this.raceApi?.set({ opponents: next, randomOpponentsEachRace: false })
           this.render()
         })
       })
       this.root.querySelector('[data-opp-random]')?.addEventListener('click', () => {
+        const el = this.root.querySelector<HTMLButtonElement>('[data-opp-random]')
+        if (el?.disabled) return
+        this.audioApi?.playClick?.()
         this.raceApi?.set({
-          opponents: randomOpponents(this.selectedVehicle, race.freestyle),
+          opponents: randomOpponents(this.selectedVehicle, false),
+          randomOpponentsEachRace: false,
         })
         this.render()
       })
@@ -1592,7 +1652,9 @@ export class Menu {
             ${this.audioSlider('master', t('menu.audioMaster'), audio.master)}
             ${this.audioSlider('music', t('menu.audioMusic'), audio.music)}
             ${this.audioSlider('sfx', t('menu.audioSfx'), audio.sfx)}
+            ${this.audioSlider('menu', t('menu.audioMenu'), audio.menu)}
           </div>
+          <p class="tune-help" style="margin-top:8px">${t('menu.audioMenuBlurb')}</p>
           <p class="tune-rules" style="margin-top:16px">${t('menu.audioTrack')}</p>
           <div class="track-grid">
             ${MUSIC_TRACKS.map((m) => {
@@ -1602,10 +1664,11 @@ export class Menu {
               </button>`
             }).join('')}
           </div>
-          ${this.settingsEscHint()}
+          ${this.backRow('settings')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('settings')
       this.bindAudio()
       return
     }
@@ -1613,9 +1676,6 @@ export class Menu {
     if (this.screen === 'atmosphere') {
       const atm = this.atmosphereApi?.get() ?? { ...DEFAULT_ATMOSPHERE }
       const vis = this.visualApi?.get() ?? { ...DEFAULT_VISUAL }
-      const fogLevels: FogLevel[] = ['low', 'normal', 'high']
-      const decorLevels: DecorLevel[] = ['off', 'simple', 'rich']
-      const lightLevels: LightLevel[] = ['dim', 'normal', 'bright', 'night']
       const tones: MenuTone[] = [
         'klecany',
         'cesko',
@@ -1627,6 +1687,9 @@ export class Menu {
         'calendar',
       ]
       const packOpen = this.calendarPackOpen && atm.tone === 'calendar'
+      const lightIdx = lightIndex(atm.light)
+      const fogIdx = fogIndex(atm.fog)
+      const decorIdx = decorIndex(atm.decor)
       const toneCards = tones
         .map((tone) => {
           const active = tone === atm.tone ? 'active' : ''
@@ -1665,8 +1728,13 @@ export class Menu {
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-panel">
-          <p class="tune-rules">${t('menu.visualQuality')}</p>
-          <p class="tune-rules">${t('menu.visualQualityBlurb')}</p>
+          <p class="tune-rules">${t('menu.atmTone')}</p>
+          <div class="track-grid">
+            ${toneCards}
+          </div>
+          ${calendarPacksHtml}
+          <p class="tune-rules" style="margin-top:18px">${t('menu.visualQuality')}</p>
+          <p class="tune-help">${t('menu.visualQualityBlurb')}</p>
           <div class="track-grid">
             ${VISUAL_QUALITIES.map((q) => {
               const active = q === vis.quality ? 'active' : ''
@@ -1676,67 +1744,43 @@ export class Menu {
               </button>`
             }).join('')}
           </div>
-          <div class="dir-grid" style="margin:10px 0 16px">
-            <button type="button" class="track-card ${vis.bloom ? 'active' : ''}" data-visual-bloom>
-              <strong>${t('menu.visualBloom')}</strong>
-              <span>${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-            </button>
-            <button type="button" class="track-card ${vis.shadows ? 'active' : ''}" data-visual-shadows>
-              <strong>${t('menu.visualShadows')}</strong>
-              <span>${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-            </button>
-            <button type="button" class="track-card ${vis.rearMirror ? 'active' : ''}" data-visual-mirror>
-              <strong>${t('menu.visualMirror')}</strong>
-              <span>${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-            </button>
+          <div class="atm-scene-panel">
+            <p class="atm-scene-title">${t('menu.atmScene')}</p>
+            <p class="tune-help">${t('menu.atmSceneBlurb')}</p>
+            <div class="atm-fx-toggles">
+              <button type="button" class="atm-fx-toggle ${vis.bloom ? 'active' : ''}" data-visual-bloom>
+                <strong>${t('menu.visualBloom')}</strong>
+                <span>${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+              </button>
+              <button type="button" class="atm-fx-toggle ${vis.shadows ? 'active' : ''}" data-visual-shadows>
+                <strong>${t('menu.visualShadows')}</strong>
+                <span>${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+              </button>
+              <button type="button" class="atm-fx-toggle ${vis.rearMirror ? 'active' : ''}" data-visual-mirror>
+                <strong>${t('menu.visualMirror')}</strong>
+                <span>${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+              </button>
+            </div>
+            <div class="tune-grid atm-scene-sliders">
+              <label class="tune-row">
+                <span class="tune-label">${t('menu.atmLight')} <span class="tune-val" data-atm-light-val>${t(`menu.atmLight.${atm.light}`)}</span></span>
+                <input type="range" min="0" max="3" step="1" value="${lightIdx}" data-atm-light />
+              </label>
+              <label class="tune-row">
+                <span class="tune-label">${t('menu.atmFog')} <span class="tune-val" data-atm-fog-val>${t(`menu.atmFog.${atm.fog}`)}</span></span>
+                <input type="range" min="0" max="2" step="1" value="${fogIdx}" data-atm-fog />
+              </label>
+              <label class="tune-row">
+                <span class="tune-label">${t('menu.atmDecor')} <span class="tune-val" data-atm-decor-val>${t(`menu.atmDecor.${atm.decor}`)}</span></span>
+                <input type="range" min="0" max="2" step="1" value="${decorIdx}" data-atm-decor />
+              </label>
+            </div>
           </div>
-          <p class="tune-rules">${t('menu.atmTone')}</p>
-          <div class="track-grid">
-            ${toneCards}
-          </div>
-          ${calendarPacksHtml}
-          <p class="tune-rules" style="margin-top:16px">${t('menu.atmLight')}</p>
-          <div class="track-grid">
-            ${lightLevels
-              .map((l) => {
-                const active = l === atm.light ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-light="${l}">
-                  <strong>${t(`menu.atmLight.${l}`)}</strong>
-                </button>`
-              })
-              .join('')}
-          </div>
-          <p class="tune-rules" style="margin-top:16px">${t('menu.atmFog')}</p>
-          <div class="track-grid">
-            ${fogLevels
-              .map((f) => {
-                const active = f === atm.fog ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-fog="${f}">
-                  <strong>${t(`menu.atmFog.${f}`)}</strong>
-                </button>`
-              })
-              .join('')}
-          </div>
-          <p class="tune-rules" style="margin-top:16px">${t('menu.atmDecor')}</p>
-          <div class="track-grid">
-            ${decorLevels
-              .map((d) => {
-                const active = d === atm.decor ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-decor="${d}">
-                  <strong>${t(`menu.atmDecor.${d}`)}</strong>
-                </button>`
-              })
-              .join('')}
-          </div>
-          <p class="tune-rules" style="margin-top:16px">${t('menu.paceExport')}</p>
-          <p class="tune-rules">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
-          <button type="button" class="menu-start" data-pace-export>${t('menu.paceExportBtn')}</button>
-          <p class="tune-rules" data-pace-status style="margin-top:8px"></p>
-          <textarea class="text-input" data-pace-box readonly rows="6" style="width:100%;margin-top:10px;font-size:12px;opacity:0.9" placeholder="${t('menu.paceExportPh')}"></textarea>
-          ${this.settingsEscHint()}
+          ${this.backRow('settings')}
         </div>
       `
       this.bindMuteBar()
+      this.bindBack('settings')
       this.bindAtmosphere()
       this.bindVisual()
       return
@@ -1822,7 +1866,7 @@ export class Menu {
             ${this.onlineBlock()}
             <button type="button" class="btn-ghost" id="btn-join" style="margin-top:8px">${t('menu.join')} (${t('menu.roomCode')})</button>
           </details>
-          <button type="button" class="btn-ghost" data-back style="margin-top:12px">${t('menu.back')}</button>
+          ${this.backRow('raceMode')}
           ${this.lobbyError || ob.error ? `<p class="menu-error">${this.escape(this.lobbyError || ob.error)}</p>` : ''}
         </div>
       `
@@ -1895,41 +1939,40 @@ export class Menu {
     )
   }
 
-  private bindBack(to: Screen): void {
+  private bindBack(to: Screen | 'entry'): void {
+    if (to === 'entry') {
+      this.root.querySelector('[data-back-entry]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.onBackToEntry?.()
+      })
+      return
+    }
     this.root.querySelector('[data-back]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
+      if (this.screen === 'vehicles' && to === 'home') {
+        if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
+        this.clearScooterTrap()
+      }
       this.screen = to
       this.render()
     })
   }
 
   private confirmRaceMode(): void {
-    let mode = this.raceModePick
-    if (isMobileClient() && mode === 'freestyle') mode = 'classic'
+    const mode = this.raceModePick === 'online' ? 'online' : 'classic'
     if (mode === 'online') {
       this.screen = 'online'
       this.render()
       this.onBrowseOnline?.()
       return
     }
-    if (mode === 'freestyle') {
-      this.raceApi?.set({ freestyle: true })
-      if (!FREESTYLE_VEHICLE_KINDS.includes(this.selectedVehicle)) {
-        this.selectedVehicle = 'skate'
-      }
-      const race = this.raceApi?.get()
-      if (race) {
-        this.raceApi?.set({
-          opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, true),
-        })
-      }
-    } else {
-      this.raceApi?.set({ freestyle: false })
-      const race = this.raceApi?.get()
-      if (race) {
-        this.raceApi?.set({
-          opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, false),
-        })
-      }
+    // Freestyle závod zrušen — triky/body zůstávají u skate/kola v klasice
+    this.raceApi?.set({ freestyle: false })
+    const race = this.raceApi?.get()
+    if (race) {
+      this.raceApi?.set({
+        opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, false),
+      })
     }
     this.startSolo()
   }
@@ -2173,7 +2216,11 @@ export class Menu {
     `
   }
 
-  private audioSlider(key: 'master' | 'music' | 'sfx', label: string, value: number): string {
+  private audioSlider(
+    key: 'master' | 'music' | 'sfx' | 'menu',
+    label: string,
+    value: number,
+  ): string {
     return `
       <label class="tune-row">
         <span class="tune-label">${label} <span class="tune-val" data-aval="${key}">${value}</span></span>
@@ -2186,15 +2233,17 @@ export class Menu {
     this.audioApi?.unlock()
     this.root.querySelectorAll<HTMLInputElement>('input[data-audio]').forEach((input) => {
       input.addEventListener('input', () => {
-        const key = input.dataset.audio as 'master' | 'music' | 'sfx'
+        const key = input.dataset.audio as 'master' | 'music' | 'sfx' | 'menu'
         const value = Number(input.value)
         this.audioApi?.set({ [key]: value })
         const label = this.root.querySelector(`[data-aval="${key}"]`)
         if (label) label.textContent = String(value)
+        if (key === 'menu') this.audioApi?.playClick?.()
       })
     })
     this.root.querySelectorAll<HTMLButtonElement>('[data-music]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
         const track = (btn.dataset.music as MusicId) || 'techno'
         this.audioApi?.set({ track })
         this.render()
@@ -2262,6 +2311,7 @@ export class Menu {
   private bindVisual(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-visual-q]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
         const q = btn.dataset.visualQ as VisualQuality
         if (!VISUAL_QUALITIES.includes(q)) return
         this.visualApi?.set({ quality: q })
@@ -2269,16 +2319,19 @@ export class Menu {
       })
     })
     this.root.querySelector<HTMLButtonElement>('[data-visual-bloom]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
       const cur = this.visualApi?.get() ?? DEFAULT_VISUAL
       this.visualApi?.set({ bloom: !cur.bloom })
       this.render()
     })
     this.root.querySelector<HTMLButtonElement>('[data-visual-shadows]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
       const cur = this.visualApi?.get() ?? DEFAULT_VISUAL
       this.visualApi?.set({ shadows: !cur.shadows })
       this.render()
     })
     this.root.querySelector<HTMLButtonElement>('[data-visual-mirror]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
       const cur = this.visualApi?.get() ?? DEFAULT_VISUAL
       this.visualApi?.set({ rearMirror: !cur.rearMirror })
       this.render()
@@ -2286,33 +2339,30 @@ export class Menu {
   }
 
   private bindAtmosphere(): void {
-    this.root.querySelectorAll<HTMLButtonElement>('[data-fog]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const fog = btn.dataset.fog as FogLevel
-        if (fog !== 'low' && fog !== 'normal' && fog !== 'high') return
-        this.atmosphereApi?.set({ fog })
-        this.render()
-      })
+    const lightInput = this.root.querySelector<HTMLInputElement>('[data-atm-light]')
+    lightInput?.addEventListener('input', () => {
+      const light = lightFromIndex(Number(lightInput.value))
+      this.atmosphereApi?.set({ light })
+      const label = this.root.querySelector('[data-atm-light-val]')
+      if (label) label.textContent = t(`menu.atmLight.${light}`)
     })
-    this.root.querySelectorAll<HTMLButtonElement>('[data-decor]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const decor = btn.dataset.decor as DecorLevel
-        if (decor !== 'off' && decor !== 'simple' && decor !== 'rich') return
-        this.atmosphereApi?.set({ decor })
-        this.render()
-      })
+    const fogInput = this.root.querySelector<HTMLInputElement>('[data-atm-fog]')
+    fogInput?.addEventListener('input', () => {
+      const fog = fogFromIndex(Number(fogInput.value))
+      this.atmosphereApi?.set({ fog })
+      const label = this.root.querySelector('[data-atm-fog-val]')
+      if (label) label.textContent = t(`menu.atmFog.${fog}`)
     })
-    this.root.querySelectorAll<HTMLButtonElement>('[data-light]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const light = btn.dataset.light as LightLevel
-        const ok: LightLevel[] = ['dim', 'normal', 'bright', 'night']
-        if (!ok.includes(light)) return
-        this.atmosphereApi?.set({ light })
-        this.render()
-      })
+    const decorInput = this.root.querySelector<HTMLInputElement>('[data-atm-decor]')
+    decorInput?.addEventListener('input', () => {
+      const decor = decorFromIndex(Number(decorInput.value))
+      this.atmosphereApi?.set({ decor })
+      const label = this.root.querySelector('[data-atm-decor-val]')
+      if (label) label.textContent = t(`menu.atmDecor.${decor}`)
     })
     this.root.querySelectorAll<HTMLButtonElement>('[data-tone]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
         const tone = btn.dataset.tone as MenuTone
         const ok: MenuTone[] = [
           'klecany',
@@ -2333,20 +2383,19 @@ export class Menu {
     this.root.querySelector<HTMLButtonElement>('[data-calendar-gear]')?.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
+      this.audioApi?.playClick?.()
       this.atmosphereApi?.set({ tone: 'calendar' })
       this.calendarPackOpen = !this.calendarPackOpen
       this.render()
     })
     this.root.querySelectorAll<HTMLButtonElement>('[data-calendar-pack]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
         const pack = btn.dataset.calendarPack as CalendarPack
         if (!CALENDAR_PACKS.includes(pack)) return
         this.atmosphereApi?.set({ tone: 'calendar', calendarPack: pack })
         this.render()
       })
-    })
-    this.root.querySelector<HTMLButtonElement>('[data-pace-export]')?.addEventListener('click', () => {
-      void this.exportPaceCalibration()
     })
   }
 

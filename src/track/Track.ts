@@ -3,8 +3,10 @@ import {
   groundMap,
   matAsphalt,
   matAsphaltShoulder,
+  matCityRoad,
   matGround,
   matLambert,
+  matRoadMark,
   normalizeAsphaltColor,
   plasterMap,
   shadeRoad,
@@ -12,6 +14,7 @@ import {
 import { createSkyBackdrop } from '../render/SkyBackdrop'
 import type { DecorLevel } from '../render/AtmosphereSettings'
 import type { TrackDef } from './TrackDefs'
+import { createVariedHouse } from './HouseKit'
 
 export type TrackSample = {
   position: THREE.Vector3
@@ -52,6 +55,8 @@ export class Track {
   private readonly decorRoot = new THREE.Group()
   /** Vzdálené hory + mraky (mimo decor toggle — pořád vidět). */
   skyBackdrop: THREE.Group | null = null
+  /** Skutečná světla lamp (city / plaza) — max pár kusů kvůli FPS. */
+  private readonly sceneLights: THREE.PointLight[] = []
   /** Override tempa AI (např. po změně vozidla). */
   aiSpeedMult: number
 
@@ -85,14 +90,20 @@ export class Track {
   /** Tráva/keře/kameny — vždy mimo asfalt (Námko mělo zelené „v silnici“). */
   private addRoadsideNature(): void {
     if (this.def.sandbox || this.def.world === 'city' || this.def.world === 'plaza') return
-    // Námko / kasárny = hustý okruh → jen kameny dál od hrany, žádné keře do zatáček
-    const tight = this.def.id === 'klecany' || this.def.id === 'kasarny'
-    const grass = matLambert(this.def.id === 'hruby' ? 0x3a6a28 : 0x3a5230)
+    // Kasárny mají vlastní dekorace — roadside tu dřív lezl do asfaltu
+    if (this.def.id === 'kasarny') return
+    // Serpentýny — vlásenky: žádná tráva/keře na asfalt (dřív „zelený plácek“)
+    if (this.def.id === 'serpentiny') return
+    // Námko = hustý okruh → jen kameny dál od hrany, žádné keře do zatáček
+    const tight = this.def.id === 'klecany'
+    const climb = this.def.world === 'climb' || !!this.def.heights
+    const grass = matLambert(this.def.id === 'hruby' ? 0x3a5230 : 0x3a5230)
     const dry = matLambert(0x6a5a38)
     const bush = matLambert(0x2a4024)
     const rock = matLambert(0x6a6860)
-    const n = tight ? 28 : this.def.loop ? 48 : 72
-    const clear = this.halfWidth + (tight ? 5.5 : 4.2)
+    // Méně props na stoupání (Do Klecánek) = méně sekání na startu
+    const n = tight ? 22 : climb ? 28 : this.def.loop ? 36 : 44
+    const clear = this.halfWidth + (tight ? 7.5 : climb ? 7 : 6)
     for (let i = 0; i < n; i++) {
       const s = this.sample((i + 0.37) / n)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
@@ -181,6 +192,11 @@ export class Track {
     if (prevBg instanceof THREE.Texture && !prevBg.userData.sharedSky) prevBg.dispose()
     this.scene.fog = this.scene.fog // no-op keep; applyTheme nastaví znovu
     this.skyBackdrop = null
+    for (const light of this.sceneLights) {
+      light.parent?.remove(light)
+      light.dispose()
+    }
+    this.sceneLights.length = 0
     this.scene.remove(this.group)
     const seenGeo = new Set<THREE.BufferGeometry>()
     const seenMat = new Set<THREE.Material>()
@@ -309,36 +325,74 @@ export class Track {
     groundY: number,
     roadLift: number,
   ): void {
-    const segs = this.def.loop ? 240 : this.def.heights ? 360 : 300
-    // První ring = vnější berm — navazuje na apron (žádná mezera)
-    const rings = [
-      this.halfWidth + 2.6,
-      this.halfWidth + 4.4,
-      this.halfWidth + 6.8,
-      this.halfWidth + 9.5,
-      this.halfWidth + 13,
-      this.halfWidth + 18,
-      this.halfWidth + 25,
-      this.halfWidth + 34,
-      this.halfWidth + 46,
-      this.halfWidth + 62,
-      this.halfWidth + 84,
-      this.halfWidth + 112,
-      this.halfWidth + 150,
-    ]
+    // Heights/climb/city: méně segmentů = méně hitch (Do Klecánek / Noční Klecany)
+    const city = this.def.world === 'city'
+    // Blanket = největší hitch (Námko / Do Klecánek / Noční) — škálovat podle světa
+    const segs = city
+      ? 64
+      : this.def.world === 'town' || this.def.loop
+        ? 110
+        : this.def.heights
+          ? 140
+          : 200
+    const rings = city
+      ? [
+          this.halfWidth + 3.4,
+          this.halfWidth + 10,
+          this.halfWidth + 22,
+          this.halfWidth + 48,
+          this.halfWidth + 95,
+        ]
+      : this.def.world === 'town' || this.def.loop
+        ? [
+            // Kratší prstence — na okruhu dlouhé ringy = rampa přes sousední asfalt
+            this.halfWidth + 3.4,
+            this.halfWidth + 7,
+            this.halfWidth + 12,
+            this.halfWidth + 20,
+            this.halfWidth + 32,
+            this.halfWidth + 48,
+          ]
+        : [
+            this.halfWidth + 3.4,
+            this.halfWidth + 5.5,
+            this.halfWidth + 9,
+            this.halfWidth + 14,
+            this.halfWidth + 22,
+            this.halfWidth + 34,
+            this.halfWidth + 50,
+            this.halfWidth + 72,
+            this.halfWidth + 100,
+            this.halfWidth + 140,
+          ]
     const cols = rings.length
 
+    // Okruh: blanket se musí zastavit PŘED cizím asfaltem (ne rampa skrz silnici)
+    const asphaltCeil = this.halfWidth + 1.25
     for (const side of [-1, 1] as const) {
       const pos: number[] = []
       const idx: number[] = []
+      const uvs: number[] = []
       for (let i = 0; i <= segs; i++) {
         const t = i / segs
         const s = this.sample(Math.min(1, t))
+        // Největší laterál, který ještě není na (jiném) asfaltu
+        let maxClear = rings[cols - 1]!
+        for (let probe = rings[0]!; probe <= rings[cols - 1]!; probe += 1.5) {
+          const px = s.position.x + s.normal.x * probe * side
+          const pz = s.position.z + s.normal.z * probe * side
+          if (this.minRoadDist(px, pz) < asphaltCeil) {
+            maxClear = Math.max(rings[0]!, probe - 1.5)
+            break
+          }
+        }
         for (let r = 0; r < cols; r++) {
-          const lat = rings[r]!
+          const lat = Math.min(rings[r]!, maxClear)
           const x = s.position.x + s.normal.x * lat * side
           const z = s.position.z + s.normal.z * lat * side
-          pos.push(x, this.terrainYAt(x, z, roadLift, groundY), z)
+          const y = this.terrainYAt(x, z, roadLift, groundY)
+          pos.push(x, y, z)
+          uvs.push(x * 0.04, z * 0.04)
         }
       }
       for (let i = 0; i < segs; i++) {
@@ -351,12 +405,15 @@ export class Track {
           else idx.push(a, b, c, b, d, c)
         }
       }
+      if (idx.length < 3) continue
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
       geo.setIndex(idx)
       geo.computeVertexNormals()
       const mesh = new THREE.Mesh(geo, mat)
-      mesh.receiveShadow = true
+      mesh.name = 'terrainBlanket'
+      mesh.receiveShadow = this.def.world !== 'rally'
       mesh.castShadow = false
       mesh.userData.noCastShadow = true
       this.group.add(mesh)
@@ -368,8 +425,17 @@ export class Track {
       this.buildSandboxMeshes()
       return
     }
-    // Hustší triangulace — hladší zatáčky + méně děr v okolí
-    const segments = this.def.loop ? 400 : this.def.heights ? 720 : 560
+    // City/loop: méně segmentů silnice = méně hitch; climb má víc kvůli výškám
+    const segments =
+      this.def.world === 'city'
+        ? 140
+        : this.def.world === 'rally'
+          ? 260
+          : this.def.loop
+            ? 280
+            : this.def.heights
+              ? 300
+              : 400
     const theme = this.def.theme
     const roadPositions: number[] = []
     const roadIndices: number[] = []
@@ -425,8 +491,10 @@ export class Track {
       const lOut = p.clone().addScaledVector(n, this.halfWidth + bermW)
       const rIn = p.clone().addScaledVector(n, -(this.halfWidth + shW))
       const rOut = p.clone().addScaledVector(n, -(this.halfWidth + bermW))
-      const lOutY = this.terrainYAt(lOut.x, lOut.z, roadLift, groundY)
-      const rOutY = this.terrainYAt(rOut.x, rOut.z, roadLift, groundY)
+      // Berm/apron Y: na okruhu neber terrainYAt (skok na sousední úsek = zubatá plocha přes asfalt)
+      const bermDrop = y - 0.1
+      const lOutY = this.def.loop ? bermDrop : this.terrainYAt(lOut.x, lOut.z, roadLift, groundY)
+      const rOutY = this.def.loop ? bermDrop : this.terrainYAt(rOut.x, rOut.z, roadLift, groundY)
       bermLpos.push(lOut.x, lOutY, lOut.z, lIn.x, y - 0.06, lIn.z)
       bermRpos.push(rIn.x, y - 0.06, rIn.z, rOut.x, rOutY, rOut.z)
 
@@ -434,16 +502,28 @@ export class Track {
       skirtLpos.push(left.x, y, left.z, left.x, under, left.z)
       skirtRpos.push(right.x, under, right.z, right.x, y, right.z)
 
-      const apronW = bermW + 7
-      const apron2W = bermW + 16
-      const lApron = p.clone().addScaledVector(n, this.halfWidth + apronW)
-      const rApron = p.clone().addScaledVector(n, -(this.halfWidth + apronW))
-      const lApron2 = p.clone().addScaledVector(n, this.halfWidth + apron2W)
-      const rApron2 = p.clone().addScaledVector(n, -(this.halfWidth + apron2W))
-      const lApronY = this.terrainYAt(lApron.x, lApron.z, roadLift, groundY)
-      const rApronY = this.terrainYAt(rApron.x, rApron.z, roadLift, groundY)
-      const lApron2Y = this.terrainYAt(lApron2.x, lApron2.z, roadLift, groundY)
-      const rApron2Y = this.terrainYAt(rApron2.x, rApron2.z, roadLift, groundY)
+      const apronW = this.def.loop ? bermW + 4 : bermW + 7
+      const apron2W = this.def.loop ? bermW + 8 : bermW + 16
+      const asphaltClear = this.halfWidth + 1.2
+      const sideLat = (lat: number, side: 1 | -1) => {
+        let use = lat
+        const tx = p.x + n.x * use * side
+        const tz = p.z + n.z * use * side
+        // Na okruhu: nelez apronem na cizí asfalt
+        if (this.def.loop && this.minRoadDist(tx, tz) < asphaltClear) {
+          use = this.halfWidth + shW + 0.8
+        }
+        return p.clone().addScaledVector(n, use * side)
+      }
+      const lApron = sideLat(this.halfWidth + apronW, 1)
+      const rApron = sideLat(this.halfWidth + apronW, -1)
+      const lApron2 = sideLat(this.halfWidth + apron2W, 1)
+      const rApron2 = sideLat(this.halfWidth + apron2W, -1)
+      const apronY = this.def.loop ? bermDrop - 0.04 : undefined
+      const lApronY = apronY ?? this.terrainYAt(lApron.x, lApron.z, roadLift, groundY)
+      const rApronY = apronY ?? this.terrainYAt(rApron.x, rApron.z, roadLift, groundY)
+      const lApron2Y = apronY ?? this.terrainYAt(lApron2.x, lApron2.z, roadLift, groundY)
+      const rApron2Y = apronY ?? this.terrainYAt(rApron2.x, rApron2.z, roadLift, groundY)
       apronLpos.push(lApron.x, lApronY, lApron.z, lOut.x, lOutY, lOut.z)
       apronRpos.push(rOut.x, rOutY, rOut.z, rApron.x, rApronY, rApron.z)
       apron2Lpos.push(lApron2.x, lApron2Y, lApron2.z, lApron.x, lApronY, lApron.z)
@@ -464,11 +544,7 @@ export class Track {
     roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(roadUvs, 2))
     roadGeo.setIndex(roadIndices)
     roadGeo.computeVertexNormals()
-    const roadMat = matAsphalt(theme.road)
-    if (world === 'city') {
-      roadMat.emissiveIntensity = 0.14
-      roadMat.color.setHex(0x6e727a)
-    }
+    const roadMat = world === 'city' ? matCityRoad(theme.road) : matAsphalt(theme.road)
     roadMat.polygonOffset = true
     roadMat.polygonOffsetFactor = -1
     roadMat.polygonOffsetUnits = -1
@@ -484,7 +560,7 @@ export class Track {
     // Berm u silnice = prach/štěrk (ne tráva), ať „zelené“ nevleze do asfaltu
     const bermHex =
       world === 'city'
-        ? 0x2a2a32
+        ? 0x08090e
         : world === 'plaza'
           ? 0x5a6068
           : world === 'rally'
@@ -498,13 +574,21 @@ export class Track {
     bermMat.polygonOffset = true
     bermMat.polygonOffsetFactor = 2
     bermMat.polygonOffsetUnits = 2
-    const bermDark = matGround(0x3a3a42)
+    const bermDark = matGround(
+      world === 'city' ? 0x0a0c12 : this.def.id === 'klecany' ? 0x3a3830 : 0x3a3a42,
+    )
     bermDark.polygonOffset = true
     bermDark.polygonOffsetFactor = 1
     bermDark.polygonOffsetUnits = 1
-    const shoulderMat = matAsphaltShoulder(theme.road)
+    const shoulderMat =
+      world === 'city'
+        ? matCityRoad(shadeRoad(theme.road, 0.82))
+        : matAsphaltShoulder(theme.road)
     // Fill pod tratí — skoro barva silnice, ne černá / zelená
-    const fillMat = matAsphalt(shadeRoad(normalizeAsphaltColor(theme.road), 0.88))
+    const fillMat =
+      world === 'city'
+        ? matCityRoad(shadeRoad(theme.road, 0.9))
+        : matAsphalt(shadeRoad(normalizeAsphaltColor(theme.road), 0.88))
     const addStrip = (pos: number[], mat: THREE.Material, order = 0) => {
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -533,16 +617,19 @@ export class Track {
       (world === 'rally' || world === 'climb') && !this.def.loop ? 2400 : world === 'town' ? 720 : 560
     const farMat = matGround(theme.ground, { map: gMap })
     const ground = new THREE.Mesh(new THREE.CircleGeometry(groundSize, 64), farMat)
+    ground.name = 'farGround'
     ground.rotation.x = -Math.PI / 2
     // Níže než berm — žádný „jezero“ pod tratí / z-fight se zelenou
     ground.position.y = groundY - 0.35
-    ground.receiveShadow = true
+    // Rally (Novostavby): stíny na obřím groundu = černá kaše
+    ground.receiveShadow = world !== 'rally'
     if ((world === 'rally' || world === 'climb') && !this.def.loop) {
       const mid = this.sample(0.5).position
       ground.position.set(mid.x, groundY - 0.35, mid.z)
     }
     this.group.add(ground)
-    this.addTerrainBlanket(farMat, groundY, roadLift)
+    // City: blanket = hlavní hitch — stačí far ground + bermy
+    if (world !== 'city') this.addTerrainBlanket(farMat, groundY, roadLift)
 
     this.addRoadMarkings()
 
@@ -658,9 +745,10 @@ export class Track {
     const world = this.def.world
     const hw = this.halfWidth
     const markY = 0.165
-    const samples = world === 'climb' || world === 'rally' ? 280 : this.def.loop ? 240 : 180
-    const edgeW = 0.14
-    const dashW = 0.11
+    const samples =
+      world === 'city' ? 72 : world === 'climb' || world === 'rally' ? 220 : this.def.loop ? 180 : 150
+    const edgeW = world === 'city' ? 0.2 : 0.14
+    const dashW = world === 'city' ? 0.16 : 0.11
 
     const addRibbon = (pts: THREE.Vector3[], halfW: number, color: number, order = 3) => {
       if (pts.length < 2) return
@@ -684,17 +772,11 @@ export class Track {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
       geo.setIndex(idx)
       geo.computeVertexNormals()
-      const mat = new THREE.MeshBasicMaterial({
-        color,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -4,
-        polygonOffsetUnits: -4,
-      })
+      const mat = matRoadMark(color)
       const mesh = new THREE.Mesh(geo, mat)
       mesh.renderOrder = order
       mesh.castShadow = false
-      mesh.receiveShadow = false
+      mesh.receiveShadow = true
       mesh.userData.noCastShadow = true
       this.group.add(mesh)
     }
@@ -707,10 +789,10 @@ export class Track {
       solidL.push(s.position.clone().addScaledVector(s.normal, hw - 0.32).setY(y))
       solidR.push(s.position.clone().addScaledVector(s.normal, -(hw - 0.32)).setY(y))
     }
-    addRibbon(solidL, edgeW, 0xeef0f4)
-    addRibbon(solidR, edgeW, 0xeef0f4)
+    addRibbon(solidL, edgeW, world === 'city' ? 0xfff8e0 : 0xeef0f4)
+    addRibbon(solidR, edgeW, world === 'city' ? 0xfff8e0 : 0xeef0f4)
 
-    const dashCol = world === 'rally' ? 0xe8d090 : 0xf2f2f6
+    const dashCol = world === 'city' ? 0xffd040 : world === 'rally' ? 0xe8d090 : 0xf2f2f6
     for (let i = 0; i < samples; i += 2) {
       const a = this.sample(i / samples)
       const b = this.sample(Math.min(1, (i + 0.55) / samples))
@@ -725,33 +807,23 @@ export class Track {
   }
 
   private addSkyBody(): void {
-    if (this.def.world === 'town') {
-      const sun = new THREE.Mesh(
-        new THREE.SphereGeometry(24, 12, 12),
-        matLambert(0xff6a28, { emissive: 0xff4a10, emissiveIntensity: 1.15 }),
+    // Nikdy „míč u trati“ — jen vzdálený disk v nebi (sky gradient nese barvu)
+    if (this.def.skyBody === 'moon' || this.def.world === 'city') {
+      const moon = new THREE.Mesh(
+        new THREE.SphereGeometry(12, 12, 12),
+        matLambert(0xe8e8f0, { emissive: 0xd0d4e8, emissiveIntensity: 0.45 }),
       )
-      sun.position.set(-90, 22, 140)
-      this.group.add(sun)
+      moon.position.set(-280, 160, -220)
+      this.group.add(moon)
       return
     }
-    if (this.def.world === 'rally') {
-      // Zapadající slunce daleko za obzorem (ne „míč“ u tratě)
-      const blaze = new THREE.Mesh(
-        new THREE.SphereGeometry(36, 16, 16),
-        matLambert(0xffa060, { emissive: 0xff7030, emissiveIntensity: 0.85 }),
-      )
-      blaze.position.set(420, 55, -380)
-      this.group.add(blaze)
-      return
-    }
-    const moon = this.def.skyBody === 'moon'
-    const col = moon ? 0xe8e8f0 : 0xffe08a
-    const body = new THREE.Mesh(
-      new THREE.SphereGeometry(moon ? 14 : 18, 12, 12),
-      matLambert(col, { emissive: col, emissiveIntensity: moon ? 0.55 : 0.85 }),
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(22, 14, 14),
+      matLambert(0xffc080, { emissive: 0xff9040, emissiveIntensity: 0.7 }),
     )
-    body.position.set(moon ? -120 : 160, moon ? 90 : 110, moon ? -80 : -40)
-    this.group.add(body)
+    // Daleko za obzorem — Námko / Hrubý / Kasárny / climb
+    sun.position.set(480, 180, -520)
+    this.group.add(sun)
   }
 
   private addWorld(): void {
@@ -790,86 +862,143 @@ export class Track {
       matLambert(c, { emissive: c, emissiveIntensity: 0.35 }),
     )
 
-    // Dlouhé kasárenské bloky podél tratě (jako řadové budovy areálu)
-    for (let i = 0; i < 12; i++) {
-      const t = (i + 0.35) / 12
+    // Kasárenské bloky — jen když celý footprint (rohy) mimo asfalt
+    const asphaltClear = this.halfWidth + 2.2
+    for (let i = 0; i < 8; i++) {
+      const t = (i + 0.4) / 8
       const s = this.sample(t)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const lat = this.safeLateral(s, side, 16 + (i % 3) * 3)
-      const g = new THREE.Group()
-      const len = 22 + (i % 3) * 6
-      const body = new THREE.Mesh(new THREE.BoxGeometry(len, 5.2, 9), concrete)
-      body.position.y = 2.6
-      g.add(body)
-      const top = new THREE.Mesh(new THREE.BoxGeometry(len + 0.6, 0.35, 9.6), roof)
-      top.position.y = 5.35
-      g.add(top)
-      // Graffiti panel
-      const tag = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.6, 0.12), graffiti[i % graffiti.length]!)
-      tag.position.set(0, 2.2, 4.6)
-      g.add(tag)
+      const depth = 6
+      const len = 10 + (i % 2) * 2
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z)
+      const lat = this.safeLateral(s, side, Math.max(len, depth) * 0.55 + 12)
       const gx = s.position.x + s.normal.x * lat * side
       const gz = s.position.z + s.normal.z * lat * side
+      // BoxGeometry(len,·,depth): local X = len (⊥ k trati), local Z = depth (podél)
+      if (!this.boxClearOfRoad(gx, gz, yaw, len * 0.5, depth * 0.5, asphaltClear, s.position.y)) {
+        continue
+      }
+      const g = new THREE.Group()
+      const body = new THREE.Mesh(new THREE.BoxGeometry(len, 5.2, depth), concrete)
+      body.position.y = 2.6
+      g.add(body)
+      const top = new THREE.Mesh(new THREE.BoxGeometry(len + 0.6, 0.35, depth + 0.6), roof)
+      top.position.y = 5.35
+      g.add(top)
+      const tag = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.6, 0.12), graffiti[i % graffiti.length]!)
+      tag.position.set(0, 2.2, depth * 0.5 + 0.1)
+      g.add(tag)
       g.position.set(gx, this.settleY(gx, gz), gz)
-      g.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      g.rotation.y = yaw
       this.group.add(g)
     }
 
-    // Parade / skate plaza — Dolní (začátek okruhu)
+    // Parade / skate plaza — zarovnaná s tratí, mimo asfalt (ne „modrý koberec“)
     const dolni = this.sample(0.12)
-    const plaza = new THREE.Mesh(new THREE.PlaneGeometry(55, 38), concreteDark)
-    plaza.rotation.x = -Math.PI / 2
-    const px = dolni.position.x + dolni.normal.x * this.safeLateral(dolni, 1, 28)
-    const pz = dolni.position.z + dolni.normal.z * this.safeLateral(dolni, 1, 28)
-    plaza.position.set(px, this.terrainYAt(px, pz) + 0.04, pz)
-    this.group.add(plaza)
+    const plazaLat = Math.max(this.safeLateral(dolni, 1, 28), this.halfWidth + 42)
+    const px = dolni.position.x + dolni.normal.x * plazaLat
+    const pz = dolni.position.z + dolni.normal.z * plazaLat
+    const plazaYaw = Math.atan2(dolni.tangent.x, dolni.tangent.z)
+    if (
+      this.minRoadDist(px, pz, dolni.position.y) >= this.halfWidth + 30 &&
+      this.boxClearOfRoad(px, pz, plazaYaw, 18, 11, this.halfWidth + 4, dolni.position.y)
+    ) {
+      const plaza = new THREE.Mesh(new THREE.PlaneGeometry(36, 22), concreteDark)
+      plaza.rotation.order = 'YXZ'
+      plaza.rotation.y = plazaYaw
+      plaza.rotation.x = -Math.PI / 2
+      plaza.position.set(px, this.terrainYAt(px, pz) + 0.04, pz)
+      this.group.add(plaza)
 
-    // Quarter-pipe + funbox + rail na plaza
-    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 12, 10, 1, false, 0, Math.PI * 0.55), rampMat)
-    pipe.rotation.z = Math.PI / 2
-    pipe.position.set(px - 8, this.terrainYAt(px, pz) + 2.2, pz + 4)
-    this.group.add(pipe)
-    const box = new THREE.Mesh(new THREE.BoxGeometry(8, 1.1, 3.2), concrete)
-    box.position.set(px + 6, this.terrainYAt(px, pz) + 0.55, pz - 2)
-    this.group.add(box)
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 10, 6), railMat)
-    rail.rotation.z = Math.PI / 2
-    rail.position.set(px + 2, this.terrainYAt(px, pz) + 0.85, pz + 8)
-    this.group.add(rail)
+      const n = dolni.normal
+      const tng = dolni.tangent
+      const placeOff = (along: number, out: number) => {
+        const x = px + tng.x * along + n.x * out
+        const z = pz + tng.z * along + n.z * out
+        return { x, z, y: this.terrainYAt(x, z) }
+      }
+      const pipeAt = placeOff(-6, 2)
+      if (this.minRoadDist(pipeAt.x, pipeAt.z, dolni.position.y) >= this.halfWidth + 20) {
+        const pipe = new THREE.Mesh(
+          new THREE.CylinderGeometry(4.2, 4.2, 10, 10, 1, false, 0, Math.PI * 0.55),
+          rampMat,
+        )
+        pipe.rotation.order = 'YXZ'
+        pipe.rotation.y = plazaYaw
+        pipe.rotation.z = Math.PI / 2
+        pipe.position.set(pipeAt.x, pipeAt.y + 2.1, pipeAt.z)
+        this.group.add(pipe)
+      }
+      const boxAt = placeOff(5, -1.5)
+      if (this.minRoadDist(boxAt.x, boxAt.z, dolni.position.y) >= this.halfWidth + 20) {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(7, 1.1, 3), concrete)
+        box.position.set(boxAt.x, boxAt.y + 0.55, boxAt.z)
+        box.rotation.y = plazaYaw
+        this.group.add(box)
+      }
+      const railAt = placeOff(1, 5)
+      if (this.minRoadDist(railAt.x, railAt.z, dolni.position.y) >= this.halfWidth + 20) {
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 9, 6), railMat)
+        rail.rotation.order = 'YXZ'
+        rail.rotation.y = plazaYaw
+        rail.rotation.z = Math.PI / 2
+        rail.position.set(railAt.x, railAt.y + 0.85, railAt.z)
+        this.group.add(rail)
+      }
+    }
 
     // Menší plaza Horní
     const horni = this.sample(0.55)
-    const plaza2 = new THREE.Mesh(new THREE.PlaneGeometry(36, 28), concreteDark)
-    plaza2.rotation.x = -Math.PI / 2
-    const hx = horni.position.x + horni.normal.x * this.safeLateral(horni, -1, 22)
-    const hz = horni.position.z + horni.normal.z * this.safeLateral(horni, -1, 22)
-    plaza2.position.set(hx, this.terrainYAt(hx, hz) + 0.04, hz)
-    this.group.add(plaza2)
-    const ledge = new THREE.Mesh(new THREE.BoxGeometry(14, 0.45, 1.2), concrete)
-    ledge.position.set(hx, this.terrainYAt(hx, hz) + 0.28, hz)
-    this.group.add(ledge)
+    const plaza2Lat = Math.max(this.safeLateral(horni, -1, 24), this.halfWidth + 36)
+    const hx = horni.position.x + horni.normal.x * plaza2Lat * -1
+    const hz = horni.position.z + horni.normal.z * plaza2Lat * -1
+    const horniYaw = Math.atan2(horni.tangent.x, horni.tangent.z)
+    if (
+      this.minRoadDist(hx, hz, horni.position.y) >= this.halfWidth + 24 &&
+      this.boxClearOfRoad(hx, hz, horniYaw, 13, 9, this.halfWidth + 4, horni.position.y)
+    ) {
+      const plaza2 = new THREE.Mesh(new THREE.PlaneGeometry(26, 18), concreteDark)
+      plaza2.rotation.order = 'YXZ'
+      plaza2.rotation.y = horniYaw
+      plaza2.rotation.x = -Math.PI / 2
+      plaza2.position.set(hx, this.terrainYAt(hx, hz) + 0.04, hz)
+      this.group.add(plaza2)
+      const ledge = new THREE.Mesh(new THREE.BoxGeometry(12, 0.45, 1.1), concrete)
+      ledge.position.set(hx, this.terrainYAt(hx, hz) + 0.28, hz)
+      ledge.rotation.y = horniYaw
+      this.group.add(ledge)
+    }
 
-    // Rampy u krajnice (skate feeling při jízdě)
-    for (let i = 0; i < 8; i++) {
-      const s = this.sample(0.08 + i * 0.11)
+    // Rampy mimo vozovku
+    const roadClear = this.halfWidth + 7
+    for (let i = 0; i < 6; i++) {
+      const s = this.sample(0.1 + i * 0.14)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const lat = this.safeLateral(s, side, 4.5)
-      const ramp = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.35, 5.5), rampMat)
-      ramp.rotation.x = -0.28
+      const lat = this.safeLateral(s, side, 5)
+      if (lat < roadClear) continue
       const rx = s.position.x + s.normal.x * lat * side
       const rz = s.position.z + s.normal.z * lat * side
+      if (this.minRoadDist(rx, rz, s.position.y) < roadClear) continue
+      const ramp = new THREE.Mesh(new THREE.BoxGeometry(3, 0.35, 4.5), rampMat)
+      ramp.rotation.x = -0.28
       ramp.position.set(rx, this.terrainYAt(rx, rz) + 0.55, rz)
       ramp.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
       this.group.add(ramp)
     }
 
-    // Stromořadí / zeleň mezi Dolní a Horní (liniový park z ÚP)
+    // Stromy — koruna ~1.6 m, kontrola radiusu mimo asfalt
     const leaf = matLambert(theme.detail)
     const trunk = matLambert(0x5a3a22)
-    for (let i = 0; i < 16; i++) {
-      const s = this.sample(0.28 + i * 0.012)
+    const treeClear = this.halfWidth + 3.5
+    for (let i = 0; i < 12; i++) {
+      const s = this.sample(0.2 + i * 0.055)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const lat = this.safeLateral(s, side, 11)
+      const lat = this.safeLateral(s, side, 14)
+      if (lat < this.halfWidth + 12) continue
+      const tx = s.position.x + s.normal.x * lat * side
+      const tz = s.position.z + s.normal.z * lat * side
+      if (this.minRoadDist(tx, tz, s.position.y) < treeClear + 1.6) continue
+      if (!this.boxClearOfRoad(tx, tz, 0, 1.6, 1.6, treeClear, s.position.y)) continue
       const tree = new THREE.Group()
       const bole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.28, 2.6, 5), trunk)
       bole.position.y = 1.3
@@ -877,8 +1006,6 @@ export class Track {
       const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.6, 6, 6), leaf)
       canopy.position.y = 3.2
       tree.add(canopy)
-      const tx = s.position.x + s.normal.x * lat * side
-      const tz = s.position.z + s.normal.z * lat * side
       tree.position.set(tx, this.settleY(tx, tz), tz)
       this.group.add(tree)
     }
@@ -1039,7 +1166,7 @@ export class Track {
       this.group.add(roof)
     }
 
-    // Lampy
+    // Lampy + reálné PointLight (plaza čitelná večer)
     const poleMat = matLambert(0x333840)
     const lampMat = matLambert(0xffe8a0, { emissive: 0xffcc66, emissiveIntensity: 0.85 })
     for (const [lx, lz] of [
@@ -1056,146 +1183,166 @@ export class Track {
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), lampMat)
       bulb.position.set(lx, 5.5, lz)
       this.group.add(bulb)
+      if (this.sceneLights.length < 3) this.addSceneLamp(lx, 5.35, lz, 0xffe0a8, 0.7, 22)
     }
   }
 
   private buildCity(): void {
-    const theme = this.def.theme
-    const facades = [0x2a2838, 0x242230, 0x323040, 0x1e1c28]
-    const neons = [0xff2bd6, 0x2de2e6, 0xff6a3d, 0x7b61ff]
-    const wallMats = facades.map((c) => matLambert(c))
-    const neonMats = neons.map((c) => matLambert(c, { emissive: c, emissiveIntensity: 0.28 }))
-
     this.addCitySideStreets()
 
-    // Moře z jedné strany
+    // Moře dál — tmavší, ať neubere kontrast silnici
     const sea = new THREE.Mesh(
-      new THREE.CircleGeometry(220, 28),
-      matLambert(0x1a3a5a, { emissive: 0x0a2040, emissiveIntensity: 0.2 }),
+      new THREE.CircleGeometry(120, 16),
+      matLambert(0x0e1a28, { emissive: 0x061018, emissiveIntensity: 0.06 }),
     )
     sea.rotation.x = -Math.PI / 2
-    sea.position.set(180, -0.3, 20)
+    sea.position.set(270, -0.6, 50)
     this.group.add(sea)
-    const shore = new THREE.Mesh(new THREE.RingGeometry(200, 220, 28), matLambert(0x3a3a42))
+    const shore = new THREE.Mesh(new THREE.RingGeometry(112, 128, 16), matLambert(0x3a342c))
     shore.rotation.x = -Math.PI / 2
-    shore.position.set(180, -0.25, 20)
+    shore.position.set(270, -0.52, 50)
     this.group.add(shore)
 
-    for (let i = 0; i < 16; i++) {
-      const s = this.sample(i / 16)
-      // Budovy hlavně od moře pryč (záporný normal / inland) — mimo vozovku
-      const side: 1 | -1 = -1
-      const footprint = 4 + (i % 3) * 0.5
-      const dist = this.safeLateral(s, side, footprint + 8)
-      const floors = 3 + (i % 5)
-      const h = floors * 3.2
-      const w = 6 + (i % 3)
-      const d = 5.5
-      const block = new THREE.Group()
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMats[i % wallMats.length])
-      wall.position.y = h / 2
-      block.add(wall)
-      // Mřížka oken = víc quads (čitelnější fasáda než jedna deska)
-      const neon = neonMats[i % neonMats.length]!
-      for (let fy = 0; fy < floors; fy++) {
-        for (let fx = 0; fx < 3; fx++) {
-          const win = new THREE.Mesh(new THREE.BoxGeometry(w * 0.18, 0.55, 0.08), neon)
-          win.position.set(-w * 0.28 + fx * w * 0.28, 1.1 + fy * 3.0, d / 2 + 0.06)
-          block.add(win)
-        }
-      }
-      const bx = s.position.x + s.normal.x * dist * side
-      const bz = s.position.z + s.normal.z * dist * side
-      block.position.set(bx, this.settleY(bx, bz), bz)
-      block.rotation.y = Math.atan2(s.tangent.x, s.tangent.z) + Math.PI
-      this.group.add(block)
+    // Terénní fleky — park / parkoviště / dlažba (4× variabilita okolí)
+    const terrainPatches: Array<{ col: number; r: number; t: number; side: 1 | -1; push: number }> =
+      [
+        { col: 0x1a2818, r: 10, t: 0.08, side: 1, push: 22 },
+        { col: 0x2a2c34, r: 8, t: 0.22, side: -1, push: 20 },
+        { col: 0x3a3428, r: 9, t: 0.38, side: 1, push: 24 },
+        { col: 0x142018, r: 11, t: 0.55, side: -1, push: 26 },
+        { col: 0x2c2430, r: 7, t: 0.7, side: 1, push: 21 },
+        { col: 0x1c2218, r: 10, t: 0.88, side: -1, push: 23 },
+        { col: 0x323840, r: 6, t: 0.15, side: 1, push: 18 },
+        { col: 0x243018, r: 8, t: 0.62, side: -1, push: 19 },
+      ]
+    for (const p of terrainPatches) {
+      const s = this.sample(p.t)
+      const lat = this.safeLateral(s, p.side, p.r + 4) + p.push
+      const px = s.position.x + s.normal.x * lat * p.side
+      const pz = s.position.z + s.normal.z * lat * p.side
+      if (this.minRoadDist(px, pz, s.position.y) < this.halfWidth + p.r + 3) continue
+      const patch = new THREE.Mesh(
+        new THREE.CircleGeometry(p.r, 8),
+        matLambert(p.col, { emissive: p.col, emissiveIntensity: 0.04 }),
+      )
+      patch.rotation.x = -Math.PI / 2
+      patch.position.set(px, this.terrainYAt(px, pz) - 0.04, pz)
+      this.group.add(patch)
     }
 
-    // Tribuny — podélné i příčné, více typů
-    this.addGrandstand(0.08, 1, 'long')
-    this.addGrandstand(0.22, 1, 'tier')
-    this.addGrandstand(0.38, -1, 'long')
-    this.addGrandstand(0.55, 1, 'cross')
-    this.addGrandstand(0.72, -1, 'tier')
-    this.addGrandstand(0.88, 1, 'cross')
+    // Budovy — víc pokusů + fallback dál od trati (dřív většina skipnutá)
+    let placed = 0
+    for (let i = 0; i < 36 && placed < 28; i++) {
+      const s = this.sample((i + 0.15) / 36)
+      const side: 1 | -1 = i % 2 === 0 ? 1 : -1
+      const house = createVariedHouse(i * 11 + 7, 'city')
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z) + (side < 0 ? Math.PI : 0)
+      const need = Math.max(house.halfW, house.halfD)
+      const offsets = [5, 8, 11, 15, 20]
+      let done = false
+      for (const extra of offsets) {
+        const dist = this.safeLateral(s, side, need + 6) + extra
+        const bx = s.position.x + s.normal.x * dist * side
+        const bz = s.position.z + s.normal.z * dist * side
+        if (
+          !this.boxClearOfRoad(bx, bz, yaw, house.halfW, house.halfD, this.halfWidth + 2.5, s.position.y)
+        ) {
+          continue
+        }
+        house.group.position.set(bx, this.settleY(bx, bz), bz)
+        house.group.rotation.y = yaw
+        this.group.add(house.group)
+        placed++
+        done = true
+        break
+      }
+      if (!done) {
+        // Poslední šance — daleko, ať mapa není prázdná
+        const dist = this.halfWidth + need + 36
+        const bx = s.position.x + s.normal.x * dist * side
+        const bz = s.position.z + s.normal.z * dist * side
+        house.group.position.set(bx, this.settleY(bx, bz), bz)
+        house.group.rotation.y = yaw
+        this.group.add(house.group)
+        placed++
+      }
+    }
+
+    // Tribuny — barevné sedačky (čitelnost), mimo asfalt
+    this.addGrandstand(0.15, 1, 'long')
+    this.addGrandstand(0.48, -1, 'tier')
+    this.addGrandstand(0.78, 1, 'long')
 
     const poleM = matLambert(0x2a2a30)
-    for (let i = 0; i < 12; i++) {
-      const s = this.sample(i / 12)
+    const lampGlow = 0xffd090
+    for (let i = 0; i < 4; i++) {
+      const s = this.sample((i + 0.2) / 4)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const neon = i % 2 === 0 ? theme.accent : theme.detail
-      const lat = this.safeLateral(s, side, 1.2)
+      const lat = this.safeLateral(s, side, 2.2)
       const px = s.position.x + s.normal.x * lat * side
       const pz = s.position.z + s.normal.z * lat * side
+      if (this.minRoadDist(px, pz, s.position.y) < this.halfWidth + 4) continue
       const py = this.terrainYAt(px, pz)
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 5.5, 5), poleM)
       pole.position.set(px, py + 2.75, pz)
       this.group.add(pole)
       const lamp = new THREE.Mesh(
-        new THREE.SphereGeometry(0.28, 6, 6),
-        matLambert(neon, { emissive: neon, emissiveIntensity: 1 }),
+        new THREE.SphereGeometry(0.3, 6, 6),
+        matLambert(lampGlow, { emissive: lampGlow, emissiveIntensity: 0.85 }),
       )
       lamp.position.set(px, py + 5.4, pz)
       this.group.add(lamp)
+      // Max 2 PointLight na city — FPS
+      if (i < 2) this.addSceneLamp(px, py + 5.2, pz, lampGlow, 0.85, 24)
     }
   }
 
-  /** Dekorativní odbočky a postranní ulice (nejsou sjízdné) — odsazené od vozovky. */
-  private addCitySideStreets(): void {
-    const asphalt = matLambert(0x5a5a62)
-    const curbMat = matLambert(0x8a8a92)
-    const clearance = 5.5
+  /** PointLight u lampy — bez stínů, krátký dosah. */
+  private addSceneLamp(
+    x: number,
+    y: number,
+    z: number,
+    color: number,
+    intensity: number,
+    distance: number,
+  ): void {
+    if (this.sceneLights.length >= 4) return
+    const light = new THREE.PointLight(color, intensity, distance, 2)
+    light.position.set(x, y, z)
+    light.castShadow = false
+    this.group.add(light)
+    this.sceneLights.push(light)
+  }
 
-    for (let i = 0; i < 14; i++) {
-      const t = (i + 0.4) / 14
+  /** Dekorativní odbočky — dál od vozovky, méně kusů (FPS). */
+  private addCitySideStreets(): void {
+    const asphalt = matLambert(0x4a4e56)
+    const curbMat = matLambert(0x6a6e76)
+    const clearance = 10
+
+    for (let i = 0; i < 6; i++) {
+      const t = (i + 0.45) / 6
       const s = this.sample(t)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const branchLen = 22 + (i % 4) * 9
-      const branchW = this.halfWidth * 0.72
-      const start = this.safeLateral(s, side, branchW * 0.5)
+      const branchLen = 18 + (i % 3) * 6
+      const branchW = this.halfWidth * 0.55
+      const start = Math.max(this.safeLateral(s, side, branchW * 0.5), this.halfWidth + clearance)
 
-      // Odbočka kolmo z hlavní tratě
       const branch = new THREE.Mesh(new THREE.BoxGeometry(branchW, 0.07, branchLen), asphalt)
       const bx = s.position.x + s.normal.x * (start + branchLen / 2) * side
       const bz = s.position.z + s.normal.z * (start + branchLen / 2) * side
+      if (this.minRoadDist(bx, bz, s.position.y) < this.halfWidth + branchW * 0.5 + 2) continue
       const by = this.terrainYAt(bx, bz) + 0.035
       branch.position.set(bx, by, bz)
       branch.rotation.y = Math.atan2(s.normal.x, s.normal.z)
       this.group.add(branch)
 
-      // Obrubník na konci odbočky
       const curb = new THREE.Mesh(new THREE.BoxGeometry(branchW + 0.4, 0.12, 0.35), curbMat)
       const cx = s.position.x + s.normal.x * (start + branchLen + 0.4) * side
       const cz = s.position.z + s.normal.z * (start + branchLen + 0.4) * side
       curb.position.set(cx, this.terrainYAt(cx, cz) + 0.08, cz)
       curb.rotation.y = branch.rotation.y
       this.group.add(curb)
-
-      // Postranní ulice rovnoběžná s tratí
-      if (i % 2 === 0) {
-        const sideLen = 36 + (i % 3) * 8
-        const parallel = new THREE.Mesh(
-          new THREE.BoxGeometry(branchW * 0.9, 0.07, sideLen),
-          asphalt.clone(),
-        )
-        const dist = Math.max(start, this.halfWidth + clearance) + branchLen + 6
-        const px = s.position.x + s.normal.x * dist * side + s.tangent.x * 4
-        const pz = s.position.z + s.normal.z * dist * side + s.tangent.z * 4
-        parallel.position.set(px, this.terrainYAt(px, pz) + 0.035, pz)
-        parallel.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-        this.group.add(parallel)
-
-        // Krátká spojka k další „křižovatce“
-        const stub = new THREE.Mesh(
-          new THREE.BoxGeometry(branchW * 0.65, 0.07, 14),
-          asphalt.clone(),
-        )
-        const sx = parallel.position.x + s.normal.x * 10 * side
-        const sz = parallel.position.z + s.normal.z * 10 * side
-        stub.position.set(sx, this.terrainYAt(sx, sz) + 0.035, sz)
-        stub.rotation.y = Math.atan2(s.normal.x, s.normal.z)
-        this.group.add(stub)
-      }
     }
   }
 
@@ -1203,7 +1350,7 @@ export class Track {
     const s = this.sample(t)
     const stand = new THREE.Group()
     const baseM = matLambert(0x3a3a44)
-    const seatM = matLambert(kind === 'tier' ? 0xc62828 : kind === 'cross' ? 0x1565c0 : 0x555560)
+    const seatM = matLambert(kind === 'tier' ? 0x8a3030 : kind === 'cross' ? 0x4a5568 : 0x555560)
     const roofM = matLambert(this.def.theme.accent)
     const footprint = kind === 'long' ? 16 : kind === 'tier' ? 10 : 12
 
@@ -1272,16 +1419,42 @@ export class Track {
    * ani do jiné části okruhu (mosty = jiná výška OK).
    */
   private safeLateral(s: TrackSample, side: 1 | -1, footprint: number): number {
-    const need = this.halfWidth + footprint + 4
+    // +8 m od hrany asfaltu — domy/props nemají sedět „na krajnici“
+    const need = this.halfWidth + footprint + 8
     const refY = s.position.y
     let lat = need
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 20; i++) {
       const x = s.position.x + s.normal.x * lat * side
       const z = s.position.z + s.normal.z * lat * side
       if (this.minRoadDist(x, z, refY) >= need) return lat
       lat += 5
     }
     return lat
+  }
+
+  /**
+   * Rohy boxu (local X = šířka, local Z = délka podél yaw) mimo asfalt.
+   * yaw = Math.atan2(tangent.x, tangent.z) jako u meshe.
+   */
+  private boxClearOfRoad(
+    cx: number,
+    cz: number,
+    yaw: number,
+    halfX: number,
+    halfZ: number,
+    minDist: number,
+    refY?: number,
+  ): boolean {
+    const c = Math.cos(yaw)
+    const s = Math.sin(yaw)
+    for (const lx of [-halfX, halfX]) {
+      for (const lz of [-halfZ, halfZ]) {
+        const wx = cx + lx * c + lz * s
+        const wz = cz - lx * s + lz * c
+        if (this.minRoadDist(wx, wz, refY) < minDist) return false
+      }
+    }
+    return true
   }
 
   private buildTown(): void {
@@ -1299,15 +1472,7 @@ export class Track {
     const trunk = matLambert(0x5a3a22)
     const leaf = matLambert(theme.detail)
 
-    {
-      const river = new THREE.Mesh(
-        new THREE.PlaneGeometry(90, 420),
-        matLambert(0x3a5a72, { emissive: 0x1a3048, emissiveIntensity: 0.15 }),
-      )
-      river.rotation.x = -Math.PI / 2
-      river.position.set(-220, -0.35, 20)
-      this.group.add(river)
-    }
+    // Vltava u Námka pryč — i „daleko“ se četla jako modrá plocha přes výhled na cíl
 
     const square = this.sample(0.12)
     const plazaLat = this.safeLateral(square, 1, 12)
@@ -1385,49 +1550,76 @@ export class Track {
       const s = this.sample(0.52 + i * 0.025)
       const h = 12 + (i % 3) * 3
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const lat = this.safeLateral(s, side, 7)
-      const block = new THREE.Mesh(new THREE.BoxGeometry(10, h, 14), panel[i % panel.length])
+      const lat = this.safeLateral(s, side, 9) + 6
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z)
       const bx = s.position.x + s.normal.x * lat * side
       const bz = s.position.z + s.normal.z * lat * side
+      if (!this.boxClearOfRoad(bx, bz, yaw, 5, 7, this.halfWidth + 4, s.position.y)) continue
+      const block = new THREE.Mesh(new THREE.BoxGeometry(10, h, 14), panel[i % panel.length])
       block.position.set(bx, this.terrainYAt(bx, bz) + h / 2, bz)
-      block.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      block.rotation.y = yaw
       this.group.add(block)
     }
 
-    for (let i = 0; i < 18; i++) {
-      const s = this.sample(i / 18)
+    // Variabilní domy (HouseKit) — 4× archetypy + víc kusů
+    for (let i = 0; i < 22; i++) {
+      const s = this.sample((i + 0.5) / 22)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const w = 6 + (i % 3)
-      const d = 8 + (i % 2) * 2
-      const lat = this.safeLateral(s, side, Math.max(w, d) * 0.55)
-      const house = new THREE.Group()
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 4.2, d), plaster[i % plaster.length])
-      body.position.y = 2.1
-      house.add(body)
-      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, 2.6, 4), i % 3 === 0 ? roofDark : roof)
-      r.rotation.y = Math.PI / 4
-      r.position.y = 5.4
-      house.add(r)
-      const hx = s.position.x + s.normal.x * lat * side
-      const hz = s.position.z + s.normal.z * lat * side
-      house.position.set(hx, this.settleY(hx, hz), hz)
-      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      if (this.minRoadDist(house.position.x, house.position.z) < this.halfWidth + 5) continue
-      this.group.add(house)
+      const house = createVariedHouse(i * 11 + 5, 'town')
+      const need = Math.max(house.halfW, house.halfD)
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z)
+      let placed = false
+      for (const extra of [5, 10, 16, 24]) {
+        const lat = this.safeLateral(s, side, need) + extra
+        const hx = s.position.x + s.normal.x * lat * side
+        const hz = s.position.z + s.normal.z * lat * side
+        if (
+          !this.boxClearOfRoad(hx, hz, yaw, house.halfW, house.halfD, this.halfWidth + 3.5, s.position.y)
+        ) {
+          continue
+        }
+        house.group.position.set(hx, this.settleY(hx, hz), hz)
+        house.group.rotation.y = yaw
+        this.group.add(house.group)
+        placed = true
+        break
+      }
+      if (!placed) continue
     }
 
-    for (let i = 0; i < 10; i++) {
-      const s = this.sample((i + 0.3) / 10)
+    // Pole / louky / štěrk / dlažba — 4× víc barevných fleků
+    const fieldMats = [
+      this.def.id === 'hruby' ? matLambert(0x4a5a34) : field,
+      matLambert(0x3a4828),
+      matLambert(0x5a4a32),
+      matLambert(0x4a5840),
+      matLambert(0x6a5a48),
+      matLambert(0x2a3820),
+      matLambert(0x8a8070),
+      matLambert(0x3a5030),
+    ]
+    for (let i = 0; i < 14; i++) {
+      const s = this.sample((i + 0.35) / 14)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
-      const radius = 10 + (i % 3) * 3
-      const lat = this.safeLateral(s, side, radius + 4)
-      if (lat < this.halfWidth + radius + 3) continue
-      const patch = new THREE.Mesh(new THREE.CircleGeometry(radius, 8), field)
-      patch.rotation.x = -Math.PI / 2
+      const radius = 6 + (i % 4) * 2
+      const lat = this.safeLateral(s, side, radius + 6) + 8 + (i % 3) * 3
+      if (lat < this.halfWidth + radius + 10) continue
       const px = s.position.x + s.normal.x * lat * side
       const pz = s.position.z + s.normal.z * lat * side
-      if (this.minRoadDist(px, pz, s.position.y) < this.halfWidth + radius * 0.65) continue
-      patch.position.set(px, this.terrainYAt(px, pz) - 0.02, pz)
+      // Bez refY — na okruhu nesmí plocha ležet na jiném úseku asfaltu
+      if (this.minRoadDist(px, pz) < this.halfWidth + radius + 5) continue
+      if (
+        !this.boxClearOfRoad(px, pz, 0, radius * 0.7, radius * 0.7, this.halfWidth + 3, undefined)
+      ) {
+        continue
+      }
+      const patch = new THREE.Mesh(
+        new THREE.CircleGeometry(radius, 8),
+        fieldMats[i % fieldMats.length]!,
+      )
+      patch.rotation.x = -Math.PI / 2
+      // Pod úrovní vozovky — ne přes asfalt
+      patch.position.set(px, Math.min(this.terrainYAt(px, pz), -0.06) - 0.04, pz)
       this.group.add(patch)
     }
 
@@ -1473,99 +1665,135 @@ export class Track {
     }
   }
 
-  /** Do Klecánek — etapa Klecánky → U Hřbitova, BMW v první čtvrtině vpravo. */
+  /** Do Klecánek / Zlatý / Serpentýny — climb stavba. */
   private buildClimb(): void {
     const theme = this.def.theme
-    const plaster = [0xc8b8a4, 0xd4c4b0, 0xb8a890, 0xccc0b0].map((c) => matLambert(c))
-    const roof = matLambert(0xa04532)
+    const id = this.def.id
+    const serp = id === 'serpentiny'
+    const zlaty = id === 'zlaty'
     const hedge = matLambert(0x24301c)
     const trunk = matLambert(0x5a3a22)
     const leaf = matLambert(theme.detail)
     const rock = matLambert(0x6a6a62)
+    const plasterChapel = matLambert(0xd4c4b0)
 
     const start = this.sample(0)
-    const river = new THREE.Mesh(
-      new THREE.PlaneGeometry(140, 280),
-      matLambert(0x3a5a72, { emissive: 0x1a3048, emissiveIntensity: 0.12 }),
-    )
-    river.rotation.x = -Math.PI / 2
-    river.position.set(start.position.x - 90, start.position.y - 0.4, start.position.z - 20)
-    this.group.add(river)
+    // Řeka jen u Do Klecánek — daleko, pod terénem
+    if (id === 'klecanek') {
+      const river = new THREE.Mesh(
+        new THREE.PlaneGeometry(100, 200),
+        matLambert(0x2a4050, { emissive: 0x121c28, emissiveIntensity: 0.06 }),
+      )
+      river.rotation.x = -Math.PI / 2
+      river.position.set(start.position.x - 160, start.position.y - 1.4, start.position.z - 40)
+      this.group.add(river)
+    }
 
-    this.addBusShelter(0, 1)
-    this.addBusShelter(1, -1)
+    if (!serp) {
+      this.addBusShelter(0, 1)
+      this.addBusShelter(1, -1)
+    }
 
-    for (let i = 0; i < 10; i++) {
-      const s = this.sample(0.02 + i * 0.012)
+    // Blízko startu: HouseKit (4× archetypy), dál od silnice
+    const nearCount = serp ? 0 : zlaty ? 16 : 12
+    for (let i = 0; i < nearCount; i++) {
+      const s = this.sample(0.04 + i * 0.014)
       const side = i % 2 === 0 ? 1 : -1
-      const house = new THREE.Group()
-      const w = 6 + (i % 3)
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 4, 8), plaster[i % plaster.length])
-      body.position.y = 2
-      house.add(body)
-      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.7, 2.4, 4), roof)
-      r.rotation.y = Math.PI / 4
-      r.position.y = 5.1
-      house.add(r)
-      const lat = this.safeLateral(s, side, Math.max(w, 8) * 0.55)
+      const house = createVariedHouse(i * 13 + 2, 'climb')
+      const need = Math.max(house.halfW, house.halfD)
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z)
+      for (const extra of [zlaty ? 10 : 8, 14, 20]) {
+        const lat = this.safeLateral(s, side, need) + extra
+        const hx = s.position.x + s.normal.x * lat * side
+        const hz = s.position.z + s.normal.z * lat * side
+        if (
+          !this.boxClearOfRoad(hx, hz, yaw, house.halfW, house.halfD, this.halfWidth + 4, s.position.y)
+        ) {
+          continue
+        }
+        house.group.position.set(hx, this.settleY(hx, hz), hz)
+        house.group.rotation.y = yaw
+        this.group.add(house.group)
+        break
+      }
+    }
+
+    if (id === 'klecanek') {
+      const bmwColors = [
+        0x1a1a1a, 0xc8c8c8, 0x1565c0, 0xf2f2f0, 0x2a2a32, 0xb0b8c0, 0x0d47a1, 0x424242, 0xd8d8d8,
+      ]
+      for (let i = 0; i < bmwColors.length; i++) {
+        const t = 0.16 + i * 0.014
+        const s = this.sample(t)
+        const car = this.parkedSedan(bmwColors[i]!)
+        const dist = this.safeLateral(s, 1, 2.4) + 2
+        const cx = s.position.x + s.normal.x * dist
+        const cz = s.position.z + s.normal.z * dist
+        if (this.minRoadDist(cx, cz, s.position.y) < this.halfWidth + 3.5) continue
+        car.position.set(cx, this.settleY(cx, cz), cz)
+        car.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+        this.group.add(car)
+      }
+    }
+
+    // Skalní lavice — ne na serpentinách (vypadaly jako skokánek na trati)
+    if (!serp) {
+      for (let i = 0; i < 6; i++) {
+        const s = this.sample(0.3 + i * 0.05)
+        const lat = this.safeLateral(s, 1, 4.5) + 4
+        const bx = s.position.x + s.normal.x * lat
+        const bz = s.position.z + s.normal.z * lat
+        if (this.minRoadDist(bx, bz, s.position.y) < this.halfWidth + 5) continue
+        const bank = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.0 + (i % 3) * 0.35, 5), rock)
+        bank.position.set(bx, this.terrainYAt(bx, bz) + 0.35, bz)
+        bank.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+        this.group.add(bank)
+      }
+    }
+
+    // Druhá řada — Zlatý hustší + HouseKit variabilita (klecánek: méně draw calls)
+    const midCount = serp ? 4 : zlaty ? 16 : 8
+    for (let i = 0; i < midCount; i++) {
+      const s = this.sample(0.35 + i * (0.55 / Math.max(1, midCount)))
+      const side = i % 2 === 0 ? 1 : -1
+      const house = createVariedHouse(i * 17 + 9, 'climb')
+      const far = zlaty ? 12 + (i % 4) * 5 : 8 + (i % 3) * 3
+      const lat = this.safeLateral(s, side, Math.max(house.halfW, house.halfD)) + far
+      const yaw = Math.atan2(s.tangent.x, s.tangent.z)
       const hx = s.position.x + s.normal.x * lat * side
       const hz = s.position.z + s.normal.z * lat * side
-      house.position.set(hx, this.settleY(hx, hz), hz)
-      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      this.group.add(house)
+      if (
+        !this.boxClearOfRoad(
+          hx,
+          hz,
+          yaw,
+          house.halfW,
+          house.halfD,
+          this.halfWidth + 4,
+          s.position.y,
+        )
+      ) {
+        continue
+      }
+      house.group.position.set(hx, this.settleY(hx, hz), hz)
+      house.group.rotation.y = yaw
+      this.group.add(house.group)
     }
 
-    const bmwColors = [0x1a1a1a, 0xc8c8c8, 0x1565c0, 0xf2f2f0, 0x2a2a32, 0xb0b8c0, 0x0d47a1, 0x424242, 0xd8d8d8]
-    for (let i = 0; i < bmwColors.length; i++) {
-      const t = 0.16 + i * 0.014
-      const s = this.sample(t)
-      const car = this.parkedSedan(bmwColors[i]!)
-      // Pravá strana ve směru jízdy (+normal) — mimo asfalt
-      const dist = this.safeLateral(s, 1, 2.4)
-      const cx = s.position.x + s.normal.x * dist
-      const cz = s.position.z + s.normal.z * dist
-      car.position.set(cx, this.settleY(cx, cz), cz)
-      car.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      this.group.add(car)
+    if (!serp) {
+      const square = this.sample(0.72)
+      const plazaLat = this.safeLateral(square, 1, 14) + 6
+      const px = square.position.x + square.normal.x * plazaLat
+      const pz = square.position.z + square.normal.z * plazaLat
+      if (this.minRoadDist(px, pz, square.position.y) >= this.halfWidth + 16) {
+        const plaza = new THREE.Mesh(
+          new THREE.CylinderGeometry(10, 10, 0.12, 12),
+          matLambert(0x9a8a78),
+        )
+        plaza.position.set(px, this.terrainYAt(px, pz) + 0.02, pz)
+        this.group.add(plaza)
+      }
     }
-
-    for (let i = 0; i < 16; i++) {
-      const s = this.sample(0.28 + i * 0.028)
-      const bank = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.2 + (i % 4) * 0.4, 6), rock)
-      const lat = this.safeLateral(s, 1, 3.5)
-      const bx = s.position.x + s.normal.x * lat
-      const bz = s.position.z + s.normal.z * lat
-      bank.position.set(bx, this.terrainYAt(bx, bz) + 0.4, bz)
-      bank.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      this.group.add(bank)
-    }
-
-    for (let i = 0; i < 12; i++) {
-      const s = this.sample(0.55 + i * 0.018)
-      const side = i % 2 === 0 ? 1 : -1
-      const house = new THREE.Group()
-      const w = 7 + (i % 2)
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 4.4, 9), plaster[(i + 2) % plaster.length])
-      body.position.y = 2.2
-      house.add(body)
-      const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.68, 2.5, 4), roof)
-      r.rotation.y = Math.PI / 4
-      r.position.y = 5.4
-      house.add(r)
-      const lat = this.safeLateral(s, side, Math.max(w, 9) * 0.55)
-      const hx = s.position.x + s.normal.x * lat * side
-      const hz = s.position.z + s.normal.z * lat * side
-      house.position.set(hx, this.settleY(hx, hz), hz)
-      house.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-      this.group.add(house)
-    }
-
-    const square = this.sample(0.72)
-    const plaza = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 0.12, 12), matLambert(0x9a8a78))
-    const px = square.position.x + square.normal.x * 16
-    const pz = square.position.z + square.normal.z * 16
-    plaza.position.set(px, this.terrainYAt(px, pz) + 0.02, pz)
-    this.group.add(plaza)
 
     const fin = this.sample(1)
     const yard = new THREE.Group()
@@ -1579,7 +1807,7 @@ export class Track {
     const ringC = ringB.clone()
     ringC.position.x = 13.5
     yard.add(ringC)
-    const chapel = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 8), plaster[1])
+    const chapel = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 8), plasterChapel)
     chapel.position.set(0, 2.5, -8)
     yard.add(chapel)
     const capRoof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 3.2, 4), matLambert(0x4a3a32))
@@ -1605,8 +1833,9 @@ export class Track {
     yard.rotation.y = Math.atan2(fin.tangent.x, fin.tangent.z)
     this.group.add(yard)
 
-    for (let i = 0; i < 36; i++) {
-      const s = this.sample(i / 36)
+    const treeCount = this.def.id === 'klecanek' || this.def.heights ? 22 : 36
+    for (let i = 0; i < treeCount; i++) {
+      const s = this.sample(i / treeCount)
       const side = i % 2 === 0 ? 1 : -1
       const tree = new THREE.Group()
       const bole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.8, 5), trunk)
@@ -1621,20 +1850,22 @@ export class Track {
       this.group.add(tree)
     }
 
-    // Živé ploty — safeLateral + mosty (serpentiny se kříží ve výšce)
-    const hedgeCount = this.def.id === 'serpentiny' ? 14 : 24
-    for (let i = 0; i < hedgeCount; i++) {
-      const s = this.sample(i / hedgeCount)
-      for (const side of [-1, 1] as const) {
-        const lat = this.safeLateral(s, side, 2.2)
-        if (lat > this.halfWidth + 28) continue
-        const hdg = new THREE.Mesh(new THREE.BoxGeometry(1, 0.65, 3.8), hedge)
-        const hx = s.position.x + s.normal.x * lat * side
-        const hz = s.position.z + s.normal.z * lat * side
-        if (this.minRoadDist(hx, hz, s.position.y) < this.halfWidth + 2.8) continue
-        hdg.position.set(hx, this.terrainYAt(hx, hz) + 0.3, hz)
-        hdg.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
-        this.group.add(hdg)
+    // Živé ploty — ne na serpentinách (zelený plácek na asfaltu)
+    if (!serp) {
+      const hedgeCount = this.def.heights ? 12 : 18
+      for (let i = 0; i < hedgeCount; i++) {
+        const s = this.sample(i / hedgeCount)
+        for (const side of [-1, 1] as const) {
+          const lat = this.safeLateral(s, side, 2.8) + 2
+          if (lat > this.halfWidth + 32) continue
+          const hx = s.position.x + s.normal.x * lat * side
+          const hz = s.position.z + s.normal.z * lat * side
+          if (this.minRoadDist(hx, hz, s.position.y) < this.halfWidth + 4.5) continue
+          const hdg = new THREE.Mesh(new THREE.BoxGeometry(1, 0.65, 3.8), hedge)
+          hdg.position.set(hx, this.terrainYAt(hx, hz) + 0.3, hz)
+          hdg.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+          this.group.add(hdg)
+        }
       }
     }
   }
@@ -1858,9 +2089,9 @@ export class Track {
   private buildRally(): void {
     const theme = this.def.theme
     const dirt = matLambert(theme.ground)
-    const mud = matLambert(0x2a1a0c)
-    const hillA = matLambert(0x4a3220)
-    const hillB = matLambert(0x3a2818)
+    const mud = matLambert(0x4a3a28)
+    const hillA = matLambert(0x7a6848)
+    const hillB = matLambert(0x6a5840)
     const metal = matLambert(0x3a3a42)
     const tireMat = matLambert(0x121212)
     const lampMat = matLambert(0xd8c8a0, { emissive: 0xc4a060, emissiveIntensity: 0.35 })
@@ -1882,6 +2113,9 @@ export class Track {
       if (this.minRoadDist(dx, dz, s.position.y) < this.halfWidth + 40) continue
       hill.position.set(dx, this.terrainYAt(dx, dz) - r * 0.15, dz)
       hill.scale.set(1.4, 0.55, 1.15)
+      hill.castShadow = false
+      hill.receiveShadow = false
+      hill.userData.noCastShadow = true
       this.group.add(hill)
     }
 
@@ -1905,6 +2139,13 @@ export class Track {
       if (this.minRoadDist(bx, bz, s.position.y) < this.halfWidth + 6) continue
       block.position.set(bx, this.settleY(bx, bz), bz)
       block.rotation.y = Math.atan2(s.tangent.x, s.tangent.z)
+      block.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = false
+          o.receiveShadow = false
+          o.userData.noCastShadow = true
+        }
+      })
       this.group.add(block)
     }
 
@@ -2007,7 +2248,11 @@ export class Track {
     }
     geo.setIndex(indices)
     geo.computeVertexNormals()
-    this.group.add(new THREE.Mesh(geo, matLambert(color)))
+    const mat =
+      this.def.world === 'city'
+        ? matLambert(color, { emissive: color, emissiveIntensity: 0.55 })
+        : matLambert(color)
+    this.group.add(new THREE.Mesh(geo, mat))
   }
 
   private buildCheckpoints(): void {

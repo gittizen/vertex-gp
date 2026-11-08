@@ -16,7 +16,7 @@ const STORAGE_KEY = `${GAME_STORAGE_NS}.visual-v3`
 
 export const DEFAULT_VISUAL: VisualSettingsValues = {
   quality: 'balanced',
-  bloom: false,
+  bloom: true,
   shadows: true,
   rearMirror: false,
 }
@@ -52,8 +52,8 @@ export function pixelRatioFor(quality: VisualQuality): number {
 }
 
 export function bloomStrengthFor(quality: VisualQuality): number {
-  if (quality === 'cinematic') return 0.22
-  if (quality === 'balanced') return 0.12
+  if (quality === 'cinematic') return 0.28
+  if (quality === 'balanced') return 0.16
   return 0.08
 }
 
@@ -70,4 +70,14 @@ export function usePostFx(vals: VisualSettingsValues): boolean {
 
 export function useGradeOnly(vals: VisualSettingsValues): boolean {
   return vals.quality === 'balanced' && !vals.bloom
+}
+
+/** Auto-nastavení bloom / stínů / zrcátka podle předvolby kvality. */
+export function visualFlagsForQuality(quality: VisualQuality): Pick<
+  VisualSettingsValues,
+  'bloom' | 'shadows' | 'rearMirror'
+> {
+  if (quality === 'perf') return { bloom: false, shadows: false, rearMirror: false }
+  if (quality === 'balanced') return { bloom: true, shadows: true, rearMirror: false }
+  return { bloom: true, shadows: true, rearMirror: true }
 }

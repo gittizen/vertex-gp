@@ -1,75 +1,54 @@
 # Klec GP / Vertex GP — verze
 
-Přečíslování historie: **0.4 → 0.1**, **1.0 → 0.2**, **1.1 (+ polish)** → **0.3**.  
-**0.4** = současná (reálnější svět, okolí, stíny, Netlify).  
+**0.5** = současná (AI tempo live, atmosféra, demo polish).  
 Historie commitů v gitu zůstává; staré tagy se nemažou.
 
-**Hub (všechny verze):** https://gittizen.github.io/vertex-gp/  
-**Složky:** [versions/](./versions/)
+**Hub:** https://gittizen.github.io/vertex-gp/  
+**Složky:** [versions/](./versions/) · **Changelog:** [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
-## Sloupce verzí
+## Přehled
 
-| **0.1** — Vertex GP | **0.2** — Klec GP | **0.3** — mobil + polish | **0.4** — reálný svět |
-| --- | --- | --- | --- |
-| [Hrát 0.1](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát 0.2](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát 0.3](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát 0.4](https://gittizen.github.io/vertex-gp/0.4/) · [Tourmaline](https://tourmaline-gingersnap-268fa6.netlify.app/) |
-| Vite + TS + Three.js | Rebrand Klec GP | Mobilní řízení | Okolí, terén, unikátní mapy |
-| Tratě + AI + online WS | Freestyle / atmosféra | Netlify + community AI | Stíny bez děr, asfalt, PBR |
-| Tuning rozpočet | Online hub | Šampionát, UX polish | Screenshoty na hubu |
+| **0.1** Vertex GP | **0.2** Klec GP | **0.3** mobil | **0.4** svět | **0.5** AI + demo |
+| --- | --- | --- | --- | --- |
+| [Hrát](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) · [Netlify](https://tourmaline-gingersnap-268fa6.netlify.app/) |
+| Základ engine | Identita | Dotyk + hosting | Okolí tratí | Live AI + atmosféra |
 
 ---
 
-## 0.1 — Vertex GP (základ)
+## 0.5 — AI, atmosféra, pohovorový polish *(současná)*
 
-**Cíl:** prohlížečová 2.5D semi-sim, solo i online.
+**Cíl:** hra obstojí při demo a pohovoru; AI a menu působí „živě“.
 
-- Vite + TypeScript + Three.js
-- Tratě jako data + mesh generátor
-- AI Lehká / Střední / Těžká
-- Online WS (max 4), tuning rozpočet
+- Community / pace learning → úprava jezdců podle dat
+- Default: náhodní AI soupeři každý solo závod
+- Kalendář s holkama, Klecany garage = Volvo V70 1. gen
+- Opravy terénu (Námko), noční kontrast, AI launch/lean
+- Dokumentace: README pro laiky, CHANGELOG, RECREATE_PROMPT
 
----
-
-## 0.2 — Klec GP (identita)
-
-**Cíl:** domácí značka, freestyle, atmosféra, menu jako produkt.
-
-- Rebrand (logo, intro, watermark)
-- Freestyle (skate/kolo, Plácek, triky)
-- Atmosféra menu + online hub
+**Postup release**
+1. `GameVersion.ts` + `package.json` → **0.5**
+2. Větev `0.4` z předchozího release; `node scripts/build-version-pages.mjs`
+3. Netlify = produkce 0.5; Pages = hub včetně `/0.5/`
 
 ---
 
-## 0.3 — Dotyk, hosting a herní polish
+## 0.4 — Reálnější svět
+Okolí, berm/blanket, unikátní podklady, stíny bez děr v asfaltu.
 
-**Cíl:** mobilní jízda + web mimo GH Pages + UX.
+## 0.3 — Dotyk, hosting, polish
+Mobilní řízení, Netlify, community learning základy, šampionát UX.
 
-- Schémata řízení: volant, joystick, náklon, ťukání
-- Netlify `base: /`, community learning, šampionát
-- Menu vozidlo → tuning, watermark, Esc/restart
+## 0.2 — Klec GP
+Rebrand, freestyle, atmosféra menu, online hub.
 
----
-
-## 0.4 — Reálnější svět (současná)
-
-**Cíl:** okolí při jízdě jako venku — bez levitujících domů, děr vedle silnice a černého asfaltu.
-
-- Hustší triangulace berm/apron/blanket, `settleY` dekorací
-- PBR povrchy, contact stíny, shadow mapa jezdí s autem
-- Unikátní podklad per mapa (Námko / noc / rally / …)
-- Opravy: zelené objekty na silnici, mizící asfalt (Hrubý)
-
-**Postup**
-1. UI verze = `src/ui/GameVersion.ts` + `package.json` → **0.4**
-2. Archivy: `node scripts/build-version-pages.mjs` → Pages `/0.1` … `/0.4`
-3. Produkční Netlify: Tourmaline (aktuální 0.4)
+## 0.1 — Vertex GP
+Vite + TS + Three.js, tratě, AI, online WS, tuning.
 
 ---
 
-## Pravidlo pro další verze
-
-- Nepřepisovat staré tagy / force-push historii kvůli „úklidu“.
-- README + tento soubor + `versions/`: krátce *proč*, ne jen changelog diff.
+## Pravidlo
+- Nepřepisovat staré tagy kvůli „úklidu“.
+- Ke každé verzi: krátké *proč* + screenshot ve `versions/<ver>/`.
 - UI verze = `src/ui/GameVersion.ts` + `package.json`.
-- Ke každé verzi screenshot gameplaye (`versions/<ver>/screenshot.png`).

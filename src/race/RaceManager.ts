@@ -103,9 +103,10 @@ export class RaceManager {
   update(dt: number): void {
     if (this.phase === 'countdown') {
       this.countdownAcc += dt
-      if (this.countdownAcc >= 1) {
+      // 3·2·1 po 1 s; GO drží ~0.7 s, pak racing
+      const step = this.countdown <= 0 ? 0.7 : 1
+      if (this.countdownAcc >= step) {
         this.countdownAcc = 0
-        this.countdown -= 1
         if (this.countdown <= 0) {
           this.phase = 'racing'
           this.raceTimeMs = 0
@@ -113,6 +114,8 @@ export class RaceManager {
             v.currentLapStart = 0
             this.lastT.set(v, this.track.progressAt(v.physics.x, v.physics.z))
           }
+        } else {
+          this.countdown -= 1
         }
       }
       return

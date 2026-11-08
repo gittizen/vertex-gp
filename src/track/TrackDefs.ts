@@ -83,7 +83,21 @@ function rbt(
   return out
 }
 
-export const TRACKS: TrackDef[] = [
+/** Pořadí v menu: Námko první, Plácek poslední. */
+const TRACK_MENU_ORDER = [
+  'klecany',
+  'klecanek',
+  'city',
+  'turini',
+  'mexiku',
+  'hruby',
+  'zlaty',
+  'serpentiny',
+  'kasarny',
+  'placek',
+] as const
+
+const TRACKS_RAW: TrackDef[] = [
   {
     id: 'klecanek',
     name: 'Do Klecánek',
@@ -194,16 +208,17 @@ export const TRACKS: TrackDef[] = [
       [-20, -125],
     ],
     theme: {
-      road: 0xa0a4ac,
-      ground: 0x12121a,
-      barrierL: 0xff2bd6,
-      barrierR: 0x2de2e6,
-      edge: 0xffffff,
-      sky: 0x080812,
-      fog: 0x221830,
-      building: 0x222030,
-      accent: 0xff2bd6,
-      detail: 0x2de2e6,
+      // Střední asfalt × temný terén — ne bílý beton
+      road: 0x6a707c,
+      ground: 0x05060a,
+      barrierL: 0xff8a3a,
+      barrierR: 0x3ad0e8,
+      edge: 0xfff8e0,
+      sky: 0x080e18,
+      fog: 0x0c121c,
+      building: 0x8a3a2a,
+      accent: 0xffc040,
+      detail: 0x50b8d8,
     },
   },
   {
@@ -258,7 +273,7 @@ export const TRACKS: TrackDef[] = [
     ],
     theme: {
       road: 0xa8a49c,
-      ground: 0x4a4a38,
+      ground: 0x5a4e38,
       barrierL: 0xc4a574,
       barrierR: 0xc4a574,
       edge: 0xffffff,
@@ -323,16 +338,17 @@ export const TRACKS: TrackDef[] = [
       10, 8, 7, 8, 9,
     ],
     theme: {
-      road: 0x565a62,
-      ground: 0x3a2a18,
-      barrierL: 0xb07040,
-      barrierR: 0x8a6040,
-      edge: 0xa08060,
-      sky: 0x3a2818,
-      fog: 0x5a4030,
-      building: 0x4a4848,
-      accent: 0xc08050,
-      detail: 0x5a3a22,
+      road: 0x7a766c,
+      ground: 0x6a5a42,
+      barrierL: 0xc09060,
+      barrierR: 0xa07850,
+      edge: 0xc8b090,
+      // Světlejší okolí — stíny + tmavé kopce dřív všechno sežraly
+      sky: 0x8a6a50,
+      fog: 0xb89878,
+      building: 0x8a8480,
+      accent: 0xd0a060,
+      detail: 0x7a6050,
     },
   },
   {
@@ -675,17 +691,23 @@ export const TRACKS: TrackDef[] = [
     theme: {
       road: 0x9a9a98,
       ground: 0x3a4238,
-      barrierL: 0xff6a3d,
-      barrierR: 0x2de2e6,
+      barrierL: 0xd08050,
+      barrierR: 0x8a9088,
       edge: 0xffffff,
       sky: 0x7a9ab0,
       fog: 0xa8b8c4,
       building: 0x8a9098,
-      accent: 0xff2bd6,
-      detail: 0xffe08a,
+      accent: 0xd0a070,
+      detail: 0xc8c0a8,
     },
   },
 ]
+
+export const TRACKS: TrackDef[] = TRACK_MENU_ORDER.map((id) => {
+  const tr = TRACKS_RAW.find((t) => t.id === id)
+  if (!tr) throw new Error(`Missing track: ${id}`)
+  return tr
+})
 
 export function getTrackDef(id: string): TrackDef {
   return TRACKS.find((t) => t.id === id) ?? TRACKS[0]

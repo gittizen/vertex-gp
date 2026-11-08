@@ -123,12 +123,35 @@ export class EngineAudio {
       master: clamp(partial.master ?? this.settings.master),
       music: clamp(partial.music ?? this.settings.music),
       sfx: clamp(partial.sfx ?? this.settings.sfx),
+      menu: clamp(partial.menu ?? this.settings.menu),
       track: partial.track ?? this.settings.track,
       muted: partial.muted ?? this.settings.muted,
     }
     saveAudioSettings(this.settings)
     this.pushLevels()
     if (this.bed) this.bed.setStyle(this.settings.track)
+  }
+
+  /** Krátký UI klik v menu (WebAudio beep). */
+  playMenuClick(): void {
+    if (this.settings.muted) return
+    this.unlock()
+    const ctx = this.ctx
+    if (!ctx || !this.master) return
+    const now = ctx.currentTime
+    const osc = ctx.createOscillator()
+    const g = ctx.createGain()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(520, now)
+    osc.frequency.exponentialRampToValueAtTime(280, now + 0.06)
+    const amp = 0.045 * (this.settings.menu / 100) * (this.settings.master / 100)
+    g.gain.setValueAtTime(0.0001, now)
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp), now + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.09)
+    osc.connect(g)
+    g.connect(this.master)
+    osc.start(now)
+    osc.stop(now + 0.1)
   }
 
   unlock(): void {
@@ -338,6 +361,37 @@ export class EngineAudio {
     src.connect(g)
     g.connect(this.sfxBus)
     src.start()
+  }
+
+  /** Krátký škráb / náraz o bariéru (WebAudio noise burst). */
+  playImpact(strength = 0.5): void {
+    if (this.settings.muted || !this.ctx || !this.sfxBus) return
+    this.unlock()
+    const ctx = this.ctx
+    const now = ctx.currentTime
+    const dur = 0.09 + Math.min(0.12, strength * 0.1)
+    const n = Math.max(1, Math.floor(ctx.sampleRate * dur))
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < n; i++) {
+      const t = i / n
+      data[i] = (Math.random() * 2 - 1) * (1 - t) * (1 - t)
+    }
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.value = 280 + strength * 520
+    filter.Q.value = 0.7
+    const g = ctx.createGain()
+    const amp = 0.22 * Math.min(1.2, strength) * (this.settings.sfx / 100) * (this.settings.master / 100)
+    g.gain.setValueAtTime(Math.max(0.0001, amp), now)
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+    src.connect(filter)
+    filter.connect(g)
+    g.connect(this.sfxBus)
+    src.start(now)
+    src.stop(now + dur + 0.02)
   }
 
   private ensureVoices(n: number): void {

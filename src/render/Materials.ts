@@ -64,10 +64,22 @@ export function normalizeAsphaltColor(hex: number): number {
   const g = (hex >> 8) & 255
   const b = hex & 255
   const avg = (r + g + b) / 3
-  // Spodní / horní clamp do „viditelného“ charcoal — ne černá díra
-  if (avg > 120) return 0x6a6e76
+  // Jen spodní clamp — světlý městský asfalt musí zůstat světlý (dřív >120 → charcoal)
   if (avg < 70) return 0x5c6068
   return hex
+}
+
+/**
+ * Noční město: unlit světlý asfalt.
+ * Standard + ACES + slabý moon light = šedá kaše; Basic drží čitelnost silnice vs terén vs auto.
+ */
+export function matCityRoad(color: number = 0x6a707c): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    color,
+    map: asphaltDetailMap(),
+    fog: true,
+    side: THREE.DoubleSide,
+  })
 }
 
 /**
@@ -184,6 +196,23 @@ export function matLambert(
     metalness: bright ? 0.08 : 0.03,
     envMapIntensity: bright ? 0.55 : 0.35,
     flatShading: opts.flat ?? false,
+  })
+}
+
+/** Vodorovné pruhy na asfaltu — lit (ne unlit decal). */
+export function matRoadMark(color: number): THREE.MeshStandardMaterial {
+  const warm = ((color >> 16) & 255) > 200 && ((color >> 8) & 255) > 160
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.72,
+    metalness: 0.04,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: warm ? 0.32 : 0.12,
+    envMapIntensity: 0.45,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+    depthWrite: false,
   })
 }
 
@@ -314,12 +343,13 @@ function richGroundTexture(
 /** Země podle světa — každá mapa jiný podklad (ne stejná „vodní deska“). */
 export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTexture {
   if (world === 'city' || trackId === 'city') {
-    const t = richGroundTexture('ground-city-v6', '#16161e', '#2a2a34', '#0c0c12', false)
-    t.repeat.set(28, 28)
+    // Tmavý terén s teplými/studenými fleky — oddělený od světlé silnice
+    const t = richGroundTexture('ground-city-v9', '#04050a', '#12161e', '#1c140e', false)
+    t.repeat.set(20, 20)
     return t
   }
   if (world === 'rally' || trackId === 'turini') {
-    const t = richGroundTexture('ground-rally-v6', '#4a3a28', '#6a5a3a', '#2a1c10', false)
+    const t = richGroundTexture('ground-rally-v7', '#6a5a40', '#8a7850', '#4a3a28', false)
     t.repeat.set(40, 40)
     return t
   }
@@ -350,7 +380,8 @@ export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTextu
   }
   // town
   if (trackId === 'hruby') {
-    const t = richGroundTexture('ground-hruby-v6', '#3a5a2c', '#5a7a38', '#2a3a1c', true)
+    // Bez „modrozeleného“ jezera na kruháči — suchá louka
+    const t = richGroundTexture('ground-hruby-v7', '#4a5a34', '#6a6a40', '#3a4028', false)
     t.repeat.set(44, 44)
     return t
   }
@@ -359,24 +390,24 @@ export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTextu
     t.repeat.set(30, 30)
     return t
   }
-  // Námko — prašná náves, ne lesní jezero
-  const t = richGroundTexture('ground-namko-v6', '#4a4a38', '#6a6a4a', '#3a3828', false)
+  // Námko — teplá prašná náves (ne šedomodrá „voda“)
+  const t = richGroundTexture('ground-namko-v7', '#5a4e38', '#7a6a48', '#3a3224', false)
   t.repeat.set(32, 32)
   return t
 }
 
-/** Matný terén — bez env lesku (= vypadá jako voda). */
+/**
+ * Matný terén — Basic + fog vypnutý, bez mapy.
+ * FogExp2 i canvas-mapa na velkých flat meshích na Námku → navy void (pixelově ověřeno).
+ */
 export function matGround(
   color: number,
   opts: { map?: THREE.Texture } = {},
-): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
+): THREE.MeshBasicMaterial {
+  void opts
+  return new THREE.MeshBasicMaterial({
     color,
-    map: opts.map,
-    roughness: 1,
-    metalness: 0,
-    envMapIntensity: 0,
-    flatShading: false,
+    fog: false,
   })
 }
 

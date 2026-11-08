@@ -27,7 +27,7 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
   throttle: ['ArrowUp', null],
   brake: ['ArrowDown', null],
   push: ['ShiftLeft', 'ShiftRight'],
-  tab: ['Tab', null],
+  tab: ['Tab', 'AltLeft'], // AltRight drží Input.tab hardcoded
   shiftUp: ['KeyE', null],
   shiftDown: ['KeyQ', null],
   clutch: ['ControlLeft', 'ControlRight'],
