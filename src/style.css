@@ -2748,37 +2748,38 @@ summary:focus-visible {
     min-height: 200px;
   }
 
-  /* Telefon: Trať|Peklostroj nahoře; Multi | Jet (větší střed) | Join */
+  /* Telefon: 2 nahoře | Jet přes střed | 2 dole — stejná výška dlaždic jako dřív */
   .gta-tiles-setup {
-    grid-template-columns: 1fr 1.35fr 1.35fr 1fr;
-    grid-template-rows: auto minmax(180px, 30vh);
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
     grid-template-areas:
-      'track track vehicle vehicle'
-      'multi jet jet join';
+      'track vehicle'
+      'jet jet'
+      'multi join';
   }
 
   .gta-tiles-setup .gta-tile-setup:nth-child(1) {
     grid-area: track;
-    min-height: 100px;
   }
 
   .gta-tiles-setup .gta-tile-setup:nth-child(2) {
     grid-area: vehicle;
-    min-height: 100px;
   }
 
   .gta-tiles-setup .gta-tile-action:nth-child(3) {
     grid-area: jet;
-    min-height: 180px;
   }
 
   .gta-tiles-setup .gta-tile-action:nth-child(4) {
     grid-area: multi;
-    min-height: 120px;
   }
 
   .gta-tiles-setup .gta-tile-action:nth-child(5) {
     grid-area: join;
+  }
+
+  .gta-tiles-setup .gta-tile-setup,
+  .gta-tiles-setup .gta-tile-action {
     min-height: 120px;
   }
 }
