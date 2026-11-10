@@ -102,7 +102,4 @@ npm run build:pages    # → site/ (hub + archivy)
 
 ---
 
-Studentský projekt. Hra obsahuje vulgární výrazy (vědomá estetika).  
-**Klec GP** — značka Filipa Khunta.
-
-Noční neon. Rovinky. Smyk.
+Projekt z nudy. Hra obsahuje vulgární výrazy (vědomá estetika).  
