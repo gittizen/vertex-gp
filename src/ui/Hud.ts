@@ -52,10 +52,13 @@ export class Hud {
   private onlineRace = false
   private mirrorFrame = false
   private mirrorEl: HTMLElement | null = null
+  /** Mimo #hud (zoom/stacking) — floating pill jako mute/lang. */
+  private pauseFab: HTMLButtonElement | null = null
 
   constructor(root: HTMLElement, overlay: HTMLElement) {
     this.root = root
     this.overlay = overlay
+    this.ensurePauseFab()
     // pointerdown — spolehlivější než click (overlay se přepisuje každý frame při změně key).
     this.overlay.addEventListener(
       'pointerdown',
@@ -92,26 +95,44 @@ export class Hud {
           this.onResumeRequest?.()
           return
         }
-        if (el.id === 'btn-hud-pause') {
-          e.preventDefault()
-          e.stopPropagation()
-          this.onPauseRequest?.()
-        }
       },
       { capture: true },
     )
-    // Pause FAB je v #hud (ne overlay) — pointerdown na root
-    this.root.addEventListener(
+  }
+
+  private ensurePauseFab(): void {
+    if (this.pauseFab?.isConnected) return
+    const host = document.getElementById('app') ?? document.body
+    let btn = document.getElementById('btn-hud-pause') as HTMLButtonElement | null
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.type = 'button'
+      btn.id = 'btn-hud-pause'
+      btn.className = 'hud-pause-toggle'
+      btn.setAttribute('aria-label', t('hud.pause'))
+      btn.innerHTML = `<span class="hud-pause-toggle-label">${t('hud.pause')}</span>`
+      host.appendChild(btn)
+    }
+    this.pauseFab = btn
+    this.pauseFab.hidden = true
+    this.pauseFab.addEventListener(
       'pointerdown',
       (e) => {
-        const el = (e.target as HTMLElement | null)?.closest?.('#btn-hud-pause')
-        if (!el) return
         e.preventDefault()
         e.stopPropagation()
         this.onPauseRequest?.()
       },
       { capture: true },
     )
+  }
+
+  private setPauseFabVisible(on: boolean): void {
+    this.ensurePauseFab()
+    if (!this.pauseFab) return
+    this.pauseFab.hidden = !on
+    const label = this.pauseFab.querySelector('.hud-pause-toggle-label')
+    if (label) label.textContent = t('hud.pause')
+    this.pauseFab.setAttribute('aria-label', t('hud.pause'))
   }
 
   private shareText = ''
@@ -229,6 +250,7 @@ export class Hud {
   ): void {
     void camera
     if (!showHud) {
+      this.setPauseFabVisible(false)
       this.root.querySelectorAll(':not(.hud-mirror)').forEach((n) => n.remove())
       // mirror frame element keep if present
       const keep = this.mirrorEl
@@ -256,6 +278,8 @@ export class Hud {
       this.setMirrorFrame(false)
       return
     }
+
+    this.setPauseFabVisible(true)
 
     const loopRace = !race.isSandbox && !race.isStage
     if (
@@ -375,7 +399,6 @@ export class Hud {
     this.root.innerHTML = `
       <div class="hud-fps" data-h="fps" aria-hidden="true">— FPS</div>
       <div class="hud-immortal" data-h="immortal" hidden title="${t('hud.immortal')}" aria-label="${t('hud.immortal')}">👻</div>
-      <button type="button" class="hud-pause-btn" id="btn-hud-pause" aria-label="${t('hud.pause')}">${t('hud.pause')}</button>
       <div class="hud-bottom">
         <div class="hud-speed-row">
           <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
@@ -388,6 +411,7 @@ export class Hud {
       </div>
       <div class="hud-boost-flash" aria-hidden="true"></div>
     `
+    this.setPauseFabVisible(true)
     if (keepMirror) {
       this.root.appendChild(keepMirror)
       keepMirror.classList.toggle('visible', this.mirrorFrame)

@@ -372,34 +372,40 @@ html.portrait-blocked #app {
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.65));
 }
 
-.hud-pause-btn {
-  pointer-events: auto;
-  position: absolute;
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  /* Nad #mobile-controls (z-index 15), ať jde klepnout přes tap vrstvu */
-  z-index: 50;
+/* Floating pauza — stejný pill styl jako mute/lang, mimo #hud (zoom/tap) */
+.hud-pause-toggle {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(22px, env(safe-area-inset-right));
+  z-index: 60;
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
-  min-width: 52px;
-  min-height: 44px;
-  padding: 8px 14px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #eef3f8;
-  background: rgba(8, 12, 18, 0.62);
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(10, 14, 22, 0.72);
   backdrop-filter: blur(8px);
+  pointer-events: auto;
+  color: #eef3f8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  min-height: 36px;
+  cursor: pointer;
   touch-action: manipulation;
   -webkit-touch-callout: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.hud-pause-btn:active {
+.hud-pause-toggle:active {
   filter: brightness(1.15);
+}
+
+.hud-pause-toggle[hidden] {
+  display: none !important;
 }
 
 .pause-actions {
@@ -2742,26 +2748,37 @@ summary:focus-visible {
     min-height: 200px;
   }
 
+  /* Telefon: Trať|Peklostroj nahoře; Multi | Jet (větší střed) | Join */
   .gta-tiles-setup {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto;
+    grid-template-columns: 1fr 1.35fr 1.35fr 1fr;
+    grid-template-rows: auto minmax(180px, 30vh);
+    grid-template-areas:
+      'track track vehicle vehicle'
+      'multi jet jet join';
   }
 
-  .gta-tiles-setup .gta-tile-setup:nth-child(1),
-  .gta-tiles-setup .gta-tile-setup:nth-child(2),
-  .gta-tiles-setup .gta-tile-action:nth-child(3),
-  .gta-tiles-setup .gta-tile-action:nth-child(4),
+  .gta-tiles-setup .gta-tile-setup:nth-child(1) {
+    grid-area: track;
+    min-height: 100px;
+  }
+
+  .gta-tiles-setup .gta-tile-setup:nth-child(2) {
+    grid-area: vehicle;
+    min-height: 100px;
+  }
+
+  .gta-tiles-setup .gta-tile-action:nth-child(3) {
+    grid-area: jet;
+    min-height: 180px;
+  }
+
+  .gta-tiles-setup .gta-tile-action:nth-child(4) {
+    grid-area: multi;
+    min-height: 120px;
+  }
+
   .gta-tiles-setup .gta-tile-action:nth-child(5) {
-    grid-column: auto;
-    grid-row: auto;
-  }
-
-  .gta-tiles-setup .gta-tile-action:nth-child(5) {
-    grid-column: 1 / -1;
-  }
-
-  .gta-tiles-setup .gta-tile-setup,
-  .gta-tiles-setup .gta-tile-action {
+    grid-area: join;
     min-height: 120px;
   }
 }
