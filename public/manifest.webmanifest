@@ -1,0 +1,20 @@
+{
+  "name": "KlecMania",
+  "short_name": "KlecMania",
+  "description": "Prohlížečová závodní hra ze světa Klecan — solo, freestyle, online.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0c10",
+  "theme_color": "#0a0c10",
+  "lang": "cs",
+  "icons": [
+    {
+      "src": "/brand/klec-gp-logo-skate.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

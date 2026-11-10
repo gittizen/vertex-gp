@@ -30,9 +30,10 @@ function trick(
   spin: SpinStyle,
 ): FreestyleTrickDef {
   const d = Math.max(1, Math.min(10, difficulty))
+  // 1–6 s podle obtížnosti; body = délka triku (1 desetina)
   const dur = Math.round((1 + ((d - 1) / 9) * 5) * 10) / 10
   const peak = 1.6 + d * 0.28
-  const points = Math.round(8 + d * d * 1.2)
+  const points = Math.round(dur * 10) / 10
   return { id, letter, nameCs, nameEn, difficulty: d, dur, peak, points, spin }
 }
 

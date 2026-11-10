@@ -232,13 +232,21 @@ export function matPaint(
   })
 }
 
-export function matAccent(color: number, intensity = 0.22): THREE.MeshStandardMaterial {
+export function matAccent(
+  color: number,
+  intensity = 0.22,
+  opacity = 1,
+): THREE.MeshStandardMaterial {
+  const transparent = opacity < 0.999
   return new THREE.MeshStandardMaterial({
     color,
     emissive: new THREE.Color(color),
     emissiveIntensity: intensity,
     metalness: 0.15,
     roughness: 0.5,
+    transparent,
+    opacity,
+    depthWrite: !transparent,
   })
 }
 

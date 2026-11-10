@@ -29,20 +29,62 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
   invertSteer: false,
   camFollow: 'normal',
   stabilityAssist: false,
-  driftMode: false,
+  /** 0.7: Space = e-brake u aut/moto (ne skate/kolo). */
+  driftMode: true,
   hudScale: 1,
-  mobileScheme: 'pads',
-  allowPortraitRotation: false,
+  /** Default telefon: ťukání stran. */
+  mobileScheme: 'tap',
+  /** Otáčení volné — landscape doporučený, portrait OK (Messenger/in-app). */
+  allowPortraitRotation: true,
 }
 
 const CAM_FOLLOWS: CamFollow[] = ['soft', 'normal', 'tight']
-export const MOBILE_DRIVE_SCHEMES: MobileDriveScheme[] = ['pads', 'joystick', 'tilt', 'tap']
+/** Pořadí v UI: ťukání → náklon → volant → joystick. */
+export const MOBILE_DRIVE_SCHEMES: MobileDriveScheme[] = ['tap', 'tilt', 'pads', 'joystick']
 
 function migrateMobileScheme(raw: unknown): MobileDriveScheme {
+  // Jednorázově: staré defaulty → tap
+  const flag = `${GAME_STORAGE_NS}.v07-mobile-tap-default`
+  if (!localStorage.getItem(flag)) {
+    try {
+      localStorage.setItem(flag, '1')
+    } catch {
+      /* ignore */
+    }
+    return 'tap'
+  }
   if (typeof raw === 'string' && MOBILE_DRIVE_SCHEMES.includes(raw as MobileDriveScheme)) {
     return raw as MobileDriveScheme
   }
   return DEFAULT_CONTROL_FEEL.mobileScheme
+}
+
+/** Jednorázově zapni Space e-brake (dřív default false → „nefunguje drift“). */
+function migrateDriftMode(raw: unknown): boolean {
+  const flag = `${GAME_STORAGE_NS}.v07-drift-on`
+  if (!localStorage.getItem(flag)) {
+    try {
+      localStorage.setItem(flag, '1')
+    } catch {
+      /* ignore */
+    }
+    return true
+  }
+  return typeof raw === 'boolean' ? raw : DEFAULT_CONTROL_FEEL.driftMode
+}
+
+/** Jednorázově povol portrait (dřív default false = jen landscape brána). */
+function migrateAllowPortrait(raw: unknown): boolean {
+  const flag = `${GAME_STORAGE_NS}.v07-portrait-on`
+  if (!localStorage.getItem(flag)) {
+    try {
+      localStorage.setItem(flag, '1')
+    } catch {
+      /* ignore */
+    }
+    return true
+  }
+  return typeof raw === 'boolean' ? raw : DEFAULT_CONTROL_FEEL.allowPortraitRotation
 }
 
 export function loadControlFeel(): ControlFeelValues {
@@ -65,10 +107,10 @@ export function loadControlFeel(): ControlFeelValues {
         ? (p.camFollow as CamFollow)
         : DEFAULT_CONTROL_FEEL.camFollow,
       stabilityAssist: !!p.stabilityAssist,
-      driftMode: !!p.driftMode,
+      driftMode: migrateDriftMode(p.driftMode),
       hudScale,
       mobileScheme: migrateMobileScheme(p.mobileScheme),
-      allowPortraitRotation: !!p.allowPortraitRotation,
+      allowPortraitRotation: migrateAllowPortrait(p.allowPortraitRotation),
     }
   } catch {
     return { ...DEFAULT_CONTROL_FEEL }
@@ -85,9 +127,10 @@ export function camFollowRate(follow: CamFollow): number {
   return 8
 }
 
-export function applyHudScale(scale: number): void {
+export function applyHudScale(scale: number, mobileUi = 1): void {
   const el = document.getElementById('hud')
   if (!el) return
-  const s = Math.max(0.75, Math.min(1.35, scale))
+  const base = Math.max(0.75, Math.min(1.35, scale))
+  const s = Math.max(0.5, Math.min(1.35, base * mobileUi))
   el.style.setProperty('--hud-scale', String(s))
 }

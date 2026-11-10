@@ -12,11 +12,13 @@ import { DEFAULT_PLAYER_TUNING, tuningToPhysics } from '../tuning/PlayerTuning'
 export const CATALOG_MAX_KMH: Record<VehicleKind, number> = {
   street: 320,
   moto: 358,
+  harley: 322, // −10 % vs moto
+  kroska: 286, // −20 % vs moto
   formula: 435,
   monster: 243,
   truck: 194,
   tank: 175,
-  limo: 305,
+  limo: 288, // −10 % vs street
   skate: 77,
   bike: 102,
   scooter: 2,
@@ -38,6 +40,8 @@ const SKATE_DF = REF_DF * 0.25
 
 const STREET_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.street)
 const MOTO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.moto)
+const HARLEY_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.harley)
+const KROSKA_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.kroska)
 const FORMULA_CAP = capForTarget(FORMULA_DF, CATALOG_MAX_KMH.formula)
 const MONSTER_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.monster)
 const TRUCK_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.truck)
@@ -51,6 +55,8 @@ export function speedCapMultFor(kind: VehicleKind): number {
   if (kind === 'skate') return SKATE_CAP
   if (kind === 'bike') return BIKE_CAP
   if (kind === 'moto') return MOTO_CAP
+  if (kind === 'harley') return HARLEY_CAP
+  if (kind === 'kroska') return KROSKA_CAP
   if (kind === 'formula') return FORMULA_CAP
   if (kind === 'monster') return MONSTER_CAP
   if (kind === 'truck') return TRUCK_CAP
@@ -79,29 +85,11 @@ export function aiSpeedMultForVehicle(
 }
 
 function streetBase(playerTuning?: PlayerTuningValues): ReturnType<typeof tuningToPhysics> {
-  return playerTuning
-    ? tuningToPhysics(playerTuning)
-    : tuningToPhysics({
-        power: 25,
-        brakes: 25,
-        downforce: 15,
-        grip: 35,
-        steer: 30,
-        lightness: 25,
-      })
+  return tuningToPhysics(playerTuning ?? DEFAULT_PLAYER_TUNING)
 }
 
 function monsterBase(playerTuning?: PlayerTuningValues): ReturnType<typeof tuningToPhysics> {
-  return playerTuning
-    ? tuningToPhysics(playerTuning)
-    : tuningToPhysics({
-        power: 48,
-        brakes: 22,
-        downforce: 6,
-        grip: 30,
-        steer: 24,
-        lightness: 12,
-      })
+  return tuningToPhysics(playerTuning ?? DEFAULT_PLAYER_TUNING)
 }
 
 /** Herní fyzika podle typu vozu. */
@@ -123,16 +111,7 @@ export function profileForKind(
   }
 
   if (kind === 'skate' || kind === 'bike') {
-    const base = playerTuning
-      ? tuningToPhysics(playerTuning)
-      : tuningToPhysics({
-          power: 22,
-          brakes: 22,
-          downforce: 5,
-          grip: 30,
-          steer: 40,
-          lightness: 50,
-        })
+    const base = tuningToPhysics(playerTuning ?? DEFAULT_PLAYER_TUNING)
     const tempo = kind === 'bike' ? 1.3 * 1.2 : 1.3
     return {
       ...base,
@@ -158,17 +137,38 @@ export function profileForKind(
     }
   }
 
+  if (kind === 'harley') {
+    const base = streetBase(playerTuning)
+    // Fat-rear cruiser: max jako dřív (−10 % vs moto), řízení +5 % vs moto
+    return {
+      ...base,
+      power: base.power * 0.95 * 0.9,
+      downforce: base.downforce * 0.7,
+      grip: base.grip * 1.05,
+      drag: 0.26,
+      mass: 1.05,
+      speedCapMult: HARLEY_CAP,
+      steerResp: 1.05,
+    }
+  }
+
+  if (kind === 'kroska') {
+    const base = streetBase(playerTuning)
+    // Cross: −20 % max vs silniční, +20 % akcelerace
+    return {
+      ...base,
+      power: base.power * 0.95 * 1.2,
+      downforce: base.downforce * 0.65,
+      grip: base.grip * 1.08,
+      drag: 0.25,
+      mass: 0.95,
+      speedCapMult: KROSKA_CAP,
+      steerResp: 1.08,
+    }
+  }
+
   if (kind === 'formula') {
-    const base = playerTuning
-      ? tuningToPhysics(playerTuning)
-      : tuningToPhysics({
-          power: 42,
-          brakes: 38,
-          downforce: 45,
-          grip: 48,
-          steer: 42,
-          lightness: 40,
-        })
+    const base = tuningToPhysics(playerTuning ?? DEFAULT_PLAYER_TUNING)
     return {
       ...base,
       power: base.power * 1.15,
@@ -192,11 +192,12 @@ export function profileForKind(
       drag: 0.32,
       mass: 1.45,
       speedCapMult: MONSTER_CAP,
-      steerResp: 0.78,
+      // +50 % dříve, teď ještě +30 %
+      steerResp: 0.78 * 1.5 * 1.3,
     }
   }
 
-  // Kamion: −20 % oproti monsteru, stejné řízení
+  // Kamion: −20 % oproti monsteru, stejná rodina řízení
   if (kind === 'truck') {
     const base = monsterBase(playerTuning)
     return {
@@ -208,11 +209,11 @@ export function profileForKind(
       drag: 0.34,
       mass: 1.55,
       speedCapMult: TRUCK_CAP,
-      steerResp: 0.78,
+      steerResp: 0.78 * 1.5 * 1.3 * 1.1, // +10 % steer
     }
   }
 
-  // Tank: −10 % vs kamion, +30 % citlivost řízení
+  // Tank: −10 % vs kamion; steer +10 % navíc
   if (kind === 'tank') {
     const base = monsterBase(playerTuning)
     return {
@@ -224,16 +225,16 @@ export function profileForKind(
       drag: 0.36,
       mass: 1.7,
       speedCapMult: TANK_CAP,
-      steerResp: 0.78 * 1.3,
+      steerResp: 0.78 * 1.3 * 1.5 * 1.3 * 1.1,
     }
   }
 
-  // Limuzína: −5 % vs auto
+  // Limuzína: −10 % vs auto
   if (kind === 'limo') {
     const base = streetBase(playerTuning)
     return {
       ...base,
-      power: base.power * 0.95 * 0.95,
+      power: base.power * 0.95 * 0.9,
       downforce: base.downforce * 0.7,
       grip: base.grip * 1.05,
       drag: 0.26,
@@ -303,6 +304,30 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       steerResp: 0.98,
     }
   }
+  if (kind === 'harley') {
+    return {
+      power: (46 + index * 1.8) * 0.9,
+      brakeForce: 76,
+      downforce: 0.75,
+      grip: 1.12 + index * 0.025,
+      drag: 0.26,
+      mass: 1.05,
+      speedCapMult: HARLEY_CAP,
+      steerResp: 1.05,
+    }
+  }
+  if (kind === 'kroska') {
+    return {
+      power: (46 + index * 1.8) * 1.2,
+      brakeForce: 74,
+      downforce: 0.7,
+      grip: 1.14 + index * 0.025,
+      drag: 0.25,
+      mass: 0.95,
+      speedCapMult: KROSKA_CAP,
+      steerResp: 1.05,
+    }
+  }
   if (kind === 'formula') {
     return {
       power: 62 + index * 1.5,
@@ -324,7 +349,7 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       drag: 0.3,
       mass: 1.42,
       speedCapMult: MONSTER_CAP,
-      steerResp: 0.8,
+      steerResp: 0.8 * 1.5 * 1.3,
     }
   }
   if (kind === 'truck') {
@@ -336,7 +361,7 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       drag: 0.34,
       mass: 1.52,
       speedCapMult: TRUCK_CAP,
-      steerResp: 0.8,
+      steerResp: 0.8 * 1.5 * 1.3 * 1.1,
     }
   }
   if (kind === 'tank') {
@@ -348,12 +373,12 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       drag: 0.36,
       mass: 1.68,
       speedCapMult: TANK_CAP,
-      steerResp: 0.8 * 1.3,
+      steerResp: 0.8 * 1.3 * 1.5 * 1.3 * 1.1,
     }
   }
   if (kind === 'limo') {
     return {
-      power: (46 + index * 1.8) * 0.95,
+      power: (46 + index * 1.8) * 0.9,
       brakeForce: 76,
       downforce: 0.75,
       grip: 1.12 + index * 0.025,

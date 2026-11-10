@@ -1,9 +1,9 @@
 import { assetUrl } from '../ui/assetUrl'
 
-export type FogLevel = 'low' | 'normal' | 'high'
+type FogLevel = 'low' | 'normal' | 'high'
 export type DecorLevel = 'off' | 'simple' | 'rich'
 /** Intenzita světel ve scéně (+ nádech menu). */
-export type LightLevel = 'dim' | 'normal' | 'bright' | 'night'
+type LightLevel = 'dim' | 'normal' | 'bright' | 'night'
 /** Barevný styl UI — stejné rozložení, jiný nádech. */
 export type MenuTone =
   | 'klecany'
@@ -167,7 +167,7 @@ function calendarArtSuffix(pack: CalendarPack): string {
   return `calendar-${pack}`
 }
 
-/** Pozadí / tile art podle stylu menu — každý slot má vlastní obrázek. */
+/** Pozadí / tile art podle stylu menu — každý slot má vlastní obrázek (žádné duplicity). */
 export function menuArtForTone(
   tone: MenuTone,
   calendarPack: CalendarPack = DEFAULT_ATMOSPHERE.calendarPack,
@@ -176,9 +176,9 @@ export function menuArtForTone(
   race: string
   garage: string
   tracks: string
-  /** Ozubené kolo — dlaždice Nastavení */
+  /** Ozubené kolo — dlaždice Nastavení (sdílené, aby sedělo „strojařsky“) */
   settings: string
-  /** Řebříček obecný — dlaždice Žebříček */
+  /** Obecný žebříček / podium — dlaždice Žebříček */
   board: string
 } {
   const key = tone === 'calendar' ? calendarArtSuffix(calendarPack) : tone
@@ -187,8 +187,8 @@ export function menuArtForTone(
     race: assetUrl(`menu/race-${key}.jpg`),
     garage: assetUrl(`menu/garage-${key}.jpg`),
     tracks: assetUrl(`menu/tracks-${key}.jpg`),
-    settings: assetUrl(`menu/settings-${key}.jpg`),
-    board: assetUrl(`menu/board-${key}.jpg`),
+    settings: assetUrl('menu/settings-gear.jpg'),
+    board: assetUrl('menu/board-podium.jpg'),
   }
 }
 

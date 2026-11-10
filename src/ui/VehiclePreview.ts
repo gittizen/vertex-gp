@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { createVehicleMesh } from '../vehicle/VehicleMeshes'
+import { DEFAULT_VEHICLE_LOOK, type VehicleLook } from '../vehicle/VehicleLook'
 import type { VehicleKind } from '../track/TrackDefs'
+import { isMobileClient, mobileCamDist } from '../input/MobileLook'
 
 /** Mini Three.js scéna vozidla v menu — otáčení, barva, auto-spin. */
 export class VehiclePreview {
@@ -14,6 +16,7 @@ export class VehiclePreview {
   private pitch = 0.22
   private autoSpin = true
   private dragging = false
+  private pending: { id: number; x: number; y: number } | null = null
   private lastX = 0
   private lastY = 0
   private raf = 0
@@ -33,7 +36,8 @@ export class VehiclePreview {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
     this.renderer.setClearColor(0x000000, 0)
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 40)
-    this.camera.position.set(0, 1.4, 5.2)
+    const z = 5.2 * mobileCamDist()
+    this.camera.position.set(0, 1.4 * Math.sqrt(mobileCamDist()), z)
     this.camera.lookAt(0, 0.55, 0)
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x334455, 1.15)
@@ -61,14 +65,39 @@ export class VehiclePreview {
 
     this.scene.add(this.root)
 
+    // Mobil: vertikální scroll má přednost — drag modelu jen při jasném vodorovném gestu
+    const mobile = isMobileClient()
+    if (mobile) this.canvas.style.touchAction = 'pan-y'
+
     this.onPointerDown = (e) => {
-      this.dragging = true
-      this.autoSpin = false
+      this.pending = { id: e.pointerId, x: e.clientX, y: e.clientY }
       this.lastX = e.clientX
       this.lastY = e.clientY
-      this.canvas.setPointerCapture(e.pointerId)
+      if (!mobile) {
+        this.dragging = true
+        this.autoSpin = false
+        this.canvas.setPointerCapture(e.pointerId)
+      }
     }
     this.onPointerMove = (e) => {
+      if (this.pending && e.pointerId === this.pending.id && !this.dragging) {
+        const dx = e.clientX - this.pending.x
+        const dy = e.clientY - this.pending.y
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return
+        // Vertikální pohyb → nech scroll stránky
+        if (Math.abs(dy) >= Math.abs(dx) * 0.85) {
+          this.pending = null
+          return
+        }
+        this.dragging = true
+        this.autoSpin = false
+        this.pending = null
+        try {
+          this.canvas.setPointerCapture(e.pointerId)
+        } catch {
+          /* ignore */
+        }
+      }
       if (!this.dragging) return
       const dx = e.clientX - this.lastX
       const dy = e.clientY - this.lastY
@@ -78,6 +107,7 @@ export class VehiclePreview {
       this.pitch = Math.max(-0.35, Math.min(0.55, this.pitch + dy * 0.008))
     }
     this.onPointerUp = (e) => {
+      this.pending = null
       this.dragging = false
       try {
         this.canvas.releasePointerCapture(e.pointerId)
@@ -98,23 +128,35 @@ export class VehiclePreview {
     this.tick()
   }
 
-  setVehicle(kind: VehicleKind, color: number, neon = 0xff2bd6): void {
+  setVehicle(kind: VehicleKind, look: VehicleLook | number, neon = DEFAULT_VEHICLE_LOOK.neon): void {
     if (this.mesh) {
       this.root.remove(this.mesh)
       disposeGroup(this.mesh)
       this.mesh = null
     }
-    this.mesh = createVehicleMesh(kind, color, neon)
-    // Centrum a měřítko podle bounding boxu
+    const full: VehicleLook =
+      typeof look === 'number'
+        ? { ...DEFAULT_VEHICLE_LOOK, body: look, neon }
+        : look
+    this.mesh = createVehicleMesh(kind, full.body, full.neon)
     const box = new THREE.Box3().setFromObject(this.mesh)
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
     this.mesh.position.sub(center)
     this.mesh.position.y += size.y * 0.5
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
-    const scale = 2.35 / maxDim
+    const scale = 2.35 / maxDim / mobileCamDist()
     this.root.scale.setScalar(scale)
     this.root.add(this.mesh)
+    this.applyLook(full)
+  }
+
+  applyLook(look: VehicleLook): void {
+    this.setColor(look.body)
+    this.setNeon(look.neon)
+    this.setWheelColor(look.wheel)
+    this.setRiderColor(look.rider)
+    this.setHelmColor(look.helm)
   }
 
   setColor(color: number): void {
@@ -124,14 +166,7 @@ export class VehiclePreview {
       if (!(obj instanceof THREE.Mesh) || !obj.userData.bodyPaint) return
       obj.visible = !none
       if (none) return
-      const mat = obj.material
-      if (
-        mat instanceof THREE.MeshLambertMaterial ||
-        mat instanceof THREE.MeshPhongMaterial ||
-        mat instanceof THREE.MeshBasicMaterial
-      ) {
-        mat.color.setHex(color)
-      }
+      this.tintMaterial(obj.material, color, true)
     })
   }
 
@@ -139,40 +174,60 @@ export class VehiclePreview {
     if (!this.mesh) return
     const none = color < 0
     this.mesh.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return
-      if (obj.userData.neonGlow) {
-        obj.visible = !none
-        if (none) return
-        const mat = obj.material
-        if (
-          mat instanceof THREE.MeshLambertMaterial ||
-          mat instanceof THREE.MeshPhongMaterial ||
-          mat instanceof THREE.MeshBasicMaterial
-        ) {
-          mat.color.setHex(color)
-          if ('emissive' in mat) {
-            ;(mat as THREE.MeshLambertMaterial).emissive.setHex(color)
-            ;(mat as THREE.MeshLambertMaterial).emissiveIntensity = 0.7
-          }
-        }
-        return
-      }
-      if (obj.userData.wheelPaint) {
-        const mat = obj.material
-        if (
-          mat instanceof THREE.MeshLambertMaterial ||
-          mat instanceof THREE.MeshPhongMaterial ||
-          mat instanceof THREE.MeshBasicMaterial
-        ) {
-          const c = none ? 0x1a1a1a : color
-          mat.color.setHex(c)
-          if ('emissive' in mat) {
-            ;(mat as THREE.MeshLambertMaterial).emissive.setHex(none ? 0x000000 : c)
-            ;(mat as THREE.MeshLambertMaterial).emissiveIntensity = none ? 0 : 0.55
-          }
-        }
-      }
+      if (!(obj instanceof THREE.Mesh) || !obj.userData.neonGlow) return
+      obj.visible = !none
+      if (none) return
+      this.tintMaterial(obj.material, color, true, 0.85)
     })
+  }
+
+  setWheelColor(color: number): void {
+    this.tintByFlag('wheelPaint', color, 0x1a1a1a)
+  }
+
+  setRiderColor(color: number): void {
+    this.tintByFlag('riderPaint', color, 0x1c2430)
+  }
+
+  setHelmColor(color: number): void {
+    this.tintByFlag('helmPaint', color, 0x2a2a32)
+  }
+
+  private tintByFlag(flag: string, color: number, noneHex: number): void {
+    if (!this.mesh) return
+    const none = color < 0
+    const hex = none ? noneHex : color
+    this.mesh.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh) || !obj.userData[flag]) return
+      this.tintMaterial(obj.material, hex, !none)
+    })
+  }
+
+  private tintMaterial(
+    mat: THREE.Material | THREE.Material[],
+    color: number,
+    withEmissive: boolean,
+    emissiveIntensity?: number,
+  ): void {
+    const list = Array.isArray(mat) ? mat : [mat]
+    for (const m of list) {
+      if (
+        !(
+          m instanceof THREE.MeshStandardMaterial ||
+          m instanceof THREE.MeshLambertMaterial ||
+          m instanceof THREE.MeshPhongMaterial ||
+          m instanceof THREE.MeshBasicMaterial
+        )
+      ) {
+        continue
+      }
+      m.color.setHex(color)
+      if (withEmissive && 'emissive' in m) {
+        m.emissive.setHex(color)
+        if (emissiveIntensity !== undefined) m.emissiveIntensity = emissiveIntensity
+      }
+      m.needsUpdate = true
+    }
   }
 
   dispose(): void {
@@ -182,7 +237,11 @@ export class VehiclePreview {
     this.canvas.removeEventListener('pointermove', this.onPointerMove)
     this.canvas.removeEventListener('pointerup', this.onPointerUp)
     this.canvas.removeEventListener('pointercancel', this.onPointerUp)
-    if (this.mesh) disposeGroup(this.mesh)
+    if (this.mesh) {
+      this.root.remove(this.mesh)
+      disposeGroup(this.mesh)
+      this.mesh = null
+    }
     this.renderer.dispose()
   }
 

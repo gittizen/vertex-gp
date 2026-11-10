@@ -1,21 +1,21 @@
-# Klec GP / Vertex GP — verze
+# KlecMania / Klec GP / Vertex GP — verze
 
-**0.6** = současná produkce.  
-Níže je historie **od první hratelné verze nahoru** — u každé další je, *co se oproti předchozí změnilo*, co se přidalo a co se dlouho ladilo.  
-Staré tagy a archivy se nemažou.
+**0.7** = současná produkce (**KlecMania**).  
+Na hubu jsou karty **od nejnovější po nejstarší**. Níže v textu jde příběh **od 0.1 nahoru** — u každé další je, *co se oproti předchozí změnilo*, co se přidalo a co se dlouho ladilo.  
+Staré tagy a archivy se nemažou / nepřepisují.
 
 **Hub:** https://gittizen.github.io/vertex-gp/  
 **Složky:** [versions/](./versions/) · **Changelog:** [CHANGELOG.md](./CHANGELOG.md)  
-**Hrát teď:** https://klecgp.netlify.app/
+**Hrát teď:** https://klecmania.netlify.app/
 
 ---
 
-## Přehled (odkazová tabulka)
+## Přehled (nejnovější → nejstarší)
 
-| **0.1** | **0.2** | **0.3** | **0.4** | **0.5** | **0.6** *(teď)* |
-| --- | --- | --- | --- | --- | --- |
-| [Hrát](https://gittizen.github.io/vertex-gp/0.1/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) · [Netlify](https://klecgp.netlify.app/) |
-| Vertex GP · základ | Klec GP · identita | mobil + hosting | reálnější svět | AI tempo + demo | UX + zvuk |
+| **0.7** *(teď)* | **0.6** | **0.5** | **0.4** | **0.3** | **0.2** | **0.1** |
+| --- | --- | --- | --- | --- | --- | --- |
+| [Netlify](https://klecmania.netlify.app/) · [Pages](https://gittizen.github.io/vertex-gp/0.7/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.1/) |
+| **KlecMania** · drift Space | UX + zvuk | AI tempo + demo | reálnější svět | mobil + hosting | Klec GP · identita | Vertex GP · základ |
 
 ---
 
@@ -126,7 +126,7 @@ Staré tagy a archivy se nemažou.
 
 ---
 
-## 0.6 — UX menu, zvuk, landscape *(současná)*
+## 0.6 — UX menu, zvuk, landscape
 
 **Oproti 0.5:** méně tření před jízdou, srozumitelnější nastavení, jednotné panely, lepší audio a mobilní orientace.
 
@@ -139,7 +139,7 @@ Staré tagy a archivy se nemažou.
 - Landscape-first; portrait jen když ho zapneš v Ovládání
 - Lehčí karty tratí v seznamu (`~čas` / sandbox); lore vozu pod „Více…“
 - Tag cleanup: Kasárny bez „skate“, Plácek jen „sandbox“
-- Produkční URL: **klecgp.netlify.app** (starý Tourmaline host už neběží)
+- Produkční URL tehdy: **klecgp.netlify.app**
 
 **Co se řešilo**
 - Zpět dřív „ujížděl“ se scrollem — proto dock footer
@@ -148,6 +148,31 @@ Staré tagy a archivy se nemažou.
 - Sjednocení velikosti panelů (Zvuk vs Ovládání vs zbytek)
 
 **Shrnutí:** stejná hra pod kapotou, ale cesta *otevřít → jet* je kratší a menu působí uceleně.
+
+---
+
+## 0.7 — KlecMania *(současná)*
+
+**Oproti 0.6:** z **Klec GP** je **KlecMania** — stejné skate logo (růžová K/L, cyan C), nový feel řízení u aut a freestyle, čistší audio/entry a Tarantino tón Klecan.
+
+**Proč tahle verze**
+Hráč má poznat, že jde o *Mania* produkt (název, entry, atmosféra), ne jen o další UX patch. Drift a boost mají sedět na typ peklostroje: auto smýká, deska a kolo freestylují.
+
+**Co přibylo / se změnilo**
+- Rebrand UI / title / docs na **KlecMania** — **logo KCLC beze změny** (růžová + cyan graffiti)
+- **Space** = e-brake / drift brzda u normálních peklostrojů (default zapnuto); skate a kolo drift nemají
+- **Alt / Tab** sticky boost; u kola silnější šlapání (+~30 %) a čitelnější AI deska / triky
+- **Mute** přepínač ve stylu CZ/EN (ZVUK | TICH)
+- Klecany / entry: **Tarantino 60:30:10** (asfalt · krém · krev/hořčice) — Volvo garage art beze změny
+- Produkce: **klecmania.netlify.app**; hub karet od 0.7 dolů k 0.1
+
+**Co se řešilo**
+- Drift nesmí rozbít freestyle (Space u boardů = ne)
+- Boost / Alt nesmí zmizet při blur okna
+- Atmosféra menu vs. značka: Tarantino barvy v UI, logo zůstává „street“ pink/cyan
+- Release: nepřepisovat archivy 0.1–0.6, jen dohrát 0.7 + povídání
+
+**Shrnutí:** KlecMania je pojmenovaná, driftuje se mezerníkem, freestyle drží vlastní rytmus a produkce sedí na nové Netlify doméně.
 
 ---
 

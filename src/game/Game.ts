@@ -1,7 +1,11 @@
 import * as THREE from 'three'
 import { AiDriver } from '../ai/AiDriver'
 import { getDifficulty, type DifficultyDef, type DifficultyId } from '../ai/Difficulty'
-import { ingestFinishedRace, installLearnDebugApi } from '../ai/CommunityLearning'
+import {
+  ingestFinishedRace,
+  installLearnDebugApi,
+  syncCloudPaceModel,
+} from '../ai/CommunityLearning'
 import { installPaceDebugApi, recordPaceSample } from '../ai/PaceCalibration'
 import { CameraController } from '../camera/CameraController'
 import { RearViewMirror } from '../camera/RearViewMirror'
@@ -57,17 +61,34 @@ import {
   updateRotateGateCopy,
 } from '../input/OrientationLock'
 import { Input } from '../input/Input'
+import {
+  applyMobileLookCss,
+  installVisualViewportSync,
+  mobileCamDist,
+  mobileUiFactor,
+} from '../input/MobileLook'
 import { NetClient, roomLink, roomFromUrl, wsFromUrl, defaultWsUrl } from '../net/NetClient'
 import type { CarStateMsg, NetRoom } from '../net/protocol'
 import { RaceManager } from '../race/RaceManager'
 import { Track } from '../track/Track'
-import { getTrackDef, resolveTrackDef, TRACKS, type VehicleKind } from '../track/TrackDefs'
+import {
+  getTrackDef,
+  resolveTrackDef,
+  TRACKS,
+  VEHICLE_KINDS,
+  type VehicleKind,
+} from '../track/TrackDefs'
 import { type PlayerTuningValues, DEFAULT_PLAYER_TUNING } from '../tuning/PlayerTuning'
 import { onLocaleChange, t } from '../i18n/i18n'
 import { Entry } from '../ui/Entry'
 import { Hud } from '../ui/Hud'
 import { Menu, type MenuStartPayload } from '../ui/Menu'
 import { Vehicle, type DriverInfo } from '../vehicle/Vehicle'
+import {
+  aiVehicleLook,
+  DEFAULT_VEHICLE_LOOK,
+  type VehicleLook,
+} from '../vehicle/VehicleLook'
 import { aiProfileForKind, aiSpeedMultForVehicle, profileForKind } from '../vehicle/VehicleProfiles'
 import { placePoints } from '../freestyle/FreestyleTricks'
 import { submitRaceRecord } from '../freestyle/Records'
@@ -104,14 +125,16 @@ export class Game {
   private lastTrackId = TRACKS[0].id
   private lastVehicle: VehicleKind = 'street'
   private lastColor = PLAYER_COLORS[0]!
-  private lastNeon = 0x7a8fa8
+  private lastLook: VehicleLook = { ...DEFAULT_VEHICLE_LOOK, body: PLAYER_COLORS[0]! }
   private lastTuning: PlayerTuningValues = { ...DEFAULT_PLAYER_TUNING }
   private lastDifficulty: DifficultyDef = getDifficulty('normal')
   private multiplayer = false
   private isHost = false
   private localSlot = 0
-  private lastMpLaps = 2
+  private lastMpLaps = 3
   private mpRaceEnded = false
+  /** Salt pro AI barvy (nový každý solo závod). */
+  private aiLookSalt = (Math.random() * 1e9) | 0
   /** net playerId → vehicle index */
   private netSlots = new Map<string, number>()
   private remoteState = new Map<string, CarStateMsg>()
@@ -178,6 +201,17 @@ export class Game {
       if (this.multiplayer) this.leaveLobby()
       else this.openMenu()
     })
+    this.hud.setOnPauseRequest(() => {
+      if (this.mode !== 'race' || this.paused) return
+      if (this.race.phase === 'countdown' || this.race.phase === 'finished') {
+        this.openMenu()
+        return
+      }
+      this.enterPause()
+    })
+    this.hud.setOnResumeRequest(() => {
+      if (this.paused) this.resumeFromPause()
+    })
     this.hud.setOnRestartRequest(() => this.restartSoloSameRace({ sameTrack: true }))
     this.hud.setOnChampionshipNext(() => this.restartSoloSameRace({ sameTrack: false }))
     this.input.attachMobileUi(mobileEl)
@@ -236,11 +270,13 @@ export class Game {
         this.applyControlFeel()
       },
     })
+    applyMobileLookCss()
     this.applyControlFeel()
     startOrientationWatch({
       allowPortrait: this.controlFeel.allowPortraitRotation,
       onChange: () => this.onResize(),
     })
+    installVisualViewportSync(() => this.onResize())
     const syncRotateCopy = () =>
       updateRotateGateCopy(t('menu.rotateTitle'), t('menu.rotateBlurb'))
     syncRotateCopy()
@@ -249,9 +285,18 @@ export class Game {
     this.hud.setMirrorFrame(false)
     installPaceDebugApi()
     installLearnDebugApi()
+    void syncCloudPaceModel()
     this.installQaApi()
     window.addEventListener('pointerdown', unlock, { once: true })
     window.addEventListener('keydown', unlock, { once: true })
+    window.addEventListener('orientationchange', () => {
+      window.setTimeout(() => {
+        this.onResize()
+        this.input.recenterTilt()
+        this.syncMobileBoostUi()
+        this.syncMobileFsPad()
+      }, 180)
+    })
 
     this.track = new Track(this.scene, resolveTrackDef(getTrackDef(TRACKS[0].id), this.raceSettings.reverse))
     this.track.setDecorQuality(this.atmosphere.decor)
@@ -304,7 +349,10 @@ export class Game {
         trackId: TRACKS[0].id,
         vehicle: TRACKS[0].vehicle,
         color: PLAYER_COLORS[0]!,
-        neon: 0x7a8fa8,
+        neon: DEFAULT_VEHICLE_LOOK.neon,
+        wheel: DEFAULT_VEHICLE_LOOK.wheel,
+        rider: DEFAULT_VEHICLE_LOOK.rider,
+        helm: DEFAULT_VEHICLE_LOOK.helm,
         tuning: { ...DEFAULT_PLAYER_TUNING },
         name: t('menu.defaultName'),
         difficulty: 'normal',
@@ -338,6 +386,8 @@ export class Game {
       this.saveSandboxRecord()
     }
     this.clearPause()
+    this.input.setTabBoostHeld(false)
+    this.input.setEbrakeHeld(false)
     this.escWasDown = true // dokud Esc držíš, neotevírej znovu
     this.ignoreEscUntilRelease = true
     this.mode = 'menu'
@@ -367,7 +417,7 @@ export class Game {
   }
 
   private resetEscEdge(): void {
-    this.escWasDown = this.input.escapeHeld
+    this.escWasDown = this.input.menuNavHeld
   }
 
   private enterPause(): void {
@@ -445,7 +495,13 @@ export class Game {
     this.lastTrackId = payload.trackId
     this.lastVehicle = payload.vehicle
     this.lastColor = payload.color
-    this.lastNeon = payload.neon
+    this.lastLook = {
+      body: payload.color,
+      neon: payload.neon,
+      wheel: payload.wheel ?? DEFAULT_VEHICLE_LOOK.wheel,
+      rider: payload.rider ?? DEFAULT_VEHICLE_LOOK.rider,
+      helm: payload.helm ?? DEFAULT_VEHICLE_LOOK.helm,
+    }
     this.lastTuning = { ...payload.tuning }
     this.lastDifficulty = getDifficulty(payload.difficulty)
     this.publicWsUrl = payload.publicWsUrl || ''
@@ -455,8 +511,7 @@ export class Game {
       this.beginSoloRace(
         payload.trackId,
         payload.vehicle,
-        payload.color,
-        payload.neon,
+        this.lastLook,
         payload.tuning,
         payload.name,
         payload.difficulty,
@@ -566,8 +621,7 @@ export class Game {
     this.beginSoloRace(
       this.lastTrackId,
       this.lastVehicle,
-      this.lastColor,
-      this.lastNeon,
+      this.lastLook,
       this.lastTuning,
       this.player.info.name,
       this.lastDifficulty.id,
@@ -578,8 +632,7 @@ export class Game {
   private beginSoloRace(
     trackId: string,
     vehicle: VehicleKind,
-    color: number,
-    neon: number,
+    look: VehicleLook,
     tuning: PlayerTuningValues,
     name = t('player.you'),
     difficulty: DifficultyId = 'normal',
@@ -588,6 +641,7 @@ export class Game {
     this.multiplayer = false
     this.mpRaceEnded = false
     this.recordsSaved = false
+    this.aiLookSalt = (Math.random() * 1e9) | 0
     // Freestyle závod zrušen — triky zůstávají u skate/kola
     if (this.raceSettings.freestyle) {
       this.raceSettings.freestyle = false
@@ -597,8 +651,8 @@ export class Game {
     this.hud.clearResultsOverlay()
     this.clearPause()
     this.lastVehicle = vehicle
-    this.lastColor = color
-    this.lastNeon = neon
+    this.lastColor = look.body
+    this.lastLook = { ...look }
     this.lastTuning = { ...tuning }
     this.lastDifficulty = getDifficulty(difficulty)
     this.activeCompetition = loadCompetitionSettings().id
@@ -616,12 +670,15 @@ export class Game {
     this.menu.hide()
     this.mode = 'race'
     this.resetEscEdge()
-    this.setupGridSolo(name, color, neon)
+    this.setupGridSolo(name, look)
     this.loadTrack(trackId, vehicle, tuning)
     this.applyAiDifficulty()
     this.race = new RaceManager(this.track, this.vehicles)
     this.race.finishPolicy = 'solo'
-    this.race.start({ skipCountdown: this.raceSettings.skipCountdown })
+    this.race.start({
+      skipCountdown: this.raceSettings.skipCountdown,
+      laps: this.track.def.loop ? this.raceSettings.laps : 1,
+    })
     this.resetAiRails()
     for (const v of this.vehicles) {
       v.mesh.visible = true
@@ -650,6 +707,8 @@ export class Game {
     this.player.finished = false
     this.player.finishTime = 0
     this.input.setMobileHud(true)
+    this.syncMobileBoostUi()
+    this.syncMobileFsPad()
     this.hud.setMirrorFrame(this.visual.rearMirror)
     this.audio.unlock()
     this.audio.setMusic(true)
@@ -660,7 +719,7 @@ export class Game {
     trackId: string,
     order: string[],
     room: NetRoom,
-    laps = room.laps || 2,
+    laps = room.laps || 3,
   ): void {
     this.multiplayer = true
     this.mpRaceEnded = false
@@ -684,6 +743,8 @@ export class Game {
     this.resetAiRails()
     for (const v of this.vehicles) v.mesh.visible = true
     this.input.setMobileHud(true)
+    this.syncMobileBoostUi()
+    this.syncMobileFsPad()
     this.hud.setMirrorFrame(this.visual.rearMirror)
     this.audio.unlock()
     this.audio.setMusic(true)
@@ -692,7 +753,10 @@ export class Game {
 
   /** Po dojetí: kalibrace + community učení (AI se upraví až pro další závod). */
   private recordPaceCalibration(finishTimeMs: number): void {
+    // Multiplayer: závod běží, data pro AI učení se nesbírají
+    if (this.multiplayer) return
     if (this.track.def.sandbox) return
+    if (this.lastVehicle === 'scooter') return
     const len = Math.max(1, this.track.length)
     const bestLap = this.player.bestLapMs
     const isStage = this.race.isStage
@@ -728,7 +792,13 @@ export class Game {
       trackLength: len,
       place: this.race.playerPlace(),
       isStage,
+      tuning: this.lastTuning,
+      designPaceMs: this.track.def.targetPaceMs,
     })
+  }
+
+  private aiLook(slot: number): VehicleLook {
+    return aiVehicleLook(slot, this.aiLookSalt)
   }
 
   private applyControlFeel(): void {
@@ -736,11 +806,26 @@ export class Game {
     this.input.invertSteer = this.controlFeel.invertSteer
     this.input.setMobileScheme(this.controlFeel.mobileScheme)
     this.cams.followRate = camFollowRate(this.controlFeel.camFollow)
-    applyHudScale(this.controlFeel.hudScale)
+    this.cams.distScale = mobileCamDist()
+    applyHudScale(this.controlFeel.hudScale, mobileUiFactor())
     setAllowPortraitRotation(this.controlFeel.allowPortraitRotation)
+    this.syncMobileBoostUi()
+    this.syncMobileFsPad()
     for (const v of this.vehicles) {
       v.physics.stabilityAssist = this.controlFeel.stabilityAssist
     }
+  }
+
+  private syncMobileBoostUi(): void {
+    const v = this.player ?? this.vehicles[this.localSlot]
+    this.input.setMobileBoostAllowed(!!v?.hasShiftSpecial())
+  }
+
+  private syncMobileFsPad(): void {
+    const v = this.player ?? this.vehicles[this.localSlot]
+    const board = v?.kind === 'skate' || v?.kind === 'bike'
+    const portrait = window.matchMedia('(orientation: portrait)').matches
+    this.input.setMobileFsPad(!!board && portrait, v?.kind === 'bike' ? 'bike' : 'skate')
   }
 
   private applyAiDifficulty(): void {
@@ -761,21 +846,20 @@ export class Game {
     }
   }
 
-  private setupGridSolo(name: string, color: number, neon: number): void {
+  private setupGridSolo(name: string, look: VehicleLook): void {
     this.netSlots.clear()
     this.remoteState.clear()
     this.localSlot = 0
     this.vehicles[0].info.name = name
     this.vehicles[0].info.isPlayer = true
     this.vehicles[0].info.isBot = false
-    this.vehicles[0].setColor(color)
-    this.vehicles[0].setNeon(neon)
+    this.vehicles[0].applyLook(look)
     for (let i = 1; i < 4; i++) {
       this.vehicles[i].info.isPlayer = false
       this.vehicles[i].info.isBot = true
       this.vehicles[i].info.name = AI_NAMES[i - 1].name
       this.vehicles[i].info.team = AI_NAMES[i - 1].team
-      this.vehicles[i].setColor(AI_NAMES[i - 1].color)
+      this.vehicles[i].applyLook(this.aiLook(i))
     }
     this.player = this.vehicles[0]
   }
@@ -791,17 +875,31 @@ export class Game {
         const p = byId.get(netId)!
         this.netSlots.set(netId, i)
         this.vehicles[i].info.name = p.name
-        this.vehicles[i].setColor(p.color || PLAYER_COLORS[i])
+        if (netId === this.net.playerId) {
+          this.localSlot = i
+          this.vehicles[i].applyLook(this.lastLook)
+        } else {
+          this.vehicles[i].applyLook({
+            ...this.aiLook(i),
+            body: p.color || PLAYER_COLORS[i]!,
+          })
+        }
         this.vehicles[i].info.isPlayer = netId === this.net.playerId
         this.vehicles[i].info.isBot = false
-        if (netId === this.net.playerId) this.localSlot = i
-      } else {
+      } else if (this.menu.wantsLobbyFillAi()) {
         const ai = AI_NAMES[i % AI_NAMES.length]
         this.vehicles[i].info.name = ai.name
         this.vehicles[i].info.team = ai.team
-        this.vehicles[i].setColor(ai.color)
+        this.vehicles[i].applyLook(this.aiLook(i))
         this.vehicles[i].info.isPlayer = false
         this.vehicles[i].info.isBot = true
+        this.vehicles[i].mesh.visible = true
+      } else {
+        this.vehicles[i].info.isPlayer = false
+        this.vehicles[i].info.isBot = true
+        this.vehicles[i].info.name = ''
+        this.vehicles[i].mesh.visible = false
+        this.vehicles[i].finished = true
       }
     }
     this.player = this.vehicles[this.localSlot]
@@ -851,8 +949,9 @@ export class Game {
           speedCapMult: (tun.speedCapMult ?? 1) * trackSpeed,
         })
         v.physics.transmission = tx
-        v.physics.driftMode = false
-        v.setNeon(this.lastNeon)
+        const board = vehicle === 'skate' || vehicle === 'bike'
+        v.physics.driftMode = this.controlFeel.driftMode && !board
+        v.applyLook(this.lastLook)
       } else {
         const tun = aiProfileForKind(kind, i)
         v.physics.applyTuning({
@@ -860,13 +959,15 @@ export class Game {
           speedCapMult: (tun.speedCapMult ?? 1) * trackSpeed,
         })
         v.physics.transmission = 'auto'
-        v.physics.driftMode = false
-        v.setNeon(0x6a849e)
+        const board = kind === 'skate' || kind === 'bike'
+        v.physics.driftMode = this.controlFeel.driftMode && !board
+        v.applyLook(this.aiLook(i))
       }
-      v.setColor(v.info.color)
     }
     this.player = this.vehicles[this.localSlot]
     this.applyControlFeel()
+    this.syncMobileBoostUi()
+    this.syncMobileFsPad()
   }
 
   private applyTheme(def: (typeof TRACKS)[number]): void {
@@ -884,7 +985,8 @@ export class Game {
     const scale = fogDistanceScale(this.atmosphere.fog)
     // Exp2 = přirozená atmosférická perspektiva (reálný vzduch), ne „bílá stěna“
     if (def.id === 'mexiku') {
-      this.scene.fog = null
+      // Lehká atmosféra — bez fog = peklostroj vypadal „plastově“ proti nebi
+      this.scene.fog = new THREE.FogExp2(fog, 0.00085 / scale)
     } else if (def.world === 'city') {
       // Slabší mlha = čitelnější silnice vs terén vs domy
       this.scene.fog = new THREE.FogExp2(fog, 0.00115 / scale)
@@ -922,18 +1024,30 @@ export class Game {
       sunBase = 0.48
       rimBase = 0.42
       this.lightRig.setSunOffset(90, 140, 60)
-    } else if (def.world === 'rally') {
-      // Novostavby: víc fill lightu, ať stíny nesežerou okolí
-      ambient?.color.setHex(0xd0c8b8)
-      hemi?.color.setHex(0xe8dcc8)
-      hemi?.groundColor.setHex(0x5a4a38)
-      sun?.color.setHex(0xffe8d0)
-      rim?.color.setHex(0xa0a8b8)
-      ambientBase = 0.42
-      hemiBase = 0.78
-      sunBase = 1.05
-      rimBase = 0.28
-      this.lightRig.setSunOffset(110, 120, -50)
+    } else if (def.world === 'rally' || def.id === 'turini') {
+      // Novostavby: denní světlo bez „přepáleného“ laků na peklostroji
+      ambient?.color.setHex(0xc4b8a4)
+      hemi?.color.setHex(0xd8cbb4)
+      hemi?.groundColor.setHex(0x4a3c2e)
+      sun?.color.setHex(0xffe2c4)
+      rim?.color.setHex(0x9aa4b0)
+      ambientBase = 0.32
+      hemiBase = 0.58
+      sunBase = 1.18
+      rimBase = 0.2
+      this.lightRig.setSunOffset(95, 135, -40)
+    } else if (def.id === 'mexiku') {
+      // Mexiko: neutrální den + mírný fill — dřív climb tint dělal divný lak
+      ambient?.color.setHex(0xc8c0b4)
+      hemi?.color.setHex(0xe0d8c8)
+      hemi?.groundColor.setHex(0x3a4838)
+      sun?.color.setHex(0xfff0dc)
+      rim?.color.setHex(0xa8b8c8)
+      ambientBase = 0.3
+      hemiBase = 0.55
+      sunBase = 1.22
+      rimBase = 0.18
+      this.lightRig.setSunOffset(70, 145, 45)
     } else if (def.world === 'climb') {
       ambient?.color.setHex(0xb8c8d8)
       hemi?.color.setHex(0xd0e0f0)
@@ -941,9 +1055,9 @@ export class Game {
       sun?.color.setHex(0xfff4e8)
       rim?.color.setHex(0x90a8c8)
       ambientBase = 0.3
-      hemiBase = 0.68
-      sunBase = 1.32
-      rimBase = 0.2
+      hemiBase = 0.62
+      sunBase = 1.28
+      rimBase = 0.18
       this.lightRig.setSunOffset(80, 140, 50)
     } else if (def.world === 'plaza') {
       ambient?.color.setHex(0xc0d0dc)
@@ -998,8 +1112,10 @@ export class Game {
   }
 
   private onResize(): void {
-    const w = window.innerWidth
-    const h = window.innerHeight
+    applyMobileLookCss()
+    const vv = window.visualViewport
+    const w = Math.max(1, Math.round(vv?.width ?? window.innerWidth))
+    const h = Math.max(1, Math.round(vv?.height ?? window.innerHeight))
     const q = this.visual.quality
     const city = this.lastTrackId === 'city'
     const scale = city
@@ -1014,6 +1130,8 @@ export class Game {
           ? 0.92
           : 1
     this.engine.render.resize(w, h, scale)
+    this.cams.distScale = mobileCamDist()
+    applyHudScale(this.controlFeel.hudScale, mobileUiFactor())
   }
 
   private lastDrawCalls = 0
@@ -1124,11 +1242,11 @@ export class Game {
       return
     }
 
-    // Esc rising-edge: countdown/načítání/dojetí → menu; závod → pauza
-    const escDown = this.input.escapeHeld
-    const escEdge = escDown && !this.escWasDown
-    this.escWasDown = escDown
-    if (!this.paused && escEdge) {
+    // Esc/Backspace rising-edge: countdown/dojetí → menu; závod → pauza (nápověda)
+    const navDown = this.input.menuNavHeld
+    const navEdge = navDown && !this.escWasDown
+    this.escWasDown = navDown
+    if (!this.paused && navEdge) {
       if (this.race.phase === 'countdown' || this.race.phase === 'finished') {
         this.openMenu()
       } else {
@@ -1139,12 +1257,13 @@ export class Game {
     }
     if (this.paused) {
       if (this.escArm) {
-        if (!this.input.escapeHeld) this.escArm = false
-      } else if (escEdge) {
+        // Čekat na puštění Esc/Backspace po otevření nápovědy — 1 další stisk = menu
+        if (!this.input.menuNavHeld) this.escArm = false
+      } else if (navEdge) {
         this.openMenu()
         this.input.endFrame()
         return
-      } else if (this.input.anyPressedExcept('Escape')) {
+      } else if (this.input.anyPressedExcept('Escape', 'Backspace')) {
         this.resumeFromPause()
       }
 
@@ -1180,12 +1299,15 @@ export class Game {
           if (this.input.actionPressed('shiftUp')) v.physics.shiftUp(clutchIn)
           if (this.input.actionPressed('shiftDown')) v.physics.shiftDown(clutchIn)
         }
-        // Freestyle peklostroje (skate/kolo): triky + body vždy (ne jen „freestyle závod“)
+        // Freestyle (skate/kolo): triky; bez Space drift brzdy
         const mobileClassic = this.input.mobile
         const boardFs = v.kind === 'skate' || v.kind === 'bike'
-        v.freestyleOn = !mobileClassic && boardFs
-        // Drift e-brake z Ovládání — u board freestyle vypnout
-        v.physics.driftMode = this.controlFeel.driftMode && !v.freestyleOn && !mobileClassic
+        // Mobil: FS přes 4 pady (portrait); PC klávesy A–Z
+        v.freestyleOn = boardFs
+        // Space e-brake jen u normálních peklostrojů (ne skate/kolo)
+        v.physics.driftMode = this.controlFeel.driftMode && !boardFs && !mobileClassic
+        const wantEbrake =
+          v.physics.driftMode && this.input.actionHeld('ebrake') ? 1 : 0
         const controls =
           this.race.phase === 'racing'
             ? {
@@ -1194,7 +1316,7 @@ export class Game {
                 steer: this.input.steer,
                 push: this.input.push,
                 tab: this.input.tab,
-                ebrake: this.input.actionHeld('ebrake') ? 1 : 0,
+                ebrake: wantEbrake,
                 trickLetter: v.freestyleOn ? this.input.trickLetter : null,
               }
             : {
@@ -1251,10 +1373,13 @@ export class Game {
         const place = this.race.playerPlace()
         const trickPts = this.player.trickPoints
         const driftPts = this.player.driftPoints
+        const isFs = this.player.isBoardKind()
         const fsScore =
           this.activeCompetition === 'driftScore'
             ? driftPts
-            : placePoints(place) + trickPts
+            : isFs
+              ? placePoints(place) + trickPts
+              : 0
         const finishTimeMs = this.player.finishTime || this.race.raceTimeMs
         submitRaceRecord({
           player: this.player.info.name,
@@ -1262,7 +1387,8 @@ export class Game {
           vehicle: this.lastVehicle,
           timeMs: finishTimeMs,
           fsScore,
-          trickPts: this.activeCompetition === 'driftScore' ? driftPts : trickPts,
+          trickPts:
+            this.activeCompetition === 'driftScore' ? driftPts : isFs ? trickPts : 0,
         })
         this.recordPaceCalibration(finishTimeMs)
         if (this.activeCompetition === 'championship') {
@@ -1315,31 +1441,51 @@ export class Game {
   private installQaApi(): void {
     if (typeof window === 'undefined') return
     window.__klecQa = {
-      state: () => ({
-        mode: this.mode,
-        phase: this.race.phase,
-        trackId: this.lastTrackId,
-        vehicle: this.lastVehicle,
-        freestyle: this.raceSettings.freestyle,
-        paused: this.paused,
-        finished: this.player.finished,
-        place: this.race.playerPlace(),
-        speed: this.player.displaySpeedKmh,
-        trackT: this.player.trackT,
-        trickPts: this.player.trickPoints,
-        driftPts: this.player.driftPoints,
-        escHeld: this.input.escapeHeld,
-        escWasDown: this.escWasDown,
+      list: () => ({
+        tracks: TRACKS.map((tr) => tr.id),
+        vehicles: [...VEHICLE_KINDS],
       }),
+      state: () => {
+        const canvas = this.engine.render.renderer.domElement
+        return {
+          mode: this.mode,
+          phase: this.race.phase,
+          trackId: this.lastTrackId,
+          vehicle: this.lastVehicle,
+          reverse: this.raceSettings.reverse,
+          freestyle: this.raceSettings.freestyle,
+          freestyleOn: this.player.freestyleOn,
+          mobileInput: this.input.mobile,
+          tabHeld: this.input.tab > 0,
+          paused: this.paused,
+          finished: this.player.finished,
+          place: this.race.playerPlace(),
+          speed: this.player.displaySpeedKmh,
+          trackT: this.player.trackT,
+          trickPts: this.player.trickPoints,
+          driftPts: this.player.driftPoints,
+          pushAmount: this.player.pushAmount,
+          tabBoost: this.player.tabBoostAmount,
+          driftMode: this.player.physics.driftMode,
+          driftLive: this.player.physics.driftActive,
+          ebrakeHeld: this.input.actionHeld('ebrake'),
+          latVel: Math.round(this.player.physics.latVel * 100) / 100,
+          steer: this.input.steer,
+          canvasOk: canvas.width > 0 && canvas.height > 0,
+          sceneChildren: this.scene.children.length,
+          escHeld: this.input.escapeHeld,
+          escWasDown: this.escWasDown,
+        }
+      },
       openMenu: () => this.openMenu(),
-      start: (trackId, vehicle = 'street', freestyle = false) => {
-        this.raceSettings.freestyle = freestyle
+      start: (trackId, vehicle = 'street', reverse = false) => {
+        this.raceSettings.reverse = !!reverse
+        this.raceSettings.freestyle = false
         saveRaceSettings(this.raceSettings)
         this.beginSoloRace(
           trackId,
           vehicle,
-          this.lastColor,
-          this.lastNeon,
+          this.lastLook,
           this.lastTuning,
           this.player.info.name,
           this.lastDifficulty.id,
@@ -1370,6 +1516,29 @@ export class Game {
       setSpeed: (kmh: number) => {
         this.player.physics.speed = Math.max(0, kmh) / 3.6
       },
+      /** Simuluje freestyle trik (skate/bike) přes keydown */
+      trick: (letter = 'A') => {
+        const L = String(letter).toUpperCase().slice(0, 1)
+        const code = `Key${L}`
+        window.dispatchEvent(new KeyboardEvent('keydown', { code, key: L, bubbles: true }))
+        window.setTimeout(() => {
+          window.dispatchEvent(new KeyboardEvent('keyup', { code, key: L, bubbles: true }))
+        }, 40)
+      },
+      /** Spusť trik napřímo na hráči (spolehlivé v QA) */
+      forceTrick: (letter = 'A') => this.player.forceTrick(letter),
+      /** Drž/pusť Tab·Alt boost (cyklista šlapání / skate boost) */
+      holdTab: (on = true) => {
+        this.input.setTabBoostHeld(!!on, 'AltLeft')
+      },
+      /** Drž/pusť Space e-brake (drift) */
+      holdEbrake: (on = true) => {
+        this.input.setEbrakeHeld(!!on)
+      },
+      /** QA — držet klávesy (např. řízení + plyn při driftu) */
+      holdKeys: (codes: string[], on = true) => {
+        this.input.setKeysHeld(codes, !!on)
+      },
     }
   }
 }
@@ -1383,15 +1552,21 @@ function labelVehicle(kind: VehicleKind): string {
 declare global {
   interface Window {
     __klecQa?: {
+      list: () => { tracks: string[]; vehicles: VehicleKind[] }
       state: () => Record<string, unknown>
       openMenu: () => void
-      start: (trackId: string, vehicle?: VehicleKind, freestyle?: boolean) => void
+      start: (trackId: string, vehicle?: VehicleKind, reverse?: boolean) => void
       skipCountdown: () => void
       forceFinish: () => void
       restart: () => void
       escToMenu: () => void
       warp: (t: number) => void
       setSpeed: (kmh: number) => void
+      trick: (letter?: string) => void
+      forceTrick: (letter?: string) => boolean
+      holdTab: (on?: boolean) => void
+      holdEbrake: (on?: boolean) => void
+      holdKeys: (codes: string[], on?: boolean) => void
     }
   }
 }

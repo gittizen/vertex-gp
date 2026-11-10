@@ -1,5 +1,7 @@
 export type VehicleKind =
   | 'moto'
+  | 'harley'
+  | 'kroska'
   | 'formula'
   | 'monster'
   | 'street'
@@ -10,14 +12,9 @@ export type VehicleKind =
   | 'limo'
   | 'scooter'
 export type WorldKind = 'city' | 'town' | 'rally' | 'climb' | 'plaza'
-export type SkyBody = 'sun' | 'moon'
+type SkyBody = 'sun' | 'moon'
 
-/**
- * Čitelný charcoal asfalt 2026 (ne pastel, ne skoro-černá).
- */
-export const ASPHALT_GREY = 0x565a62
-
-export type TrackTheme = {
+type TrackTheme = {
   road: number
   ground: number
   barrierL: number
@@ -242,34 +239,37 @@ const TRACKS_RAW: TrackDef[] = [
       [22, -155],
       [20, -100],
       [16, -52],
-      // náměstí V. B. Třebízského (objezd)
-      [-16, -24],
-      [-50, -4],
-      [-58, 32],
-      [-28, 56],
-      [12, 62],
-      [46, 40],
+      // náměstí V. B. Třebízského (objezd) — širší oblouk, ať ribbon neprotne sám sebe
+      [-14, -28],
+      [-48, -8],
+      [-62, 28],
+      [-30, 58],
+      [14, 66],
+      [50, 42],
       // U Školy → Topolová na východ
-      [82, 22],
-      [128, 40],
-      [168, 82],
-      [188, 128],
-      // NUDZ / Topolová otočka
-      [176, 172],
-      [128, 198],
+      [86, 22],
+      [130, 38],
+      [166, 78],
+      // NUDZ / Topolová otočka — víc bodů = méně ostrý „fantom“ okraj v asfaltu
+      [182, 108],
+      [192, 138],
+      [186, 168],
+      [158, 190],
+      [122, 202],
       [72, 208],
       // K Sídlišti
       [16, 200],
       [-30, 176],
       // Přemyšlenská / Na Hradišti
       [-64, 140],
-      [-86, 94],
-      [-92, 48],
-      // Čsl. armády, kostel a zámek — zpět mimo startovní rovinku
-      [-80, 8],
-      [-62, -32],
-      [-42, -88],
-      [-8, -132],
+      [-88, 92],
+      [-98, 44],
+      // Čsl. armády / zámek → cíl: dál od startovní rovinky (Do Klecánek), ať ribbon nelezé přes asfalt
+      [-92, 0],
+      [-78, -48],
+      [-58, -100],
+      [-28, -138],
+      [2, -156],
     ],
     theme: {
       road: 0xa8a49c,
@@ -613,17 +613,17 @@ const TRACKS_RAW: TrackDef[] = [
     world: 'plaza',
     loop: true,
     sandbox: true,
-    sandboxBounds: { halfX: 170, halfZ: 110 },
+    sandboxBounds: { halfX: 240, halfZ: 160 },
     surfaceGrip: 1.05,
     aiSpeedMult: 0,
     skyBody: 'sun',
     estTime: '∞',
     // Obvod pro náhled / watermark
     points: [
-      [-170, -110],
-      [170, -110],
-      [170, 110],
-      [-170, 110],
+      [-240, -160],
+      [240, -160],
+      [240, 160],
+      [-240, 160],
     ],
     theme: {
       road: 0x9c9890,
@@ -715,6 +715,8 @@ export function getTrackDef(id: string): TrackDef {
 
 export const VEHICLE_KINDS: VehicleKind[] = [
   'moto',
+  'harley',
+  'kroska',
   'formula',
   'monster',
   'truck',

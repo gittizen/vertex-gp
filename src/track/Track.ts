@@ -479,24 +479,49 @@ export class Track {
       const under = y - 0.22
       fillPos.push(left.x, under, left.z, right.x, under, right.z)
 
+      const tNorm = i / segments
       const shW = 1.05
+      // Na okruhu stáhni krajnici/bermu, když by pás lezl přes cizí asfalt (cíl Námka)
+      const safeOutLat = (want: number, side: 1 | -1) => {
+        if (!this.def.loop) return want
+        let use = want
+        for (let k = 0; k < 10; k++) {
+          const tx = p.x + n.x * use * side
+          const tz = p.z + n.z * use * side
+          if (!this.barrierCutsForeignAsphalt(tx, tz, tNorm, 0.55)) return use
+          use = Math.max(this.halfWidth + 0.15, use - 0.85)
+        }
+        return this.halfWidth + 0.12
+      }
+      const lShLat = safeOutLat(this.halfWidth + shW, 1)
+      const rShLat = safeOutLat(this.halfWidth + shW, -1)
       const lShIn = p.clone().addScaledVector(n, this.halfWidth - 0.02)
-      const lShOut = p.clone().addScaledVector(n, this.halfWidth + shW)
+      const lShOut = p.clone().addScaledVector(n, lShLat)
       const rShIn = p.clone().addScaledVector(n, -(this.halfWidth - 0.02))
-      const rShOut = p.clone().addScaledVector(n, -(this.halfWidth + shW))
-      shoulderLpos.push(lShOut.x, y - 0.01, lShOut.z, lShIn.x, y - 0.01, lShIn.z)
-      shoulderRpos.push(rShIn.x, y - 0.01, rShIn.z, rShOut.x, y - 0.01, rShOut.z)
+      const rShOut = p.clone().addScaledVector(n, -rShLat)
+      // Shoulder nad cizím asfaltem = schovej pod vozovku (žádný „okraj ve vzduchu“)
+      const shY = y - 0.01
+      const shYL = this.barrierCutsForeignAsphalt(lShOut.x, lShOut.z, tNorm, 0.55) ? y - 0.35 : shY
+      const shYR = this.barrierCutsForeignAsphalt(rShOut.x, rShOut.z, tNorm, 0.55) ? y - 0.35 : shY
+      shoulderLpos.push(lShOut.x, shYL, lShOut.z, lShIn.x, shY, lShIn.z)
+      shoulderRpos.push(rShIn.x, shY, rShIn.z, rShOut.x, shYR, rShOut.z)
 
-      const lIn = p.clone().addScaledVector(n, this.halfWidth + shW)
-      const lOut = p.clone().addScaledVector(n, this.halfWidth + bermW)
-      const rIn = p.clone().addScaledVector(n, -(this.halfWidth + shW))
-      const rOut = p.clone().addScaledVector(n, -(this.halfWidth + bermW))
+      const lBermLat = safeOutLat(this.halfWidth + bermW, 1)
+      const rBermLat = safeOutLat(this.halfWidth + bermW, -1)
+      const lIn = p.clone().addScaledVector(n, Math.min(lShLat, lBermLat))
+      const lOut = p.clone().addScaledVector(n, lBermLat)
+      const rIn = p.clone().addScaledVector(n, -Math.min(rShLat, rBermLat))
+      const rOut = p.clone().addScaledVector(n, -rBermLat)
       // Berm/apron Y: na okruhu neber terrainYAt (skok na sousední úsek = zubatá plocha přes asfalt)
       const bermDrop = y - 0.1
-      const lOutY = this.def.loop ? bermDrop : this.terrainYAt(lOut.x, lOut.z, roadLift, groundY)
-      const rOutY = this.def.loop ? bermDrop : this.terrainYAt(rOut.x, rOut.z, roadLift, groundY)
-      bermLpos.push(lOut.x, lOutY, lOut.z, lIn.x, y - 0.06, lIn.z)
-      bermRpos.push(rIn.x, y - 0.06, rIn.z, rOut.x, rOutY, rOut.z)
+      const bermCutL = this.barrierCutsForeignAsphalt(lOut.x, lOut.z, tNorm, 0.55)
+      const bermCutR = this.barrierCutsForeignAsphalt(rOut.x, rOut.z, tNorm, 0.55)
+      const lOutY = bermCutL ? y - 0.4 : this.def.loop ? bermDrop : this.terrainYAt(lOut.x, lOut.z, roadLift, groundY)
+      const rOutY = bermCutR ? y - 0.4 : this.def.loop ? bermDrop : this.terrainYAt(rOut.x, rOut.z, roadLift, groundY)
+      const lInY = bermCutL ? y - 0.4 : y - 0.06
+      const rInY = bermCutR ? y - 0.4 : y - 0.06
+      bermLpos.push(lOut.x, lOutY, lOut.z, lIn.x, lInY, lIn.z)
+      bermRpos.push(rIn.x, rInY, rIn.z, rOut.x, rOutY, rOut.z)
 
       // Skirt jen krátký (k under), ne až na flat ground — méně „prosklené stěny“
       skirtLpos.push(left.x, y, left.z, left.x, under, left.z)
@@ -504,15 +529,8 @@ export class Track {
 
       const apronW = this.def.loop ? bermW + 4 : bermW + 7
       const apron2W = this.def.loop ? bermW + 8 : bermW + 16
-      const asphaltClear = this.halfWidth + 1.2
       const sideLat = (lat: number, side: 1 | -1) => {
-        let use = lat
-        const tx = p.x + n.x * use * side
-        const tz = p.z + n.z * use * side
-        // Na okruhu: nelez apronem na cizí asfalt
-        if (this.def.loop && this.minRoadDist(tx, tz) < asphaltClear) {
-          use = this.halfWidth + shW + 0.8
-        }
+        const use = safeOutLat(lat, side)
         return p.clone().addScaledVector(n, use * side)
       }
       const lApron = sideLat(this.halfWidth + apronW, 1)
@@ -520,17 +538,42 @@ export class Track {
       const lApron2 = sideLat(this.halfWidth + apron2W, 1)
       const rApron2 = sideLat(this.halfWidth + apron2W, -1)
       const apronY = this.def.loop ? bermDrop - 0.04 : undefined
-      const lApronY = apronY ?? this.terrainYAt(lApron.x, lApron.z, roadLift, groundY)
-      const rApronY = apronY ?? this.terrainYAt(rApron.x, rApron.z, roadLift, groundY)
-      const lApron2Y = apronY ?? this.terrainYAt(lApron2.x, lApron2.z, roadLift, groundY)
-      const rApron2Y = apronY ?? this.terrainYAt(rApron2.x, rApron2.z, roadLift, groundY)
+      const buryApron = (x: number, z: number, base: number) =>
+        this.barrierCutsForeignAsphalt(x, z, tNorm, 0.55) ? y - 0.42 : base
+      const lApronY = buryApron(
+        lApron.x,
+        lApron.z,
+        apronY ?? this.terrainYAt(lApron.x, lApron.z, roadLift, groundY),
+      )
+      const rApronY = buryApron(
+        rApron.x,
+        rApron.z,
+        apronY ?? this.terrainYAt(rApron.x, rApron.z, roadLift, groundY),
+      )
+      const lApron2Y = buryApron(
+        lApron2.x,
+        lApron2.z,
+        apronY ?? this.terrainYAt(lApron2.x, lApron2.z, roadLift, groundY),
+      )
+      const rApron2Y = buryApron(
+        rApron2.x,
+        rApron2.z,
+        apronY ?? this.terrainYAt(rApron2.x, rApron2.z, roadLift, groundY),
+      )
       apronLpos.push(lApron.x, lApronY, lApron.z, lOut.x, lOutY, lOut.z)
       apronRpos.push(rOut.x, rOutY, rOut.z, rApron.x, rApronY, rApron.z)
       apron2Lpos.push(lApron2.x, lApron2Y, lApron2.z, lApron.x, lApronY, lApron.z)
       apron2Rpos.push(rApron.x, rApronY, rApron.z, rApron2.x, rApron2Y, rApron2.z)
 
-      barrierL.push(left.x + n.x * 0.2, y, left.z + n.z * 0.2, left.x + n.x * 0.2, y + wallH, left.z + n.z * 0.2)
-      barrierR.push(right.x - n.x * 0.2, y, right.z - n.z * 0.2, right.x - n.x * 0.2, y + wallH, right.z - n.z * 0.2)
+      // Zábradlí: při průniku s cizím asfaltem vynech (h=0 + skip ve ribbonu)
+      const bxL = left.x + n.x * 0.2
+      const bzL = left.z + n.z * 0.2
+      const bxR = right.x - n.x * 0.2
+      const bzR = right.z - n.z * 0.2
+      const hL = this.barrierCutsForeignAsphalt(bxL, bzL, tNorm, 0.35) ? 0 : wallH
+      const hR = this.barrierCutsForeignAsphalt(bxR, bzR, tNorm, 0.35) ? 0 : wallH
+      barrierL.push(bxL, y, bzL, bxL, y + hL, bzL)
+      barrierR.push(bxR, y, bzR, bxR, y + hR, bzR)
 
       if (i < segments) {
         const a = i * 2
@@ -783,14 +826,28 @@ export class Track {
 
     const solidL: THREE.Vector3[] = []
     const solidR: THREE.Vector3[] = []
-    for (let i = 0; i <= samples; i++) {
-      const s = this.sample(i / samples)
-      const y = s.position.y + markY
-      solidL.push(s.position.clone().addScaledVector(s.normal, hw - 0.32).setY(y))
-      solidR.push(s.position.clone().addScaledVector(s.normal, -(hw - 0.32)).setY(y))
+    const flushEdgeRibbon = (side: 'L' | 'R') => {
+      const pts = side === 'L' ? solidL : solidR
+      if (pts.length >= 2) {
+        addRibbon(pts.splice(0, pts.length), edgeW, world === 'city' ? 0xfff8e0 : 0xeef0f4)
+      } else {
+        pts.length = 0
+      }
     }
-    addRibbon(solidL, edgeW, world === 'city' ? 0xfff8e0 : 0xeef0f4)
-    addRibbon(solidR, edgeW, world === 'city' ? 0xfff8e0 : 0xeef0f4)
+    for (let i = 0; i <= samples; i++) {
+      const tNorm = i / samples
+      const s = this.sample(tNorm)
+      const y = s.position.y + markY
+      const l = s.position.clone().addScaledVector(s.normal, hw - 0.32).setY(y)
+      const r = s.position.clone().addScaledVector(s.normal, -(hw - 0.32)).setY(y)
+      // Na okruhu: přeruš okrajovou čáru, která by ležela v cizím asfaltu (cíl Námka)
+      if (this.barrierCutsForeignAsphalt(l.x, l.z, tNorm, 0.2)) flushEdgeRibbon('L')
+      else solidL.push(l)
+      if (this.barrierCutsForeignAsphalt(r.x, r.z, tNorm, 0.2)) flushEdgeRibbon('R')
+      else solidR.push(r)
+    }
+    flushEdgeRibbon('L')
+    flushEdgeRibbon('R')
 
     const dashCol = world === 'city' ? 0xffd040 : world === 'rally' ? 0xe8d090 : 0xf2f2f6
     for (let i = 0; i < samples; i += 2) {
@@ -1148,6 +1205,73 @@ export class Track {
       minSpeed: 7,
     })
 
+    // Další skokánky + street props (větší Plácek)
+    const addBoxPad = (
+      x: number,
+      z: number,
+      w: number,
+      h: number,
+      d: number,
+      launch: number,
+      boost: number,
+      minSpeed: number,
+      tilt = -0.22,
+    ) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matLambert(0x8a9098))
+      mesh.position.set(x, h * 0.45, z)
+      mesh.rotation.x = tilt
+      this.group.add(mesh)
+      this.jumpPads.push({
+        minX: x - w * 0.5,
+        maxX: x + w * 0.5,
+        minZ: z - d * 0.5,
+        maxZ: z + d * 0.5,
+        launch,
+        boost,
+        minSpeed,
+      })
+    }
+    addBoxPad(90, -40, 5.2, 1.25, 7, 0.48, 3.8, 7)
+    addBoxPad(-95, -55, 4.8, 1.05, 6.5, 0.4, 3.1, 6.5)
+    addBoxPad(20, -70, 6, 1.45, 8, 0.52, 4.2, 8, -0.3)
+    addBoxPad(-20, 70, 5, 1.15, 6.8, 0.44, 3.4, 7)
+
+    // Quarter pipe vizuál
+    const qPipe = new THREE.Mesh(
+      new THREE.CylinderGeometry(5.5, 5.5, 12, 12, 1, false, 0, Math.PI * 0.5),
+      matLambert(0x7a8088),
+    )
+    qPipe.rotation.order = 'YXZ'
+    qPipe.rotation.y = Math.PI * 0.25
+    qPipe.rotation.z = Math.PI / 2
+    qPipe.position.set(110, 2.4, 55)
+    this.group.add(qPipe)
+    this.jumpPads.push({
+      minX: 104,
+      maxX: 116,
+      minZ: 49,
+      maxZ: 61,
+      launch: 0.62,
+      boost: 5,
+      minSpeed: 9,
+    })
+
+    // Box / rail standy
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(10, 1.0, 3.2), matLambert(0x9a9890))
+    ledge.position.set(-80, 0.5, -10)
+    this.group.add(ledge)
+    const rail2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.09, 12, 6),
+      matLambert(0xb8c0c8, { emissive: 0x404850, emissiveIntensity: 0.15 }),
+    )
+    rail2.rotation.z = Math.PI / 2
+    rail2.position.set(55, 0.85, -55)
+    this.group.add(rail2)
+    const bank = new THREE.Mesh(new THREE.BoxGeometry(14, 0.8, 5), matLambert(0x868c94))
+    bank.position.set(-110, 0.35, 40)
+    bank.rotation.z = 0.18
+    this.group.add(bank)
+
     // Domky v dálce (siluety)
     const houseMat = matLambert(theme.building)
     for (let i = 0; i < 8; i++) {
@@ -1412,6 +1536,41 @@ export class Track {
       if (d < best) best = d
     }
     return best
+  }
+
+  /**
+   * Vzdálenost k „cizí“ části středové linie (mimo krátký lokální oblouk).
+   * excludeArc malý — u cíle/startu i u kruháčů (Hrubý) jinak wrap schová overlap.
+   */
+  private minRoadDistForeign(x: number, z: number, localT: number, excludeArc = 0.025): number {
+    const n = this.lutN
+    let best = Infinity
+    for (let i = 0; i < n; i++) {
+      const t = this.def.loop ? i / n : i / Math.max(1, n - 1)
+      let dT = Math.abs(t - localT)
+      if (this.def.loop) dT = Math.min(dT, 1 - dT)
+      if (dT < excludeArc) continue
+      const p = this.lut[i]!
+      const d = Math.hypot(x - p.x, z - p.z)
+      if (d < best) best = d
+    }
+    return best
+  }
+
+  /**
+   * Bod leží nad/v asfaltu jiné části okruhu (fantom okraj — Námko, Hrubý…).
+   * margin: jak blízko smí být k cizímu středu (halfWidth = hrana cizí silnice).
+   */
+  private barrierCutsForeignAsphalt(
+    x: number,
+    z: number,
+    localT: number,
+    margin = 1.15,
+  ): boolean {
+    if (!this.def.loop) return false
+    if (this.minRoadDistForeign(x, z, localT) < this.halfWidth + margin) return true
+    // Extra: bod hluboko v nějakém asfaltu (střed pásu) = fantom i při slabém foreign hit
+    return this.minRoadDist(x, z) < this.halfWidth * 0.55
   }
 
   /**
@@ -2243,9 +2402,16 @@ export class Track {
     const indices: number[] = []
     const pairs = positions.length / 6
     for (let i = 0; i < pairs - 1; i++) {
+      // Vynech úseky s nulovou výškou — jinak zůstane „čára“ nad asfaltem
+      const y0 = positions[i * 6 + 1]!
+      const y1 = positions[i * 6 + 4]!
+      const y2 = positions[(i + 1) * 6 + 1]!
+      const y3 = positions[(i + 1) * 6 + 4]!
+      if (y1 - y0 < 0.05 && y3 - y2 < 0.05) continue
       const a = i * 2
       indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
     }
+    if (indices.length === 0) return
     geo.setIndex(indices)
     geo.computeVertexNormals()
     const mat =

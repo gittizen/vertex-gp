@@ -12,7 +12,7 @@ export type Standing = {
 export type FinishPolicy = 'solo' | 'multi'
 
 export class RaceManager {
-  totalLaps = 2
+  totalLaps = 3
   phase: RacePhase = 'countdown'
   countdown = 3
   private countdownAcc = 0
@@ -34,7 +34,7 @@ export class RaceManager {
     this.vehicles = vehicles
     this.isSandbox = !!track.def.sandbox
     this.isStage = !this.isSandbox && !track.def.loop
-    this.totalLaps = this.isStage ? 1 : 2
+    this.totalLaps = this.isStage ? 1 : 3
   }
 
   start(opts?: { skipCountdown?: boolean; laps?: number }): void {
@@ -51,7 +51,7 @@ export class RaceManager {
     } else if (typeof opts?.laps === 'number' && Number.isFinite(opts.laps)) {
       this.totalLaps = Math.max(1, Math.min(5, Math.round(opts.laps)))
     } else {
-      this.totalLaps = 2
+      this.totalLaps = 3
     }
 
     this.vehicles.forEach((v, i) => {
@@ -103,10 +103,10 @@ export class RaceManager {
   update(dt: number): void {
     if (this.phase === 'countdown') {
       this.countdownAcc += dt
-      // 3·2·1 po 1 s; GO drží ~0.7 s, pak racing
-      const step = this.countdown <= 0 ? 0.7 : 1
-      if (this.countdownAcc >= step) {
+      // Semafor 3→2→1 (zelené); po 1 hned racing (bez GO delay)
+      if (this.countdownAcc >= 1) {
         this.countdownAcc = 0
+        this.countdown -= 1
         if (this.countdown <= 0) {
           this.phase = 'racing'
           this.raceTimeMs = 0
@@ -114,8 +114,6 @@ export class RaceManager {
             v.currentLapStart = 0
             this.lastT.set(v, this.track.progressAt(v.physics.x, v.physics.z))
           }
-        } else {
-          this.countdown -= 1
         }
       }
       return

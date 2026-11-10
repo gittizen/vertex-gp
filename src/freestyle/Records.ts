@@ -1,5 +1,11 @@
-import type { VehicleKind } from '../track/TrackDefs'
+import { FREESTYLE_VEHICLE_KINDS, type VehicleKind } from '../track/TrackDefs'
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
+
+export type RecordsBoard = 'race' | 'freestyle'
+
+function isFsVehicle(kind: VehicleKind): boolean {
+  return (FREESTYLE_VEHICLE_KINDS as string[]).includes(kind)
+}
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.records`
 
@@ -72,20 +78,29 @@ export function submitRaceRecord(input: {
   return entry
 }
 
-export function recordsFor(trackId?: string, vehicle?: VehicleKind): RecordEntry[] {
+export function recordsFor(
+  trackId?: string,
+  vehicle?: VehicleKind,
+  board: RecordsBoard = 'race',
+): RecordEntry[] {
   let list = loadStore().entries
+  if (board === 'freestyle') list = list.filter((e) => isFsVehicle(e.vehicle))
+  else list = list.filter((e) => !isFsVehicle(e.vehicle))
   if (trackId) list = list.filter((e) => e.trackId === trackId)
   if (vehicle) list = list.filter((e) => e.vehicle === vehicle)
   return [...list].sort((a, b) => {
-    if (b.bestFsScore !== a.bestFsScore) return b.bestFsScore - a.bestFsScore
+    if (board === 'freestyle') {
+      if (b.bestFsScore !== a.bestFsScore) return b.bestFsScore - a.bestFsScore
+      if (b.bestTrickPts !== a.bestTrickPts) return b.bestTrickPts - a.bestTrickPts
+    }
     if (a.bestTimeMs <= 0) return 1
     if (b.bestTimeMs <= 0) return -1
     return a.bestTimeMs - b.bestTimeMs
   })
 }
 
-export function topRecords(limit = 20): RecordEntry[] {
-  return recordsFor().slice(0, limit)
+export function topRecords(limit = 20, board: RecordsBoard = 'race'): RecordEntry[] {
+  return recordsFor(undefined, undefined, board).slice(0, limit)
 }
 
 /** Všechny záznamy (pro export kalibrace). */

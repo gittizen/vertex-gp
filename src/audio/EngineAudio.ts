@@ -103,6 +103,28 @@ const KIND_SAMPLE: Record<VehicleKind, KindSample> = {
     amp: 1.08,
     bassMul: 0.45,
   },
+  harley: {
+    id: 'harley',
+    low: 'loop1',
+    mid: 'heavy',
+    high: 'sport',
+    rate: 1.15,
+    noise: 0.28,
+    cutoff: 2800,
+    amp: 1.12,
+    bassMul: 0.7,
+  },
+  kroska: {
+    id: 'kroska',
+    low: 'loop1',
+    mid: 'sport',
+    high: 'top',
+    rate: 1.48,
+    noise: 0.3,
+    cutoff: 3200,
+    amp: 1.1,
+    bassMul: 0.5,
+  },
   monster: {
     id: 'monster',
     low: 'heavy',
@@ -402,7 +424,7 @@ export class EngineAudio {
           ? v.turboAmount * 0.9
           : v.kind === 'formula'
             ? rpm * 0.14
-            : v.kind === 'moto'
+            : v.kind === 'moto' || v.kind === 'harley' || v.kind === 'kroska'
               ? rpm * 0.1
               : overrev * 0.2
       voice.noiseGain.gain.setTargetAtTime(kind.noise + turboWhistle + scream * 0.35, now, 0.05)

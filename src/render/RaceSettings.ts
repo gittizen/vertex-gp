@@ -1,10 +1,13 @@
-import type { VehicleKind } from '../track/TrackDefs'
-import { FREESTYLE_VEHICLE_KINDS, RACE_VEHICLE_KINDS } from '../track/TrackDefs'
+import {
+  FREESTYLE_VEHICLE_KINDS,
+  RACE_VEHICLE_KINDS,
+  type VehicleKind,
+} from '../track/TrackDefs'
 
 const STORAGE_KEY = 'klecgp.race'
 
 /** Automat · manuál (+5 %) · manuál se spojkou (+20 %) */
-export type TransmissionMode = 'auto' | 'manual' | 'clutch'
+type TransmissionMode = 'auto' | 'manual' | 'clutch'
 
 export type RaceSettingsValues = {
   /** Jet trať v opačném směru */
@@ -15,6 +18,8 @@ export type RaceSettingsValues = {
   freestyle: boolean
   /** Přeskočit odpočet 3–2–1 */
   skipCountdown: boolean
+  /** Počet kol na okruhových tratích (loop); etapy/sandbox ignorují */
+  laps: number
   /** Solo: každý závod nové náhodné AI peklostroje (default) */
   randomOpponentsEachRace: boolean
   /** Peklostroje AI soupeřů (3 sloty) — platí když randomOpponentsEachRace=false */
@@ -26,8 +31,17 @@ export const DEFAULT_RACE: RaceSettingsValues = {
   transmission: 'auto',
   freestyle: false,
   skipCountdown: false,
+  laps: 3,
   randomOpponentsEachRace: true,
   opponents: ['street', 'moto', 'formula'],
+}
+
+export const RACE_LAP_CHOICES = [1, 2, 3, 4, 5] as const
+
+export function clampRaceLaps(n: unknown): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v)) return DEFAULT_RACE.laps
+  return Math.max(1, Math.min(5, Math.round(v)))
 }
 
 const TX_MODES: TransmissionMode[] = ['auto', 'manual', 'clutch']
@@ -52,7 +66,7 @@ export function transmissionAllowedFor(kind: VehicleKind): boolean {
   return !(FREESTYLE_VEHICLE_KINDS as string[]).includes(kind)
 }
 
-export function isFreestyleKind(kind: VehicleKind): boolean {
+function isFreestyleKind(kind: VehicleKind): boolean {
   return (FREESTYLE_VEHICLE_KINDS as string[]).includes(kind)
 }
 
@@ -89,6 +103,8 @@ export function loadRaceSettings(): RaceSettingsValues {
       transmission: normTransmission(parsed.transmission, parsed.manualShift),
       freestyle: false, // freestyle závod zrušen — skate/kolo mají triky v klasice
       skipCountdown: Boolean(parsed.skipCountdown),
+      // Chybějící klíč = default 3 (dřív pevné 2 v RaceManager)
+      laps: parsed.laps !== undefined ? clampRaceLaps(parsed.laps) : DEFAULT_RACE.laps,
       // Chybějící klíč = default true (starší save bez flagu)
       randomOpponentsEachRace:
         typeof parsed.randomOpponentsEachRace === 'boolean'

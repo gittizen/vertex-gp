@@ -41,7 +41,7 @@ function setGateCopy(): void {
   // Lazy import avoided — Game/i18n sets via updateRotateGateCopy from outside when locale changes
   if (title && !title.textContent) title.textContent = 'Otoč zařízení na šířku'
   if (blurb && !blurb.textContent) {
-    blurb.textContent = 'Klec GP běží jako na PC — landscape. Otáčení na výšku zapneš v Nastavení → Ovládání.'
+    blurb.textContent = 'KlecMania běží jako na PC — landscape. Otáčení na výšku zapneš v Nastavení → Ovládání.'
   }
 }
 

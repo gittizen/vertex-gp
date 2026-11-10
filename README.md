@@ -1,6 +1,6 @@
-# Klec GP · v0.6
+# KlecMania · v0.7
 
-![Klec GP gameplay](./versions/0.6/screenshot.png)
+![KlecMania gameplay](./versions/0.6/screenshot.png)
 
 **Prohlížečová 2.5D semi-sim závodní hra** ze světa Klecan a okolí. Solo s AI, freestyle triky, online až 4 hráči.
 
@@ -9,9 +9,9 @@ Studentský produkt s vlastní značkou, tratěmi podle reálných míst, pečli
 | | |
 |--|--|
 | **Hrát** | https://klecmania.netlify.app/ |
-| **Historie verzí** | https://gittizen.github.io/vertex-gp/ |
-| **Archivy** | [0.1](https://gittizen.github.io/vertex-gp/0.1/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) · [0.6](https://gittizen.github.io/vertex-gp/0.6/) |
-| **Příběh verzí** | [VERSIONS.md](./VERSIONS.md) — od 0.1 nahoru, co se měnilo a řešilo |
+| **Historie verzí** | https://gittizen.github.io/vertex-gp/ *(0.7 → 0.1)* |
+| **Archivy** | [0.7](https://gittizen.github.io/vertex-gp/0.7/) · [0.6](https://gittizen.github.io/vertex-gp/0.6/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.1](https://gittizen.github.io/vertex-gp/0.1/) |
+| **Příběh verzí** | [VERSIONS.md](./VERSIONS.md) — hub od nejnovější; text od 0.1 nahoru |
 | **Changelog** | [CHANGELOG.md](./CHANGELOG.md) |
 | **Rebuild prompt** | [RECREATE_PROMPT.md](./RECREATE_PROMPT.md) |
 
@@ -59,7 +59,7 @@ Po závodě hra umí zaznamenat tempo a použít ho při kalibraci soupeřů. AI
 5. Ovládání a navigace na telefonu  
 6. Verze jako produkt (Netlify produkce + Pages archivy)
 
-Jak verze rostly (0.1 → 0.6) a co se u každé řešilo: **[VERSIONS.md](./VERSIONS.md)** · **[CHANGELOG.md](./CHANGELOG.md)**
+Jak verze rostly (0.1 → 0.7) a co se u každé řešilo: **[VERSIONS.md](./VERSIONS.md)** · **[CHANGELOG.md](./CHANGELOG.md)**
 
 ---
 
@@ -103,3 +103,6 @@ npm run build:pages    # → site/ (hub + archivy)
 ---
 
 Projekt z nudy. Hra obsahuje vulgární výrazy (vědomá estetika).  
+**KlecMania** — značka Filipa Khunta.
+
+Noční neon. Rovinky. Smyk.

@@ -18,6 +18,8 @@ export class CameraController {
   private readonly hoodLookLocal = new THREE.Vector3()
   /** Rychlost sledování pozice (vyšší = těsnější). */
   followRate = 8
+  /** Mobilní oddálení (1 = PC, 1.5 = telefon). */
+  distScale = 1
   private mode: CamMode = 'chase'
   private shake = 0
 
@@ -65,11 +67,15 @@ export class CameraController {
       baseFov = 74
     } else {
       const near = this.mode === 'near'
-      // Těsnější chase 2026 — víc „váhy“, méně arcade balónu
-      const back = near ? 5.6 + speed01 * 2.4 : 9.2 + speed01 * 4.2
-      const height = near ? 2.55 + speed01 * 0.55 : 4.2 + speed01 * 1.05
-      const lookAhead = near ? 8.5 + speed01 * 5 : 11 + speed01 * 7
-      const lookY = y + 0.72 + speed01 * 0.28
+      const fit = vehicle.camFit
+      const d = Math.max(1, this.distScale)
+      // Stejné vyplnění záběru jako street auto — škálování dle siluety (+ mobilní oddálení)
+      const back =
+        (near ? 5.6 + speed01 * 2.4 : 9.2 + speed01 * 4.2) * (fit.back || 1) * d
+      const height =
+        (near ? 2.55 + speed01 * 0.55 : 4.2 + speed01 * 1.05) * (fit.height || 1) * d
+      const lookAhead = (near ? 8.5 + speed01 * 5 : 11 + speed01 * 7) * d
+      const lookY = y + (fit.lookY || 0.72) * d + speed01 * 0.28
       baseFov = near ? 58 : 54
       this.desired.set(p.x - forwardX * back, y + height, p.z - forwardZ * back)
       this.look.set(p.x + forwardX * lookAhead, lookY, p.z + forwardZ * lookAhead)

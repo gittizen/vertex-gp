@@ -24,10 +24,11 @@ export type KeyBindingsMap = Record<BindAction, KeyPair>
 export const DEFAULT_BINDINGS: KeyBindingsMap = {
   steerLeft: ['ArrowLeft', null],
   steerRight: ['ArrowRight', null],
-  throttle: ['ArrowUp', null],
-  brake: ['ArrowDown', null],
+  throttle: ['ArrowUp', 'KeyW'],
+  brake: ['ArrowDown', 'KeyS'],
   push: ['ShiftLeft', 'ShiftRight'],
-  tab: ['Tab', 'AltLeft'], // AltRight drží Input.tab hardcoded
+  /** Boost / Tab akce — default jen Alt (ne Tab). */
+  tab: ['AltLeft', 'AltRight'],
   shiftUp: ['KeyE', null],
   shiftDown: ['KeyQ', null],
   clutch: ['ControlLeft', 'ControlRight'],
@@ -39,6 +40,15 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.bindings`
 
+/** CapsLock sem nepatří — wheelie/boost je Shift, plyn ↑/W. */
+function scrubBadCode(code: string | null, action: BindAction): string | null {
+  if (!code) return null
+  if (code !== 'CapsLock') return code
+  if (action === 'push') return 'ShiftLeft'
+  if (action === 'throttle') return 'ArrowUp'
+  return null
+}
+
 export function loadKeyBindings(): KeyBindingsMap {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -48,9 +58,29 @@ export function loadKeyBindings(): KeyBindingsMap {
     for (const key of Object.keys(DEFAULT_BINDINGS) as BindAction[]) {
       const pair = parsed[key]
       if (Array.isArray(pair) && pair.length >= 1) {
-        out[key] = [normCode(pair[0]), normCode(pair[1] ?? null)]
+        out[key] = [scrubBadCode(normCode(pair[0]), key), scrubBadCode(normCode(pair[1] ?? null), key)]
       }
     }
+    // Wheelie/boost vždy aspoň jeden Shift (když někdo smazal oba)
+    if (!out.push[0] && !out.push[1]) out.push = ['ShiftLeft', 'ShiftRight']
+    // Jednorázově: starý Tab+Alt → jen Alt
+    const tabFlag = `${GAME_STORAGE_NS}.v07-tab-alt-only`
+    if (!localStorage.getItem(tabFlag)) {
+      try {
+        localStorage.setItem(tabFlag, '1')
+      } catch {
+        /* ignore */
+      }
+      if (out.tab[0] === 'Tab' || out.tab[1] === 'Tab') {
+        out.tab = ['AltLeft', 'AltRight']
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(out))
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (!out.tab[0] && !out.tab[1]) out.tab = ['AltLeft', 'AltRight']
     return out
   } catch {
     return cloneBindings(DEFAULT_BINDINGS)

@@ -1,7 +1,8 @@
 /**
- * Build playable static sites for 0.1 … 0.6 into ./site/
- * GH Pages base: /vertex-gp/<ver>/
- * Kopíruje versions/<ver>/screenshot.webp do hubu, pokud existuje.
+ * Build playable static sites for archives into ./site/
+ * GH Pages base: /vertex-gp/<ver>/  (repo slug zůstává kvůli starým archivům)
+ * Hub karty: nejnovější první → nejstarší poslední.
+ * Staré refy se nepřepisují — jen se z nich znovu sestaví stejný archiv + přidá aktuální.
  */
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -13,34 +14,22 @@ const ROOT = path.resolve(__dirname, '..')
 const SITE = path.join(ROOT, 'site')
 const WORK = path.join(ROOT, '.worktrees')
 
+/** Pořadí: nejnovější → nejstarší (hub i build log). */
 const VERSIONS = [
   {
-    id: '0.1',
-    ref: '0.1',
-    base: '/vertex-gp/0.1/',
-    title: '0.1 — Vertex GP',
-    blurb: 'Začátek: engine, tratě z dat, AI, online WS, tuning.',
+    id: '0.7',
+    ref: 'HEAD',
+    base: '/vertex-gp/0.7/',
+    title: '0.7 — KlecMania',
+    blurb: 'KlecMania + Space drift brzda, mute, bike boost, Tarantino Klecany.',
+    current: true,
   },
   {
-    id: '0.2',
-    ref: '0.2',
-    base: '/vertex-gp/0.2/',
-    title: '0.2 — Klec GP',
-    blurb: 'Značka Klecany, freestyle/Plácek, atmosféry, online hub.',
-  },
-  {
-    id: '0.3',
-    ref: '0.3',
-    base: '/vertex-gp/0.3/',
-    title: '0.3 — mobil + polish',
-    blurb: 'Dotyk, Netlify, pace learning, šampionát, archivy verzí.',
-  },
-  {
-    id: '0.4',
-    ref: '0.4',
-    base: '/vertex-gp/0.4/',
-    title: '0.4 — reálnější svět',
-    blurb: 'Okolí silnice, terén, unikátní mapy, stíny bez děr.',
+    id: '0.6',
+    ref: 'v0.6.0',
+    base: '/vertex-gp/0.6/',
+    title: '0.6 — UX + zvuk',
+    blurb: 'Jet CTA, dock Zpět, engine SFX, landscape-first.',
   },
   {
     id: '0.5',
@@ -50,12 +39,32 @@ const VERSIONS = [
     blurb: 'Live tempo AI, náhodní soupeři, kalendář, lidské docs.',
   },
   {
-    id: '0.6',
-    ref: 'HEAD',
-    base: '/vertex-gp/0.6/',
-    title: '0.6 — UX + zvuk',
-    blurb: 'Jet CTA, dock Zpět, engine SFX, landscape-first.',
-    current: true,
+    id: '0.4',
+    ref: '0.4',
+    base: '/vertex-gp/0.4/',
+    title: '0.4 — reálnější svět',
+    blurb: 'Okolí silnice, terén, unikátní mapy, stíny bez děr.',
+  },
+  {
+    id: '0.3',
+    ref: '0.3',
+    base: '/vertex-gp/0.3/',
+    title: '0.3 — mobil + polish',
+    blurb: 'Dotyk, Netlify, pace learning, šampionát, archivy verzí.',
+  },
+  {
+    id: '0.2',
+    ref: '0.2',
+    base: '/vertex-gp/0.2/',
+    title: '0.2 — Klec GP',
+    blurb: 'Značka Klecany, freestyle/Plácek, atmosféry, online hub.',
+  },
+  {
+    id: '0.1',
+    ref: '0.1',
+    base: '/vertex-gp/0.1/',
+    title: '0.1 — Vertex GP',
+    blurb: 'Začátek: engine, tratě z dat, AI, online WS, tuning.',
   },
 ]
 
@@ -109,7 +118,7 @@ function writeHub() {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Klec GP · verze</title>
+  <title>KlecMania · verze</title>
   <style>
     :root {
       --bg0: #0a0c10;
@@ -117,7 +126,8 @@ function writeHub() {
       --ink: #e8edf5;
       --muted: #9aa6b8;
       --line: #2a3344;
-      --accent: #d4a017;
+      --accent: #e6b422;
+      --blood: #c8102e;
     }
     * { box-sizing: border-box; }
     body {
@@ -127,7 +137,7 @@ function writeHub() {
       color: var(--ink);
       background:
         radial-gradient(900px 420px at 12% -10%, #1a2436 0%, transparent 55%),
-        radial-gradient(700px 380px at 90% 0%, #1c1810 0%, transparent 50%),
+        radial-gradient(700px 380px at 90% 0%, #2a1810 0%, transparent 50%),
         linear-gradient(180deg, var(--bg1), var(--bg0));
     }
     main {
@@ -140,7 +150,7 @@ function writeHub() {
       letter-spacing: 0.04em;
       margin: 0 0 0.4rem;
     }
-    .sub { color: var(--muted); margin: 0 0 2rem; max-width: 40rem; line-height: 1.5; }
+    .sub { color: var(--muted); margin: 0 0 2rem; max-width: 42rem; line-height: 1.5; }
     .grid {
       display: grid;
       gap: 1rem;
@@ -200,16 +210,18 @@ function writeHub() {
 </head>
 <body>
   <main>
-    <h1>Klec GP</h1>
-    <p class="sub">Hratelné archivy od 0.1 nahoru — u každé verze screenshot. Příběh změn je ve VERSIONS.md v repu. Aktuální produkce: 0.6.</p>
+    <h1>KlecMania</h1>
+    <p class="sub">Hratelné archivy — nejnovější nahoře, nejstarší dole. Příběh změn je ve VERSIONS.md v repu. Aktuální produkce: <strong>0.7</strong>.</p>
     <div class="grid">
 ${cards}
     </div>
     <p class="note">
       Aktuální produkce (Netlify):
-      <a href="https://klecgp.netlify.app/">klecgp.netlify.app</a>
+      <a href="https://klecmania.netlify.app/">klecmania.netlify.app</a>
       · zdroj:
-      <a href="https://github.com/gittizen/vertex-gp">gittizen/vertex-gp</a>
+      <a href="https://github.com/gittizen/KlecMania">gittizen/KlecMania</a>
+      · hub URL (historicky):
+      <a href="https://gittizen.github.io/vertex-gp/">gittizen.github.io/vertex-gp</a>
     </p>
   </main>
 </body>

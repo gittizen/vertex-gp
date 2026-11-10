@@ -60,7 +60,7 @@ export class Entry {
   private render(): void {
     const def = TRACKS.find((t) => t.id === this.currentTrackId) ?? pickWatermarkTrack()
     this.root.innerHTML = `
-      <img class="entry-bg" src="${assetUrl('brand/entry-bg-klec.jpg')}?v=light" alt="" decoding="async" />
+      <img class="entry-bg" src="${assetUrl('brand/entry-bg-klec.jpg')}?v=klecany" alt="" decoding="async" />
       <div class="entry-bg-shade" aria-hidden="true"></div>
       ${trackWatermarkHtml(def)}
       ${langToggleHtml()}

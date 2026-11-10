@@ -1,4 +1,5 @@
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
+import { applyAutoVisualOnce, suggestedVisualSettings } from './DeviceQuality'
 
 /** Kvalita: default balanced = moderní look + plynulost. Cinematic = max post-FX. */
 export type VisualQuality = 'perf' | 'balanced' | 'cinematic'
@@ -24,21 +25,26 @@ export const DEFAULT_VISUAL: VisualSettingsValues = {
 export const VISUAL_QUALITIES: VisualQuality[] = ['perf', 'balanced', 'cinematic']
 
 export function loadVisualSettings(): VisualSettingsValues {
+  const fallback = suggestedVisualSettings()
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_VISUAL }
+    if (!raw) {
+      // První start: ulož doporučení podle zařízení (ne vždy perf)
+      const auto = applyAutoVisualOnce(fallback, saveVisualSettings)
+      return auto
+    }
     const p = JSON.parse(raw) as Partial<VisualSettingsValues>
     const quality = VISUAL_QUALITIES.includes(p.quality as VisualQuality)
       ? (p.quality as VisualQuality)
-      : DEFAULT_VISUAL.quality
+      : fallback.quality
     return {
       quality,
-      bloom: p.bloom !== undefined ? !!p.bloom : DEFAULT_VISUAL.bloom,
-      shadows: p.shadows !== undefined ? !!p.shadows : DEFAULT_VISUAL.shadows,
+      bloom: p.bloom !== undefined ? !!p.bloom : fallback.bloom,
+      shadows: p.shadows !== undefined ? !!p.shadows : fallback.shadows,
       rearMirror: !!p.rearMirror,
     }
   } catch {
-    return { ...DEFAULT_VISUAL }
+    return fallback
   }
 }
 

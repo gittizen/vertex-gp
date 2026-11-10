@@ -1,0 +1,19 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/pace-model"
+  to = "/.netlify/functions/pace-model"
+  status = 200
+
+[[redirects]]
+  from = "/api/pace-ingest"
+  to = "/.netlify/functions/pace-ingest"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -3,7 +3,7 @@ import { learnedTargetPaceMs } from './CommunityLearning'
 import type { Track } from '../track/Track'
 import type { VehicleKind } from '../track/TrackDefs'
 import type { Vehicle } from '../vehicle/Vehicle'
-import { speedCapMultFor } from '../vehicle/VehicleProfiles'
+import { catalogMaxKmh, speedCapMultFor } from '../vehicle/VehicleProfiles'
 
 /**
  * Rychlostní násobiče slotů (slot 0 = hráč).
@@ -15,6 +15,17 @@ const SLOT_SPEED = [1, 1 / 0.9, 1.0, 0.8]
 /** Kompenzace zatáček + náběhu, ať průměrné tempo ≈ cíl */
 const CORNER_COMP = 1.34
 const PACE_BOOST = 4 * 1.1 * 1.1
+
+/**
+ * AI Shift bursty — analytik: očekávaný příspěvek k tempu.
+ * ~1–2 holdy / kolo na rovince × průměrný mult → ~+1.5 % avg speed u shift vozů.
+ * Cruise se dělí `AI_SHIFT_PACE_FACTOR`, ať dojezd ≈ targetPaceMs i s bursty.
+ */
+export const AI_SHIFT_DUTY = 0.1
+export const AI_SHIFT_AVG_MULT = 1.28
+export const AI_SHIFT_PACE_FACTOR = 1 + AI_SHIFT_DUTY * (AI_SHIFT_AVG_MULT - 1) * 0.55
+const SHIFT_CORNER_MAX = 0.22
+const SHIFT_HOLD_FRAC = 0.055
 
 /**
  * Náběh ze startu podle typu — vizuálně rozdílný, finální čas drží catch-up dluh.
@@ -30,6 +41,10 @@ function launchFeelFor(kind: VehicleKind): LaunchFeel {
       return { durationSec: 1.35, startFrac: 0.22, accelBlend: 2.4 }
     case 'moto':
       return { durationSec: 1.55, startFrac: 0.18, accelBlend: 2.2 }
+    case 'harley':
+      return { durationSec: 1.75, startFrac: 0.16, accelBlend: 2.0 }
+    case 'kroska':
+      return { durationSec: 1.35, startFrac: 0.2, accelBlend: 2.5 }
     case 'street':
     case 'limo':
       return { durationSec: 2.05, startFrac: 0.14, accelBlend: 1.85 }
@@ -114,7 +129,8 @@ export class AiDriver {
     const diffScale = Math.max(0.2, this.difficulty.speedScale)
     const capScale =
       speedCapMultFor(vehicle.kind) / Math.max(0.05, speedCapMultFor('street'))
-    const paceMs = learnedTargetPaceMs(track.def.id) ?? track.def.targetPaceMs
+    const paceMs =
+      learnedTargetPaceMs(track.def.id, track.def.targetPaceMs) ?? track.def.targetPaceMs
 
     let cruise: number
     if (paceMs && paceMs > 800) {
@@ -129,6 +145,16 @@ export class AiDriver {
     }
 
     if (!Number.isFinite(cruise) || cruise < 6) cruise = 6
+
+    // Shift vozidla: lehce stáhni baseline, ať bursty drží průměr ≈ targetPaceMs
+    const shiftCapable = vehicle.hasShiftSpecial()
+    if (shiftCapable) cruise /= AI_SHIFT_PACE_FACTOR
+
+    // Tvrdý strop = katalogové max daného peklostroje (AI nesmí jet rychleji než hráč s tím vozem)
+    const catalogCapMs = catalogMaxKmh(vehicle.kind) / 3.6
+    const physicsCap = vehicleCruiseCap(vehicle)
+    const hardCap = Math.max(8, Math.min(catalogCapMs, physicsCap) * 0.995)
+    cruise = Math.min(cruise, hardCap)
 
     const feel = launchFeelFor(vehicle.kind)
     const prevLaunch = this.launch
@@ -145,11 +171,15 @@ export class AiDriver {
       this.paceDebt += Math.max(0, (ideal - target) * dt)
     }
     // Splácení: mírně nad cruise, dokud dluh nezmizí — průměrný čas ≈ targetPaceMs
+    // nikdy ale přes hardCap (pravidla peklostroje)
     if (this.paceDebt > 0.05 && this.launch >= 0.55) {
-      const repay = Math.min(this.paceDebt * 0.55, cruise * 0.14)
+      const headroom = Math.max(0, hardCap - target)
+      const repay = Math.min(this.paceDebt * 0.55, cruise * 0.14, headroom)
       target += repay
       this.paceDebt = Math.max(0, this.paceDebt - repay * dt)
     }
+
+    target = Math.min(target, hardCap)
 
     if (target >= this.pace) {
       const blend = Math.min(1, feel.accelBlend * dt)
@@ -158,11 +188,17 @@ export class AiDriver {
       const brakeBlend = Math.min(1, (4.2 + corner * 5) * dt)
       this.pace += (target - this.pace) * brakeBlend
     }
+    this.pace = Math.min(this.pace, hardCap)
+
+    const shiftHold =
+      shiftCapable && this.launch >= 0.45 && wantAiShiftBurst(t, this.slot, corner)
+    const shiftMult = vehicle.tickAiShift(dt, shiftHold)
+    const outPace = Math.min(hardCap, this.pace * Math.max(1, shiftMult))
 
     const prevPace = this.pace
-    this.railDist += this.pace * dt
+    this.railDist += outPace * dt
     if (!loop && this.railDist > len) this.railDist = len
-    vehicle.physics.speed = this.pace
+    vehicle.physics.speed = outPace
 
     // Náklon: teď + krátký výhled, silný výjezd (hold za apexem)
     const cornerExit = cornerFactor(track, wrap(t - 0.028), loop)
@@ -181,15 +217,16 @@ export class AiDriver {
     vehicle.physics.angularVel = this.leanSmooth * (bike ? 1.15 : 0.55)
     vehicle.physics.latVel = this.leanSmooth * this.pace * (bike ? 0.08 : 0.03)
 
-    if (vehicle.kind === 'monster') {
-      const boosting = this.pace > prevPace + 0.05 || (this.pace > 8 && corner < 0.22)
+    if (vehicle.kind === 'monster' || vehicle.kind === 'truck' || vehicle.kind === 'tank') {
+      const boosting =
+        shiftHold || this.pace > prevPace + 0.05 || (this.pace > 8 && corner < SHIFT_CORNER_MAX)
       vehicle.setTurboInput(boosting ? 1 : 0.15, dt)
     } else {
       vehicle.setTurboInput(0, dt)
     }
-    if (vehicle.kind === 'skate') {
-      const pushing = this.pace > prevPace + 0.08 || (this.launch < 0.85 && this.pace > 5)
-      vehicle.setPushVisual(pushing ? 1 : 0, dt)
+    if (vehicle.kind === 'skate' || vehicle.kind === 'bike') {
+      // AI pořád odráží / šlape (vizuál); tempo řeší rail + Shift burst
+      vehicle.setPushVisual(shiftHold ? 1 : 0.85, dt)
     }
     this.place(vehicle, track, dt)
   }
@@ -210,6 +247,11 @@ export class AiDriver {
   }
 }
 
+function vehicleCruiseCap(vehicle: Vehicle): number {
+  const { downforce, speedCapMult } = vehicle.physics.tuning
+  return (118 + downforce * 5) * 1.3 * (speedCapMult || 1)
+}
+
 function equilibriumSpeed(vehicle: Vehicle): number {
   const { power, drag, downforce, mass, speedCapMult } = vehicle.physics.tuning
   const p = (power * 0.85) / Math.max(0.5, mass)
@@ -225,6 +267,21 @@ function equilibriumSpeed(vehicle: Vehicle): number {
 function laneOffset(slot: number, halfWidth: number): number {
   const side = slot % 2 === 0 ? -1 : 1
   return side * Math.min(3.4, halfWidth * 0.32)
+}
+
+/** 1–2 Shift okna / kolo, rozfázovaná podle slotu, jen na rovince. */
+function wantAiShiftBurst(lapT: number, slot: number, corner: number): boolean {
+  if (corner > SHIFT_CORNER_MAX) return false
+  const s = Math.max(1, slot | 0)
+  const a = (0.2 + s * 0.11) % 1
+  const b = (0.62 + s * 0.07) % 1
+  return nearFrac(lapT, a, SHIFT_HOLD_FRAC) || nearFrac(lapT, b, SHIFT_HOLD_FRAC)
+}
+
+function nearFrac(t: number, center: number, half: number): boolean {
+  let d = Math.abs(t - center)
+  if (d > 0.5) d = 1 - d
+  return d <= half
 }
 
 function cornerFactor(track: Track, t: number, loop: boolean): number {

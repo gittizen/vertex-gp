@@ -14,15 +14,9 @@ import {
   DEFAULT_CONTROL_FEEL,
   type MobileDriveScheme,
 } from './ControlFeel'
+import { isMobileClient } from './MobileLook'
 
-/** Detekce telefonu / tabletu (dotyk + úzký viewport). */
-export function isMobileClient(): boolean {
-  const touch = navigator.maxTouchPoints > 0 || 'ontouchstart' in window
-  const coarse = window.matchMedia('(pointer: coarse)').matches
-  const narrow = Math.min(window.innerWidth, window.innerHeight) < 900
-  const ua = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-  return touch && (coarse || ua || narrow)
-}
+export { isMobileClient } from './MobileLook'
 
 /**
  * Klávesnice (remapovatelná) + na telefonu režimy řízení (pads / joystick / tilt / tap).
@@ -31,6 +25,15 @@ export function isMobileClient(): boolean {
 export class Input {
   readonly keys = new Set<string>()
   private readonly justPressed = new Set<string>()
+  /**
+   * Tab/Alt boost — odděleně od `keys`, protože Alt často spustí blur
+   * okna a `keys.clear()` by boost hned zrušil (cyklista „nejede“).
+   */
+  private readonly tabBoostCodes = new Set<string>()
+  /** QA / sticky — nepustí boost ani při syntetickém keyup po Alt. */
+  private tabBoostForce = false
+  /** QA — vynucený Space e-brake. */
+  private ebrakeForce = false
   bindings: KeyBindingsMap = loadKeyBindings()
   trickBindings: TrickBindingsMap = loadTrickBindings()
 
@@ -57,17 +60,25 @@ export class Input {
   private stickOrigin = { x: 0, y: 0 }
   private wheelPointerId: number | null = null
   private tapPointers = new Map<number, 'left' | 'right' | 'brake'>()
+  /** Boost tlačítko jen u vozidel se Shift/turbo special. */
+  private boostAllowed = false
+  /** 4 FS triky na telefonu (portrait skate/bike). */
+  private fsPadOn = false
+  private fsPadKind: 'skate' | 'bike' = 'skate'
+  private fsPadLetter: string | null = null
 
   constructor() {
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return
       this.keys.add(e.code)
       this.justPressed.add(e.code)
+      if (this.isTabBoostCode(e.code)) this.tabBoostCodes.add(e.code)
       if (
         e.code.startsWith('Arrow') ||
         e.code === 'Space' ||
         e.code === 'Tab' ||
-        e.code.startsWith('Alt') ||
+        e.code === 'AltLeft' ||
+        e.code === 'AltRight' ||
         e.code.startsWith('Control')
       ) {
         e.preventDefault()
@@ -75,11 +86,22 @@ export class Input {
     })
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code)
+      // Alt menu často pošle keyup i když hráč pořád drží / blur — neber to, dokud nemá focus
+      if (this.isTabBoostCode(e.code) && !document.hasFocus()) return
+      this.tabBoostCodes.delete(e.code)
     })
     window.addEventListener('blur', () => {
+      // Nech Tab/Alt boost kódy — Alt blur ≠ puštění klávesy
       this.keys.clear()
       this.resetMobileAxes()
     })
+  }
+
+  private isTabBoostCode(code: string): boolean {
+    // Default boost = Alt; Tab jen když je explicitně v remap
+    if (code === 'AltLeft' || code === 'AltRight') return true
+    const slots = this.bindings.tab
+    return !!slots && (slots[0] === code || slots[1] === code)
   }
 
   reloadBindings(): void {
@@ -113,6 +135,32 @@ export class Input {
     return this.scheme
   }
 
+  /** Zapne/vypne Boost v mobilním HUD podle peklostroje. */
+  setMobileBoostAllowed(on: boolean): void {
+    if (this.boostAllowed === on) return
+    this.boostAllowed = on
+    if (!on) this.btnBoost = 0
+    if (this.root && this.mobile) {
+      const wasVisible = this.mobileActive
+      this.rebuildMobileUi()
+      this.setMobileHud(wasVisible)
+    }
+  }
+
+  /** Zapne 4 FS tlačítka (jen mobil + board). */
+  setMobileFsPad(on: boolean, kind: 'skate' | 'bike' = 'skate'): void {
+    const next = !!on && this.mobile
+    if (this.fsPadOn === next && this.fsPadKind === kind) return
+    this.fsPadOn = next
+    this.fsPadKind = kind
+    if (!next) this.fsPadLetter = null
+    if (this.root && this.mobile) {
+      const wasVisible = this.mobileActive
+      this.rebuildMobileUi()
+      this.setMobileHud(wasVisible)
+    }
+  }
+
   setMobileHud(visible: boolean): void {
     this.mobileActive = visible && this.mobile
     if (!this.root) return
@@ -138,10 +186,6 @@ export class Input {
       if (!exclude.includes(code)) return true
     }
     return false
-  }
-
-  actionHeld(action: Parameters<typeof bindingActive>[1]): boolean {
-    return bindingActive(this.bindings, action, this.keys)
   }
 
   actionPressed(action: Parameters<typeof bindingJustPressed>[1]): boolean {
@@ -184,6 +228,7 @@ export class Input {
   }
 
   get tab(): number {
+    if (this.tabBoostForce || this.tabBoostCodes.size > 0) return 1
     if (this.actionHeld('tab')) return 1
     // Alt L/R vždy = Tab boost (i když remap druhý slot přepsal AltLeft)
     if (this.keys.has('AltLeft') || this.keys.has('AltRight')) return 1
@@ -191,13 +236,46 @@ export class Input {
     return 0
   }
 
-  /** Na mobilu vždy null — triky nejsou. */
+  /** QA / menu — vynutit nebo zrušit Tab·Alt boost bez reálné klávesy. */
+  setTabBoostHeld(on: boolean, code = 'AltLeft'): void {
+    this.tabBoostForce = !!on
+    if (on) this.tabBoostCodes.add(code)
+    else this.tabBoostCodes.clear()
+  }
+
+  /** QA — vynutit Space e-brake (drift). */
+  setEbrakeHeld(on: boolean): void {
+    this.ebrakeForce = !!on
+    if (on) this.keys.add('Space')
+    else this.keys.delete('Space')
+  }
+
+  /** QA — držet konkrétní kódy (řízení při drift testu). */
+  setKeysHeld(codes: string[], on: boolean): void {
+    for (const code of codes) {
+      if (on) this.keys.add(code)
+      else this.keys.delete(code)
+    }
+  }
+
+  actionHeld(action: Parameters<typeof bindingActive>[1]): boolean {
+    if (action === 'ebrake' && this.ebrakeForce) return true
+    return bindingActive(this.bindings, action, this.keys)
+  }
+
   /** Krátký buffer — trik se nezkazí, když keydown přijde těsně před endFrame. */
   private trickLetterBuf: string | null = null
   private trickLetterFrames = 0
 
   get trickLetter(): string | null {
-    if (this.mobile) return null
+    if (this.mobile) {
+      if (this.fsPadLetter) {
+        const L = this.fsPadLetter
+        this.fsPadLetter = null
+        return L
+      }
+      return null
+    }
     for (const code of this.justPressed) {
       const letter = codeToTrickLetter(this.trickBindings, code)
       if (letter) {
@@ -218,6 +296,11 @@ export class Input {
     return this.keys.has('Escape') || this.actionHeld('menu')
   }
 
+  /** Esc / Backspace / remap Menu — pauza ↔ nápověda ↔ menu. */
+  get menuNavHeld(): boolean {
+    return this.escapeHeld || this.keys.has('Backspace')
+  }
+
   private tapSteer(): number {
     let s = 0
     for (const zone of this.tapPointers.values()) {
@@ -232,21 +315,69 @@ export class Input {
     if (!root) return
     this.autoGas = this.scheme === 'tilt' || this.scheme === 'tap'
     root.dataset.scheme = this.scheme
-    root.innerHTML = this.schemeHtml(this.scheme)
+    root.dataset.fs = this.fsPadOn ? '1' : '0'
+    root.innerHTML = this.schemeHtml(this.scheme) + this.fsPadHtml()
     this.stickEl = root.querySelector('#mc-stick')
     this.knobEl = root.querySelector('#mc-knob')
     this.bindScheme(root)
+    this.bindFsPad(root)
+  }
+
+  private fsPadHtml(): string {
+    if (!this.fsPadOn) return ''
+    // Skate: Ollie / Kickflip / Heelflip / Tre · Bike: Bunny / Whip / Table / Barspin
+    const slots =
+      this.fsPadKind === 'bike'
+        ? [
+            { letter: 'A', label: 'Bunny' },
+            { letter: 'H', label: 'Whip' },
+            { letter: 'F', label: 'Table' },
+            { letter: 'D', label: 'Spin' },
+          ]
+        : [
+            { letter: 'A', label: 'Ollie' },
+            { letter: 'F', label: 'Kick' },
+            { letter: 'G', label: 'Heel' },
+            { letter: 'K', label: 'Tre' },
+          ]
+    return `<div class="mc-fs-pad" id="mc-fs-pad" aria-label="Freestyle">
+      ${slots
+        .map(
+          (s) =>
+            `<button type="button" class="mc-fs-btn" data-fs-letter="${s.letter}"><span>${s.label}</span><small>${s.letter}</small></button>`,
+        )
+        .join('')}
+    </div>`
+  }
+
+  private bindFsPad(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-fs-letter]').forEach((btn) => {
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const letter = btn.dataset.fsLetter
+        if (letter) this.fsPadLetter = letter
+        btn.classList.add('mc-active')
+      })
+      const end = () => btn.classList.remove('mc-active')
+      btn.addEventListener('pointerup', end)
+      btn.addEventListener('pointercancel', end)
+      btn.addEventListener('pointerleave', end)
+    })
   }
 
   private schemeHtml(scheme: MobileDriveScheme): string {
-    const boost = `<button type="button" class="mc-btn mc-boost" id="mc-boost">${t('mobile.boost')}</button>`
+    const boost = this.boostAllowed
+      ? `<button type="button" class="mc-btn mc-boost" id="mc-boost">${t('mobile.boost')}</button>`
+      : ''
+    const brakeCenter = `<button type="button" class="mc-btn mc-brake mc-brake-center" id="mc-brake">${t('mobile.brake')}</button>`
     if (scheme === 'joystick') {
       return `
         <div class="mc-stick" id="mc-stick" aria-label="Joystick">
           <div class="mc-stick-knob" id="mc-knob"></div>
         </div>
-        <div class="mc-buttons">
-          <button type="button" class="mc-btn mc-brake" id="mc-brake">${t('mobile.brake')}</button>
+        ${brakeCenter}
+        <div class="mc-buttons mc-buttons-right">
           <button type="button" class="mc-btn mc-gas" id="mc-gas">${t('mobile.gas')}</button>
           ${boost}
         </div>`
@@ -254,25 +385,26 @@ export class Input {
     if (scheme === 'tilt') {
       return `
         <div class="mc-tilt-hint" id="mc-tilt-status">${t('mobile.tiltHint')}</div>
-        <div class="mc-buttons mc-buttons-tilt">
-          <button type="button" class="mc-btn mc-brake mc-brake-wide" id="mc-brake">${t('mobile.brake')}</button>
-          ${boost}
-        </div>
+        ${brakeCenter}
+        ${
+          boost
+            ? `<div class="mc-buttons mc-buttons-right mc-buttons-tilt">${boost}</div>`
+            : ''
+        }
         <button type="button" class="mc-tilt" id="mc-tilt">${t('mobile.tiltOn')}</button>`
     }
     if (scheme === 'tap') {
+      const legend = this.boostAllowed ? t('mobile.tapLegend') : t('mobile.tapLegendNoBoost')
       return `
         <div class="mc-tap-layer" id="mc-tap-layer" aria-hidden="true">
           <div class="mc-tap-zone mc-tap-left" data-zone="left"><span>${t('mobile.tapLeft')}</span></div>
           <div class="mc-tap-zone mc-tap-brake" data-zone="brake"><span>${t('mobile.tapBrake')}</span></div>
           <div class="mc-tap-zone mc-tap-right" data-zone="right"><span>${t('mobile.tapRight')}</span></div>
         </div>
-        <div class="mc-buttons mc-buttons-float">
-          ${boost}
-        </div>
-        <p class="mc-tap-legend">${t('mobile.tapLegend')}</p>`
+        ${boost ? `<div class="mc-buttons mc-buttons-float">${boost}</div>` : ''}
+        <p class="mc-tap-legend">${legend}</p>`
     }
-    // pads — klasika z mobilních formulí: volant + plyn/brzda
+    // pads — volant vlevo, brzda střed, plyn/boost vpravo
     return `
       <div class="mc-wheel" id="mc-wheel" aria-label="${t('mobile.wheel')}">
         <div class="mc-wheel-track">
@@ -280,8 +412,8 @@ export class Input {
         </div>
         <span class="mc-wheel-label">${t('mobile.wheel')}</span>
       </div>
-      <div class="mc-buttons">
-        <button type="button" class="mc-btn mc-brake" id="mc-brake">${t('mobile.brake')}</button>
+      ${brakeCenter}
+      <div class="mc-buttons mc-buttons-right">
         <button type="button" class="mc-btn mc-gas" id="mc-gas">${t('mobile.gas')}</button>
         ${boost}
       </div>`
@@ -479,6 +611,17 @@ export class Input {
     this.tiltSteer = 0
   }
 
+  /** Po otočení telefonu srovnej nulu (gamma/beta se prohodí). */
+  recenterTilt(): void {
+    if (!this.tiltEnabled) return
+    this.tiltZeroGamma = null
+    this.tiltSteer = 0
+  }
+
+  private portraitScreen(): boolean {
+    return window.matchMedia('(orientation: portrait)').matches
+  }
+
   private async ensureTilt(btn?: HTMLButtonElement | null): Promise<void> {
     const status = this.root?.querySelector('#mc-tilt-status')
     const label = btn ?? this.root?.querySelector('#mc-tilt')
@@ -509,10 +652,13 @@ export class Input {
       if (status) status.textContent = t('mobile.tiltActive')
       this.tiltListener = (e: DeviceOrientationEvent) => {
         if (!this.mobileActive || !this.tiltEnabled) return
-        const gamma = e.gamma ?? 0
-        if (this.tiltZeroGamma === null) this.tiltZeroGamma = gamma
-        const delta = gamma - this.tiltZeroGamma
-        this.tiltSteer = clamp(-delta / 28, -1, 1)
+        // Portrait: beta (předozadní náklon při držení na výšku) · landscape: gamma
+        const portrait = this.portraitScreen()
+        const raw = portrait ? (e.beta ?? 0) : (e.gamma ?? 0)
+        if (this.tiltZeroGamma === null) this.tiltZeroGamma = raw
+        const delta = raw - this.tiltZeroGamma
+        const sens = portrait ? 34 : 28
+        this.tiltSteer = clamp(-delta / sens, -1, 1)
       }
       window.addEventListener('deviceorientation', this.tiltListener)
     } catch {

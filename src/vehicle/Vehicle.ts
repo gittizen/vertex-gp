@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { VehicleKind } from '../track/TrackDefs'
 import { createVehicleMesh } from './VehicleMeshes'
+import { DEFAULT_VEHICLE_LOOK, type VehicleLook } from './VehicleLook'
 import { VehiclePhysics, type VehicleControls, type VehicleTuning } from './VehiclePhysics'
 import type { Track } from '../track/Track'
 import {
@@ -24,7 +25,10 @@ export class Vehicle {
   readonly physics: VehiclePhysics
   readonly info: DriverInfo
   kind: VehicleKind = 'street'
-  neonColor = 0x7a8fa8
+  neonColor = DEFAULT_VEHICLE_LOOK.neon
+  wheelColor = DEFAULT_VEHICLE_LOOK.wheel
+  riderColor = DEFAULT_VEHICLE_LOOK.rider
+  helmColor = DEFAULT_VEHICLE_LOOK.helm
   lap = 0
   checkpoint = 0
   raceDistance = 0
@@ -45,6 +49,11 @@ export class Vehicle {
   tabBoostAmount = 0
   /** Monster: jízda po zadních (Shift) */
   wheelie = false
+  /** World yaw přívěsu (tahač) — sleduje stopu hitchi */
+  private trailerHeading = 0
+  private trailerAxleX = 0
+  private trailerAxleZ = 0
+  private trailerReady = false
   /** Pád (moto/skate/bike) nebo crash formule — nasedání / objevení */
   fallen = false
   /** true = formule bouchla (HUD); false = pád ze sedla */
@@ -63,7 +72,12 @@ export class Vehicle {
   /** Tab boost: čas držení + bazální rychlost */
   private tabHold = 0
   private tabBase = 0
-  private skateCoast = 0
+  /**
+   * 0–1 naplnění Shift boostu.
+   * ~1 s nahoru při držení, ~1 s dolů po puštění (brzda zrychlí útlum).
+   */
+  private shiftBoost01 = 0
+  private static readonly SHIFT_RAMP_SEC = 1
   /** Freestyle zapnutý ze závodu */
   freestyleOn = false
   /** Body z triků v aktuálním závodě */
@@ -85,14 +99,16 @@ export class Vehicle {
   private rampAirborne = false
   private rampVy = 0
   private rampCd = 0
-  /** Freestyle: musí udělat trik před dopadem, jinak pád */
-  private rampNeedTrick = false
-  private rampDidTrick = false
   /**
    * Hood kamera ve stylu Forza — na kapotě (ne ve vzduchu před autem):
    * `hoodZ` / `hoodY` v lokálním prostoru meshe (+Z dopředu).
    */
   hoodCam = { hoodZ: 1.2, hoodY: 0.85 }
+  /**
+   * Chase framing vs street auto (~1 = stejné vyplnění záběru).
+   * back/height škálují vzdálenost kamery; lookY výšku pohledu.
+   */
+  camFit = { back: 1, height: 1, lookY: 0.72 }
   /** Měkký contact stín pod autem — stabilní i když directional shadow map blbne. */
   private contactShadow: THREE.Mesh
 
@@ -118,8 +134,7 @@ export class Vehicle {
 
   setKind(kind: VehicleKind, scene?: THREE.Scene): void {
     if (this.kind === kind) {
-      this.setColor(this.info.color)
-      this.setNeon(this.neonColor)
+      this.applyLook(this.getLook())
       return
     }
     const parent = this.mesh.parent
@@ -127,24 +142,57 @@ export class Vehicle {
     disposeGroup(this.mesh)
     this.kind = kind
     this.mesh = createVehicleMesh(kind, this.info.color, this.neonColor)
-    this.setColor(this.info.color)
-    this.setNeon(this.neonColor)
+    this.applyLook(this.getLook())
     this.applyMeshShadows()
     this.bakeHoodCam()
     if (parent) parent.add(this.mesh)
     else scene?.add(this.mesh)
   }
 
-  /** Forza Hood: kamera na kapotě u předku, ne floating před autem. */
+  getLook(): VehicleLook {
+    return {
+      body: this.info.color,
+      neon: this.neonColor,
+      wheel: this.wheelColor,
+      rider: this.riderColor,
+      helm: this.helmColor,
+    }
+  }
+
+  applyLook(look: VehicleLook): void {
+    this.setColor(look.body)
+    this.setNeon(look.neon)
+    this.setWheelColor(look.wheel)
+    this.setRiderColor(look.rider)
+    this.setHelmColor(look.helm)
+  }
+
+  /** Forza Hood + chase framing podle siluety (referenční street auto). */
   private bakeHoodCam(): void {
     this.mesh.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(this.mesh)
+    const size = new THREE.Vector3()
+    box.getSize(size)
     const frontZ = Math.max(0.5, box.max.z)
-    const h = Math.max(0.4, box.max.y - box.min.y)
+    const h = Math.max(0.4, size.y)
     // Na kapotě: ~55 % k předku, výška ~62 % siluety (nad kapotou, pod střechou)
     const hoodZ = box.min.z + (frontZ - box.min.z) * 0.72
     const hoodY = box.min.y + h * 0.58
     this.hoodCam = { hoodZ, hoodY: Math.max(0.35, hoodY) }
+
+    // Referenční street: délka ~4.4, výška ~1.25 — stejné vyplnění záběru
+    const refLen = 4.4
+    const refH = 1.25
+    const len = Math.max(1.2, size.z)
+    const height = Math.max(0.6, size.y)
+    // Délka váží méně (kamion), výška/šířka víc — aby skate/bike nebyly moc daleko
+    const back = clamp(0.55 * (len / refLen) + 0.45 * (height / refH), 0.72, 2.15)
+    const hFit = clamp(height / refH, 0.75, 2.05)
+    this.camFit = {
+      back,
+      height: hFit,
+      lookY: clamp(0.45 + height * 0.28, 0.55, 2.4),
+    }
   }
 
   private shadowCast = false
@@ -180,6 +228,8 @@ export class Vehicle {
     this.groundY = 0
     this.pitch = 0
     this.lean = 0
+    this.trailerHeading = heading
+    this.trailerReady = false
     this.turboAmount = 0
     this.pushAmount = 0
     this.wheelie = false
@@ -194,7 +244,7 @@ export class Vehicle {
     this.turnSlow = 0
     this.tabHold = 0
     this.tabBase = 0
-    this.skateCoast = 0
+    this.shiftBoost01 = 0
     this.trickPoints = 0
     this.driftPoints = 0
     this.physics.driftPoints = 0
@@ -211,8 +261,6 @@ export class Vehicle {
     this.rampAirborne = false
     this.rampVy = 0
     this.rampCd = 0
-    this.rampNeedTrick = false
-    this.rampDidTrick = false
     this.syncTurboVisual(0)
     this.syncPushVisual(0)
     this.resetBoardPivot()
@@ -222,14 +270,19 @@ export class Vehicle {
     this.syncMesh()
   }
 
-  /** Během triku nelze řídit / startovat další trik. */
+  /** Během triku nejde startovat další; řízení FS = 50 %. */
   get trickLocked(): boolean {
     return this.trick !== 'none'
   }
 
-  /** Pád jen moto / skate / kolo. */
+  /** Pád jen moto / harley / skate / kolo. */
   canCrashFall(): boolean {
-    return this.kind === 'moto' || this.kind === 'skate' || this.kind === 'bike'
+    return this.isMotoKind() || this.kind === 'skate' || this.kind === 'bike'
+  }
+
+  /** Klasická / chopper / cross motorka. */
+  isMotoKind(): boolean {
+    return this.kind === 'moto' || this.kind === 'harley' || this.kind === 'kroska'
   }
 
   /** Formule: bouračka při tvrdém nárazu. */
@@ -277,19 +330,32 @@ export class Vehicle {
     }
 
     this.physics.surfaceGrip = track.def.surfaceGrip
-    if (this.freestyleOn) this.physics.driftMode = false
-    const locked = this.trickLocked
     const board = this.isBoardKind()
+    // Freestyle board nikdy drift brzdu; u aut ji drží Game/controlFeel
+    if (board || this.freestyleOn) this.physics.driftMode = false
+    const locked = this.trickLocked
     const shiftHeld = (controls.push ?? 0) > 0.5
-    this.wheelie = this.isMonsterFamily() && shiftHeld
-    let steerIn = locked ? 0 : controls.steer
-    if (this.wheelie) steerIn = 0
+    this.wheelie = (this.isMonsterFamily() || this.isMotoKind()) && shiftHeld
+    // FS trik: zatáčení v letu 50 %; ostatní locked = 0
+    let steerIn = controls.steer
+    if (locked) {
+      steerIn = board && this.freestyleOn ? steerIn * 0.5 : 0
+    }
+    // Wheelie (monster + moto): řízení jen 30 % základu
+    if (this.wheelie) steerIn *= 0.3
+    const ebrakeIn =
+      this.physics.driftMode && !board ? (controls.ebrake ?? 0) : 0
+    const shiftKind =
+      this.isMonsterFamily() || this.isMotoKind() || this.isBoardKind()
+    // Drž push i při dojezdu boostu (~1 s), ať physics nestahuje dřív
+    const pushOut =
+      shiftKind && (shiftHeld || this.shiftBoost01 > 0.02) ? 1 : shiftHeld ? 1 : 0
     const steered: VehicleControls = {
       throttle: controls.throttle,
       brake: controls.brake,
       steer: steerIn,
-      push: shiftHeld ? 1 : 0,
-      ebrake: this.physics.driftMode ? (controls.ebrake ?? 0) : 0,
+      push: pushOut,
+      ebrake: ebrakeIn,
       tab: controls.tab,
       trickLetter: controls.trickLetter,
     }
@@ -297,15 +363,15 @@ export class Vehicle {
     this.sanitizeMotion()
     this.driftPoints = Math.floor(this.physics.driftPoints)
     this.applyMonsterTurbo(dt, controls)
-    this.applyMonsterWheelie(dt, shiftHeld)
+    this.applyWheelieBoost(dt, shiftHeld, controls.brake ?? 0)
     if (board) {
       this.applySkateTurnSlow(dt, Math.abs(steerIn))
-      // Tab/Alt boost: skate + kolo; Shift boost: skate; triky: skate + kolo
+      // Tab/Alt: kadence; Shift: kolo 2× / skate 3× max; triky
       const wantTab = !locked && (controls.tab ?? 0) > 0.5
       this.applySkateTabBoost(dt, wantTab)
-      if (this.kind === 'skate') {
-        this.applySkateShiftBoost(dt, !locked && shiftHeld)
-      }
+      this.applyBoardShiftBoost(dt, !locked && shiftHeld, controls.brake ?? 0)
+      // V základu šlape / odráží; Alt/Tab = 3× kadence
+      this.updateBoardCadence(dt, wantTab, locked)
       this.applyBoardTricks(dt, controls)
       this.sanitizeMotion()
       this.applySlopeGravity(dt, 0.5)
@@ -325,7 +391,17 @@ export class Vehicle {
     if (hit.hit && this.bounceCd <= 0 && this.airY < 0.2 && !this.rampAirborne) {
       const absSpd = Math.abs(this.physics.speed)
       const maxSpd = this.physics.maxSpeedAbs
-      if (this.canCrashFall() && absSpd > maxSpd * 0.4) {
+      // FS board: pád jen při nárazu během triku
+      const boardFs = this.isBoardKind() && this.freestyleOn
+      if (boardFs) {
+        if (this.trick !== 'none' && absSpd > maxSpd * 0.4) {
+          this.beginFall(false)
+        } else {
+          this.bounceOffWall(hit.nx, hit.nz)
+          this.bounceCd = 0.4
+          this.recoverLeft = 3
+        }
+      } else if (this.canCrashFall() && absSpd > maxSpd * 0.4) {
         this.beginFall(false)
       } else if (this.canFormulaCrash() && absSpd > maxSpd * 0.8) {
         this.beginFall(true)
@@ -364,8 +440,6 @@ export class Vehicle {
     this.airY = 0
     this.rampAirborne = false
     this.rampVy = 0
-    this.rampNeedTrick = false
-    this.rampDidTrick = false
     this.pushAmount = 0
     this.wheelie = false
     this.tabHold = 0
@@ -376,7 +450,7 @@ export class Vehicle {
     if (formulaCrash) this.mesh.visible = false
   }
 
-  /** Rampa na Plácku — skok pro všechny; freestyle bez triku = pád. */
+  /** Rampa na Plácku — skok pro všechny. FS board padá jen při nárazu během triku. */
   private updateRampJump(dt: number, track: Track): void {
     if (this.rampCd > 0) this.rampCd = Math.max(0, this.rampCd - dt)
 
@@ -389,9 +463,6 @@ export class Vehicle {
           this.rampVy = Math.min(22, 5.5 + spd * pad.launch)
           this.physics.speed += pad.boost * Math.sign(this.physics.speed || 1)
           this.rampCd = 1.2
-          this.rampNeedTrick = this.freestyleOn && this.isBoardKind()
-          this.rampDidTrick = false
-          if (this.trick !== 'none') this.rampDidTrick = true
         }
       }
     }
@@ -404,10 +475,6 @@ export class Vehicle {
       this.airY = 0
       this.rampAirborne = false
       this.rampVy = 0
-      const failed = this.rampNeedTrick && !this.rampDidTrick
-      this.rampNeedTrick = false
-      this.rampDidTrick = false
-      if (failed) this.beginFall(false)
     }
   }
 
@@ -454,34 +521,99 @@ export class Vehicle {
     })
   }
 
-  /** Monsterstruck / kamion / tank: turbo při plynu. */
+  /** Monsterstruck / kamion / tank: boost při plynu; žluté kužely při Shift nebo Tab. */
   private applyMonsterTurbo(dt: number, controls: VehicleControls): void {
     if (!this.isMonsterFamily()) {
       this.setTurboInput(0, dt, false)
       return
     }
     this.setTurboInput(controls.throttle, dt, true)
+    const shiftHeld = (controls.push ?? 0) > 0.5
+    const tabHeld = (controls.tab ?? 0) > 0.5
+    if (shiftHeld || tabHeld) {
+      this.syncTurboVisual(Math.max(this.turboAmount, shiftHeld ? 0.75 : 0.55))
+    } else {
+      this.syncTurboVisual(0)
+    }
   }
 
-  /** Shift: wheelie — bez řízení, +20 % rychlosti, náklon na zadní. */
-  private applyMonsterWheelie(dt: number, holding: boolean): void {
-    if (!this.isMonsterFamily()) {
+  /** Cílový násobek cruise při plném Shiftu. */
+  private shiftBoostMult(): number {
+    if (this.isMonsterFamily()) return 1.56
+    if (this.kind === 'kroska') return 1.3
+    if (this.isMotoKind()) return 1.1
+    if (this.kind === 'bike') return 2
+    if (this.kind === 'skate') return 3
+    return 1
+  }
+
+  /**
+   * Společný náběh/dojezd Shift boostu (~1 s).
+   * `shiftBoost01` 0→1 při držení; po puštění 1→0. Brzda zrychlí útlum.
+   * Cíl = cruise × lerp(1, mult, u) — kratší hold = jen část cesty k max.
+   */
+  private updateShiftBoostRamp(dt: number, holding: boolean, brake: number): void {
+    const mult = this.shiftBoostMult()
+    if (mult <= 1) {
+      this.shiftBoost01 = 0
+      return
+    }
+    const ramp = 1 / Vehicle.SHIFT_RAMP_SEC
+    const braking = brake > 0.15
+    if (holding && !braking) {
+      this.shiftBoost01 = Math.min(1, this.shiftBoost01 + dt * ramp)
+    } else {
+      const down = ramp * (braking ? 1.75 : 1)
+      this.shiftBoost01 = Math.max(0, this.shiftBoost01 - dt * down)
+    }
+
+    this.pushAmount = holding
+      ? Math.max(this.pushAmount, this.shiftBoost01)
+      : this.shiftBoost01
+
+    if (this.shiftBoost01 <= 0.001) return
+
+    const cruise = Math.max(6, this.physics.maxSpeedAbs)
+    const peak = cruise * mult
+    const desiredAbs = cruise + (peak - cruise) * this.shiftBoost01
+    const sign = Math.sign(this.physics.speed || 1) || 1
+    const abs = Math.abs(this.physics.speed)
+    const nearCruise = abs >= cruise * 0.9
+
+    if (braking) {
+      // Brzda už ubrala rychlost; jen nenech envelope tlačit nahoru
+      if (abs > desiredAbs) {
+        this.physics.speed += (desiredAbs * sign - this.physics.speed) * (1 - Math.exp(-10 * dt))
+      }
+      return
+    }
+
+    // U cruise (nebo výš) sleduj desired — u řídí, jak daleko k peaku jsme
+    if (nearCruise || abs > cruise) {
+      const desired = desiredAbs * sign
+      this.physics.speed += (desired - this.physics.speed) * (1 - Math.exp(-14 * dt))
+    }
+  }
+
+  /**
+   * Shift wheelie: monster +56 %, moto/Harley +10 %, Kroska +30 %.
+   * Ramp rychlosti ~1 s; řízení při wheelie 30 %.
+   */
+  private applyWheelieBoost(dt: number, holding: boolean, brake: number): void {
+    const monster = this.isMonsterFamily()
+    const moto = this.isMotoKind()
+    if (!monster && !moto) {
       this.wheelie = false
       this.wheeliePitch = 0
       return
     }
     this.wheelie = holding
-    const want = holding ? 0.55 : 0
+    const want = holding ? (moto ? 0.48 : 0.55) : 0
     this.wheeliePitch += (want - this.wheeliePitch) * (1 - Math.exp(-8 * dt))
+    this.updateShiftBoostRamp(dt, holding, brake)
     if (holding) {
-      this.pushAmount = Math.min(1, this.pushAmount + dt * 4)
-      const sign = Math.sign(this.physics.speed || 1)
-      const target = Math.abs(this.physics.speed) * 1.2 * sign
-      this.physics.speed += (target - this.physics.speed) * (1 - Math.exp(-3.2 * dt))
-      this.physics.latVel *= Math.exp(-10 * dt)
-      this.physics.angularVel *= Math.exp(-12 * dt)
-    } else {
-      this.pushAmount = Math.max(0, this.pushAmount - dt * 3)
+      this.physics.latVel *= Math.exp(-3.2 * dt)
+      this.physics.angularVel *= Math.exp(-4.5 * dt)
     }
   }
 
@@ -494,7 +626,10 @@ export class Vehicle {
     this.physics.speed += (target - this.physics.speed) * (1 - Math.exp(-5.5 * dt))
   }
 
-  /** Tab/Alt: plynule zrychli během 2 s (+45 %), skate i kolo. */
+  /**
+   * Tab/Alt: plynulé zrychlení ~2 s.
+   * Skate +45 %, kolo +30 %. Animaci šlapání/odrážení řeší updateBoardCadence.
+   */
   private applySkateTabBoost(dt: number, holding: boolean): void {
     if (this.kind !== 'skate' && this.kind !== 'bike') return
     if (!holding) {
@@ -503,14 +638,38 @@ export class Vehicle {
       this.tabBoostAmount = Math.max(0, this.tabBoostAmount - dt * 3.5)
       return
     }
-    if (this.tabBase < 0.5) this.tabBase = Math.max(10, Math.abs(this.physics.speed))
+    const sign = Math.sign(this.physics.speed || 1) || 1
+    const abs = Math.abs(this.physics.speed)
+    const cruise = Math.max(8, this.physics.maxSpeedAbs)
+    // Zamkni base jen na začátku držení — žádný feedback loop
+    if (this.tabBase < 0.5) {
+      this.tabBase = Math.max(abs, cruise * 0.65)
+    }
     this.tabHold = Math.min(2, this.tabHold + dt)
     const u = this.tabHold / 2
     const smooth = u * u * (3 - 2 * u)
     this.tabBoostAmount = Math.min(1, 0.35 + smooth * 0.65)
-    // Původně +30 %; +50 % z té hodnoty → +45 %
-    const target = this.tabBase * (1 + 0.45 * smooth) * Math.sign(this.physics.speed || 1)
-    this.physics.speed += (target - this.physics.speed) * (1 - Math.exp(-4.2 * dt))
+    const gain = this.kind === 'bike' ? 0.3 : 0.45
+    const target = this.tabBase * (1 + gain * smooth) * sign
+    this.physics.speed += (target - this.physics.speed) * (1 - Math.exp(-5.2 * dt))
+  }
+
+  /**
+   * Kolo / skate: v základu pořád šlape / odráží.
+   * Tab/Alt = 3× kadence. Při triku nebo pádu animace stojí.
+   */
+  private updateBoardCadence(dt: number, tabHeld: boolean, locked: boolean): void {
+    if (this.kind !== 'skate' && this.kind !== 'bike') return
+    if (this.fallen || locked || this.trick !== 'none') {
+      this.syncPushVisual(this.pushAmount)
+      return
+    }
+    const base = this.kind === 'bike' ? 7.2 : 6.2
+    const rate = base * (tabHeld ? 3 : 1)
+    this.pushAmount = Math.min(1, this.pushAmount + dt * 4)
+    this.pushAmount = Math.max(0.7, this.pushAmount)
+    this.pushPhase += dt * rate
+    this.syncPushVisual(this.pushAmount)
   }
 
   /** Po tricích / bounce: ošetři Infinity/NaN (zamrzání kamery i fyziky). */
@@ -532,27 +691,14 @@ export class Vehicle {
     if (!Number.isFinite(this.trickBody.yaw)) this.trickBody = { pitch: 0, roll: 0, yaw: 0 }
   }
 
-  /** Shift: 120 % rychlosti + setrvačnost po puštění. */
-  private applySkateShiftBoost(dt: number, holding: boolean): void {
-    if (holding) {
-      this.pushAmount = Math.min(1, this.pushAmount + dt * 5)
-      this.pushPhase += dt * 7.5
-      this.skateCoast = 1
-      const sign = Math.sign(this.physics.speed || 1)
-      const base = Math.max(Math.abs(this.physics.speed), this.physics.maxSpeedAbs * 0.55)
-      const target = base * 1.2 * sign
-      this.physics.speed += (target - this.physics.speed) * (1 - Math.exp(-3.5 * dt))
-      this.physics.latVel *= Math.exp(-5 * dt)
-    } else {
-      this.pushAmount = Math.max(0, this.pushAmount - dt * 2.2)
-      if (this.pushPhase !== 0 && this.pushAmount < 0.05) this.pushPhase = 0
-      // Setrvačnost: pomalé dojezdy
-      if (this.skateCoast > 0.05) {
-        this.skateCoast = Math.max(0, this.skateCoast - dt * 0.35)
-        this.physics.speed *= Math.exp(-0.22 * dt)
-      }
-    }
-    this.syncPushVisual(this.pushAmount)
+  /**
+   * Shift: kolo → 2× max, skate → 3× max (vůči cruise).
+   * Stejný ~1 s náběh/dojezd jako monster/moto.
+   */
+  private applyBoardShiftBoost(dt: number, holding: boolean, brake: number): void {
+    if (this.kind !== 'skate' && this.kind !== 'bike') return
+    this.updateShiftBoostRamp(dt, holding, brake)
+    if (holding) this.physics.latVel *= Math.exp(-5 * dt)
   }
 
   /**
@@ -561,7 +707,8 @@ export class Vehicle {
    */
   private applyBoardTricks(dt: number, controls: VehicleControls): void {
     if (this.kind !== 'skate' && this.kind !== 'bike') return
-    if (!this.freestyleOn) return
+    // Probíhající trik doběhne i když se freestyleOn mezitím vypne (mobilní gate / QA).
+    if (!this.freestyleOn && this.trick === 'none') return
 
     if (this.trick === 'none') {
       const letter = controls.trickLetter
@@ -582,7 +729,6 @@ export class Vehicle {
       if (this.trickDef) {
         this.trickPoints += this.trickDef.points
         this.lastTrickLabel = `${this.trickDef.letter} · ${this.trickDef.nameCs} +${this.trickDef.points}`
-        if (this.rampAirborne) this.rampDidTrick = true
       }
       this.trick = 'none'
       this.trickDef = null
@@ -603,7 +749,18 @@ export class Vehicle {
     this.lastTrickLabel = `${def.letter} · ${def.nameCs}`
     const boost = def.difficulty <= 2 ? 3.5 : 2.2
     this.physics.speed += boost * Math.sign(this.physics.speed || 1)
-    if (this.rampAirborne) this.rampDidTrick = true
+  }
+
+  /** QA — spusť trik přímo (obejde Input). */
+  forceTrick(letter = 'A'): boolean {
+    if (this.kind !== 'skate' && this.kind !== 'bike') return false
+    this.freestyleOn = true
+    if (this.trick !== 'none') return false
+    const L = String(letter).toUpperCase().slice(0, 1)
+    const def = freestyleList(this.kind).find((tr) => tr.letter === L)
+    if (!def) return false
+    this.startFreestyleTrick(def)
+    return true
   }
 
   private applyTrickAnimation(u: number): void {
@@ -634,14 +791,21 @@ export class Vehicle {
         }
       }
       if (obj instanceof THREE.Mesh && obj.userData.ollieTorso) {
-        obj.rotation.x = pose.crouch * 0.5
+        const baseY = this.kind === 'bike' ? 1.22 : 1.28
+        const basePitch = this.kind === 'bike' ? 0.85 : 0
+        obj.rotation.x = basePitch + pose.crouch * 0.5
         obj.rotation.y = pose.torsoTwist
-        obj.position.y = 0.95 - pose.crouch * 0.14 - pose.squash * 0.08
+        obj.position.y = baseY - pose.crouch * 0.14 - pose.squash * 0.08
       }
       if (obj instanceof THREE.Mesh && obj.userData.ollieArm) {
         const side = obj.position.x < 0 ? 1 : -1
-        obj.rotation.z = side * pose.arms
-        obj.rotation.x = -pose.arms * 0.35
+        if (this.kind === 'bike') {
+          obj.rotation.z = side * pose.arms * 0.35
+          obj.rotation.x = -1.15 - pose.arms * 0.2
+        } else {
+          obj.rotation.z = side * pose.arms
+          obj.rotation.x = -pose.arms * 0.35
+        }
       }
     })
   }
@@ -656,55 +820,129 @@ export class Vehicle {
   }
 
   private resetOlliePose(): void {
+    const bike = this.kind === 'bike'
     this.mesh.traverse((obj) => {
       if (obj instanceof THREE.Group && (obj.userData.ollieBackLeg || obj.userData.ollieFrontLeg)) {
-        obj.rotation.x = 0
-        if (obj.userData.ollieFrontLeg) obj.position.z = 0.08
+        if (bike) {
+          obj.rotation.x = obj.userData.pushLeg ? 0.4 : 0.65
+          obj.position.y = 0.92
+          if (obj.userData.ollieFrontLeg) obj.position.z = 0.1
+          else obj.position.z = -0.12
+        } else {
+          obj.rotation.x = 0
+          obj.position.y = 0.92
+          if (obj.userData.ollieFrontLeg) obj.position.z = 0.1
+        }
       }
       if (obj instanceof THREE.Mesh && obj.userData.ollieTorso) {
-        obj.rotation.x = 0
-        obj.rotation.y = 0
-        obj.position.y = 0.95
+        if (bike) {
+          obj.rotation.x = 0.85
+          obj.rotation.y = 0
+          obj.position.set(0, 1.22, 0.12)
+        } else {
+          obj.rotation.x = 0
+          obj.rotation.y = 0
+          obj.position.y = 1.28
+        }
       }
       if (obj instanceof THREE.Mesh && obj.userData.ollieArm) {
         obj.rotation.z = 0
-        obj.rotation.x = 0
+        obj.rotation.x = bike ? (obj.position.z > 0.65 ? -1.25 : -1.05) : 0
       }
     })
   }
 
-  /** AI skate — vizuál odrážení. */
+  /** Má tento peklostroj hráčský Shift (wheelie / board boost)? */
+  hasShiftSpecial(): boolean {
+    return this.isMonsterFamily() || this.isMotoKind() || this.isBoardKind()
+  }
+
+  /**
+   * AI Shift burst — vizuál + náběh `shiftBoost01`.
+   * Vrací násobek tempa (1 = bez boostu) pro rail AiDriver.
+   */
+  tickAiShift(dt: number, holding: boolean): number {
+    if (!this.hasShiftSpecial()) {
+      this.wheelie = false
+      this.wheeliePitch = 0
+      this.shiftBoost01 = 0
+      return 1
+    }
+    if (this.isMonsterFamily() || this.isMotoKind()) {
+      this.wheelie = holding
+      const want = holding ? (this.isMotoKind() ? 0.48 : 0.55) : 0
+      this.wheeliePitch += (want - this.wheeliePitch) * (1 - Math.exp(-8 * dt))
+      if (holding && this.isMonsterFamily()) {
+        this.syncTurboVisual(Math.max(this.turboAmount, 0.75))
+      }
+    }
+    if (this.isBoardKind()) {
+      this.pushAmount = holding ? Math.max(this.pushAmount, 0.85) : this.pushAmount
+    }
+    this.updateShiftBoostRamp(dt, holding, 0)
+    const mult = this.shiftBoostMult()
+    if (mult <= 1) return 1
+    return 1 + (mult - 1) * this.shiftBoost01
+  }
+
+  /** AI — skate odrážka / kolo šlapání (pořád v pohybu). */
   setPushVisual(amount: number, dt: number): void {
-    if (this.kind !== 'skate') {
+    if (this.kind !== 'skate' && this.kind !== 'bike') {
       this.pushAmount = 0
       this.syncPushVisual(0)
       return
     }
-    const target = clamp(amount, 0, 1)
+    const target = Math.max(0.7, clamp(amount, 0, 1))
     this.pushAmount += (target - this.pushAmount) * Math.min(1, 10 * dt)
-    if (target > 0.4) this.pushPhase += dt * 7.5
-    else this.pushPhase = 0
+    const cadence = this.kind === 'bike' ? 7.2 : 6.2
+    this.pushPhase += dt * cadence
     this.syncPushVisual(this.pushAmount)
   }
 
   private syncPushVisual(amount: number): void {
-    // Žlutý turbo/jiskry u skate pryč — jen animace nohy
+    // Žlutý turbo/jiskry u skate pryč — jen animace nohou + kliky
+    const active = amount > 0.08 && this.trick === 'none'
+    const phase = this.pushPhase
     this.mesh.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.userData.pushSpark) {
         obj.visible = false
       }
+      if (obj instanceof THREE.Group && obj.userData.pedalCrank) {
+        obj.rotation.x = active ? phase : obj.rotation.x
+      }
+      if (this.kind === 'bike') {
+        if (obj instanceof THREE.Group && obj.userData.ollieBackLeg && this.trick === 'none') {
+          const stroke = active ? Math.sin(phase) * 0.7 * amount : 0
+          obj.rotation.x = 0.65 + stroke
+          obj.position.y = 0.92
+        }
+        if (obj instanceof THREE.Group && obj.userData.pushLeg && this.trick === 'none') {
+          const stroke = active ? Math.sin(phase + Math.PI) * 0.7 * amount : 0
+          obj.rotation.x = 0.4 + stroke
+          obj.rotation.z = 0
+          obj.position.y = 0.92
+          obj.position.z = 0.1
+        }
+        if (obj instanceof THREE.Mesh && obj.userData.pushShin && this.trick === 'none') {
+          obj.rotation.x = active ? 0.4 + Math.max(0, Math.sin(phase + Math.PI)) * 0.55 * amount : 0.4
+        }
+        if (obj instanceof THREE.Mesh && obj.userData.pushFoot && this.trick === 'none') {
+          obj.rotation.x = active ? -0.2 - Math.sin(phase + Math.PI) * 0.25 * amount : 0
+        }
+        return
+      }
       if (obj instanceof THREE.Group && obj.userData.pushLeg && this.trick === 'none') {
-        const stroke = amount > 0.08 ? Math.sin(this.pushPhase) * 0.55 * amount : 0
+        const stroke = active ? Math.sin(phase) * 0.55 * amount : 0
         obj.rotation.x = stroke * 1.1
         obj.rotation.z = stroke * 0.35
-        obj.position.y = 0.55 - Math.abs(stroke) * 0.08
-        obj.position.z = 0.08 + Math.max(0, stroke) * 0.25
+        obj.position.y = 0.92 - Math.abs(stroke) * 0.1
+        obj.position.z = 0.1 + Math.max(0, stroke) * 0.28
       }
       if (obj instanceof THREE.Mesh && obj.userData.pushShin && this.trick === 'none') {
-        obj.rotation.x = amount > 0.08 ? Math.max(0, Math.sin(this.pushPhase)) * 0.7 : 0
+        obj.rotation.x = active ? Math.max(0, Math.sin(phase)) * 0.7 : 0
       }
       if (obj instanceof THREE.Mesh && obj.userData.pushFoot && this.trick === 'none') {
-        obj.rotation.x = amount > 0.08 ? -0.4 - Math.sin(this.pushPhase) * 0.35 : 0
+        obj.rotation.x = active ? -0.4 - Math.sin(phase) * 0.35 : 0
       }
     })
   }
@@ -735,7 +973,8 @@ export class Vehicle {
     } else {
       this.turboAmount = Math.max(0, this.turboAmount - dt * 1.6)
     }
-    this.syncTurboVisual(this.turboAmount)
+    // Vizuál kuželů řídí hráč přes Tab (applyMonsterTurbo); AI sem nechá plameny při boostu
+    if (!applyBoost) this.syncTurboVisual(this.turboAmount)
   }
 
   private syncTurboVisual(amount: number): void {
@@ -822,7 +1061,7 @@ export class Vehicle {
 
   /** Motorka / skate / kolo — výrazný náklon. */
   wantsBikeLean(): boolean {
-    return this.kind === 'moto' || this.kind === 'skate' || this.kind === 'bike'
+    return this.isMotoKind() || this.kind === 'skate' || this.kind === 'bike'
   }
 
   syncMesh(dt = 1 / 60): void {
@@ -842,17 +1081,19 @@ export class Vehicle {
     // roll z lean + trik se sčítá níže
 
     let targetLean: number
-    if (this.kind === 'moto') {
+    if (this.isMotoKind()) {
       const maxLean = (70 * Math.PI) / 180
       let lean = this.physics.latVel * 0.12 + this.physics.angularVel * 0.75
       const turning = Math.abs(this.physics.angularVel) > 0.12 || Math.abs(this.physics.latVel) > 1.5
       if (turning) lean *= 1.2
       targetLean = clamp(lean, -maxLean, maxLean)
     } else if (board) {
-      let lean = this.physics.latVel * 0.1 + this.physics.angularVel * 0.62
+      // Freestyle: ~50 % náklonu oproti moto
+      const maxLean = ((70 * Math.PI) / 180) * 0.5
+      let lean = (this.physics.latVel * 0.12 + this.physics.angularVel * 0.75) * 0.5
       const turning = Math.abs(this.physics.angularVel) > 0.12 || Math.abs(this.physics.latVel) > 1.5
       if (turning) lean *= 1.2
-      targetLean = clamp(lean, -0.55, 0.55)
+      targetLean = clamp(lean, -maxLean, maxLean)
     } else {
       const absSpeed = Math.abs(this.physics.speed)
       const speedFactor = clamp(absSpeed / 95, 0, 1)
@@ -862,13 +1103,60 @@ export class Vehicle {
     // Moto/board: do náklonu svižně, srovnání po výjezdu pomalu (jako v realitě)
     const rising = Math.abs(targetLean) > Math.abs(this.lean) + 0.02
     let leanRate: number
-    if (this.kind === 'moto') leanRate = rising ? 7.5 : 2.2
+    if (this.isMotoKind()) leanRate = rising ? 7.5 : 2.2
     else if (board) leanRate = rising ? 8.5 : 3.0
     else leanRate = 7
     const leanK = 1 - Math.exp(-leanRate * dt)
     this.lean += (targetLean - this.lean) * leanK
     this.mesh.rotation.z = -this.lean + this.trickBody.roll
+    this.syncTrailerJoint(dt)
     this.spinWheels(dt)
+  }
+
+  /**
+   * Tahač: přívěs ve stopě hitchi (follow-the-leader).
+   * Náprava drží délku za točnicí a míří na ni — žádné umělé „kývání“.
+   */
+  private syncTrailerJoint(_dt: number): void {
+    if (this.kind !== 'truck') return
+    const p = this.physics
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.z) || !Number.isFinite(p.heading)) return
+
+    const hitchLocalZ = 0.05
+    const trailerLen = 3.8
+    const fx = Math.sin(p.heading)
+    const fz = Math.cos(p.heading)
+    const hitchX = p.x + fx * hitchLocalZ
+    const hitchZ = p.z + fz * hitchLocalZ
+
+    if (!this.trailerReady) {
+      this.trailerHeading = p.heading
+      this.trailerAxleX = hitchX - fx * trailerLen
+      this.trailerAxleZ = hitchZ - fz * trailerLen
+      this.trailerReady = true
+    }
+
+    const dx = hitchX - this.trailerAxleX
+    const dz = hitchZ - this.trailerAxleZ
+    if (dx * dx + dz * dz > 1e-6) {
+      this.trailerHeading = Math.atan2(dx, dz)
+    }
+    const tfx = Math.sin(this.trailerHeading)
+    const tfz = Math.cos(this.trailerHeading)
+    this.trailerAxleX = hitchX - tfx * trailerLen
+    this.trailerAxleZ = hitchZ - tfz * trailerLen
+
+    let rel = this.trailerHeading - p.heading
+    if (!Number.isFinite(rel)) rel = 0
+    rel = ((rel + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI
+    if (rel <= -Math.PI) rel += Math.PI * 2
+    rel = clamp(rel, -1.05, 1.05)
+
+    this.mesh.traverse((obj) => {
+      if (!(obj instanceof THREE.Group) || !obj.userData.truckTrailer) return
+      obj.rotation.order = 'YXZ'
+      obj.rotation.y = rel
+    })
   }
 
   private spinWheels(dt: number): void {
@@ -910,37 +1198,56 @@ export class Vehicle {
     this.neonColor = color
     const none = color < 0
     this.mesh.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return
-      if (obj.userData.neonGlow) {
-        obj.visible = !none
-        if (none) return
-        const mat = obj.material
-        if (
-          mat instanceof THREE.MeshLambertMaterial ||
-          mat instanceof THREE.MeshPhongMaterial ||
-          mat instanceof THREE.MeshBasicMaterial
-        ) {
-          mat.color.setHex(color)
-          if ('emissive' in mat) {
-            ;(mat as THREE.MeshLambertMaterial).emissive.setHex(color)
-            ;(mat as THREE.MeshLambertMaterial).emissiveIntensity = 0.7
-          }
+      if (!(obj instanceof THREE.Mesh) || !obj.userData.neonGlow) return
+      obj.visible = !none
+      if (none) return
+      const mat = obj.material
+      if (
+        mat instanceof THREE.MeshStandardMaterial ||
+        mat instanceof THREE.MeshLambertMaterial ||
+        mat instanceof THREE.MeshPhongMaterial ||
+        mat instanceof THREE.MeshBasicMaterial
+      ) {
+        mat.color.setHex(color)
+        if ('emissive' in mat) {
+          mat.emissive.setHex(color)
+          mat.emissiveIntensity = 0.85
         }
-        return
       }
-      if (this.kind === 'bike' && obj.userData.wheelPaint) {
-        const mat = obj.material
-        if (
-          mat instanceof THREE.MeshLambertMaterial ||
-          mat instanceof THREE.MeshPhongMaterial ||
-          mat instanceof THREE.MeshBasicMaterial
-        ) {
-          const c = none ? 0x1a1a1a : color
-          mat.color.setHex(c)
-          if ('emissive' in mat) {
-            ;(mat as THREE.MeshLambertMaterial).emissive.setHex(none ? 0x000000 : color)
-            ;(mat as THREE.MeshLambertMaterial).emissiveIntensity = none ? 0 : 0.55
-          }
+    })
+  }
+
+  setWheelColor(color: number): void {
+    this.wheelColor = color
+    this.tintByFlag('wheelPaint', color, 0x1a1a1a)
+  }
+
+  setRiderColor(color: number): void {
+    this.riderColor = color
+    this.tintByFlag('riderPaint', color, 0x1c2430)
+  }
+
+  setHelmColor(color: number): void {
+    this.helmColor = color
+    this.tintByFlag('helmPaint', color, 0x2a2a32)
+  }
+
+  private tintByFlag(flag: string, color: number, noneHex: number): void {
+    const none = color < 0
+    const hex = none ? noneHex : color
+    this.mesh.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh) || !obj.userData[flag]) return
+      const mat = obj.material
+      if (
+        mat instanceof THREE.MeshStandardMaterial ||
+        mat instanceof THREE.MeshLambertMaterial ||
+        mat instanceof THREE.MeshPhongMaterial ||
+        mat instanceof THREE.MeshBasicMaterial
+      ) {
+        mat.color.setHex(hex)
+        if ('emissive' in mat && mat instanceof THREE.MeshLambertMaterial) {
+          mat.emissive.setHex(none ? 0x000000 : hex)
+          mat.emissiveIntensity = none ? 0 : 0.15
         }
       }
     })

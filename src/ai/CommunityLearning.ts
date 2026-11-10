@@ -1,11 +1,23 @@
 import type { DifficultyId } from './Difficulty'
 import type { VehicleKind } from '../track/TrackDefs'
 import { speedCapMultFor } from '../vehicle/VehicleProfiles'
+import {
+  DEFAULT_PLAYER_TUNING,
+  tuningPaceFactor,
+  type PlayerTuningValues,
+} from '../tuning/PlayerTuning'
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
+import { pullCloudPaceModel, pushCloudPaceSample } from './CloudPace'
 
 const SAMPLES_KEY = `${GAME_STORAGE_NS}.community-races-v1`
 const MODEL_KEY = `${GAME_STORAGE_NS}.ai-learned-v1`
 const SETTINGS_KEY = `${GAME_STORAGE_NS}.ai-learn-settings`
+const CLIENT_KEY = `${GAME_STORAGE_NS}.learn-client-id`
+const RATE_KEY = `${GAME_STORAGE_NS}.learn-rate-v1`
+
+/** Max změna naučeného tempa vs design / předchozí (±5 %). */
+export const LEARN_MAX_DELTA = 0.05
+const LOCAL_RATE_MS = 20_000
 
 /** Jedna dojetá jízda člověka (jen po finish). */
 export type CommunityRaceSample = {
@@ -18,6 +30,10 @@ export type CommunityRaceSample = {
   finishTimeMs: number
   /** Tempo 1 kola / etapy — stejná semantika jako targetPaceMs */
   paceMs: number
+  /** paceMs přepočtené na neutral tuning (pro model) */
+  paceNeutralMs?: number
+  tuneFactor?: number
+  capScale?: number
   bestLapMs: number
   totalLaps: number
   trackLength: number
@@ -46,14 +62,17 @@ export type LearnedPaceModel = {
 }
 
 export type LearnSettings = {
-  /** Učit se z dojetých závodů (default on) */
+  /** Učit se z dojetých závodů lokálně (default on) */
   enabled: boolean
+  /** Posílat anonymní tempo na cloud (opt-in telemetry) */
+  upload: boolean
   /** Použít naučené tempo v AI (default on) */
   applyToAi: boolean
 }
 
 const DEFAULT_SETTINGS: LearnSettings = {
   enabled: true,
+  upload: true,
   applyToAi: true,
 }
 
@@ -68,10 +87,23 @@ export function loadLearnSettings(): LearnSettings {
     const p = JSON.parse(raw) as Partial<LearnSettings>
     return {
       enabled: p.enabled !== false,
+      upload: p.upload !== false,
       applyToAi: p.applyToAi !== false,
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
+  }
+}
+
+export function learnClientId(): string {
+  try {
+    const existing = localStorage.getItem(CLIENT_KEY)
+    if (existing) return existing
+    const id = `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    localStorage.setItem(CLIENT_KEY, id)
+    return id
+  } catch {
+    return 'anon'
   }
 }
 
@@ -120,11 +152,41 @@ function percentile(sorted: number[], p: number): number {
   return sorted[lo]! * (hi - i) + sorted[hi]! * (i - lo)
 }
 
-/** Přepočet na „medium street“ ekvivalent tempa (slot 2). */
+/** IQR winsorize — outliery (DC / AFK / cheat lap) nekazí median. */
+function robustTimes(times: number[]): number[] {
+  if (times.length < 4) return [...times].sort((a, b) => a - b)
+  const sorted = [...times].sort((a, b) => a - b)
+  const q1 = percentile(sorted, 0.25)
+  const q3 = percentile(sorted, 0.75)
+  const iqr = Math.max(1, q3 - q1)
+  const lo = q1 - 1.5 * iqr
+  const hi = q3 + 1.5 * iqr
+  return sorted.map((v) => Math.min(hi, Math.max(lo, v)))
+}
+
+/** Recent-biased median: novější jízdy váží víc (senior analytik blend). */
+function weightedMedian(samples: { ms: number; at: number }[]): number {
+  if (!samples.length) return 0
+  if (samples.length === 1) return samples[0]!.ms
+  const now = Date.now()
+  const day = 86_400_000
+  const weighted: number[] = []
+  for (const s of samples) {
+    const ageDays = Math.max(0, (now - s.at) / day)
+    const w = Math.max(1, Math.round(4 * Math.exp(-ageDays / 21)))
+    const clipped = s.ms
+    for (let i = 0; i < w; i++) weighted.push(clipped)
+  }
+  const robust = robustTimes(weighted)
+  return percentile(robust, 0.5)
+}
+
+/** Přepočet na „medium street + neutral tuning“ ekvivalent tempa (slot 2). */
 function toMediumStreetPace(
   paceMs: number,
   difficulty: DifficultyId,
   vehicle: VehicleKind,
+  tuneFactor = 1,
 ): number {
   // Difficulty: vyšší speedScale = rychlejší AI = kratší čas. Invertujeme.
   const scale =
@@ -142,10 +204,35 @@ function toMediumStreetPace(
   // Street baseline — rychlejší vůz = kratší čas → přepočet na street
   const cap = speedCapMultFor(vehicle) / Math.max(0.05, speedCapMultFor('street'))
   ms = ms * cap
+  // Max tuning by neměl zrychlit medium AI — převod na stock
+  ms = ms * Math.max(0.78, Math.min(1.28, tuneFactor))
   return ms
 }
 
-/** Po dojetí: ulož sample + přepočítej model. */
+function clampPace(ms: number, anchorMs: number | null | undefined): number {
+  if (!(ms > 800)) return ms
+  if (!(anchorMs && anchorMs > 800)) return ms
+  const lo = anchorMs * (1 - LEARN_MAX_DELTA)
+  const hi = anchorMs * (1 + LEARN_MAX_DELTA)
+  return Math.min(hi, Math.max(lo, ms))
+}
+
+function localRateOk(trackId: string): boolean {
+  try {
+    const raw = localStorage.getItem(RATE_KEY)
+    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {}
+    const last = Number(map[trackId] || 0)
+    const now = Date.now()
+    if (now - last < LOCAL_RATE_MS) return false
+    map[trackId] = now
+    localStorage.setItem(RATE_KEY, JSON.stringify(map))
+    return true
+  } catch {
+    return true
+  }
+}
+
+/** Po dojetí: ulož sample + přepočítej model. Nevolat z multiplayeru. */
 export function ingestFinishedRace(input: {
   player: string
   trackId: string
@@ -158,11 +245,21 @@ export function ingestFinishedRace(input: {
   trackLength: number
   place: number
   isStage: boolean
+  tuning?: PlayerTuningValues
+  /** Designový targetPaceMs mapy — clamp Δ */
+  designPaceMs?: number
 }): CommunityRaceSample | null {
   const settings = loadLearnSettings()
   if (!settings.enabled) return null
   if (!(input.paceMs > 500) || !(input.finishTimeMs > 500)) return null
   if (input.isStage === false && input.totalLaps < 1) return null
+  if (input.vehicle === 'scooter') return null
+  if (!localRateOk(input.trackId)) return null
+
+  const tune = input.tuning ?? DEFAULT_PLAYER_TUNING
+  const tuneFactor = tuningPaceFactor(tune)
+  const capScale = speedCapMultFor(input.vehicle) / Math.max(0.05, speedCapMultFor('street'))
+  const paceNeutralMs = Math.round(input.paceMs * tuneFactor)
 
   const sample: CommunityRaceSample = {
     id: uid(),
@@ -172,6 +269,9 @@ export function ingestFinishedRace(input: {
     difficulty: input.difficulty,
     finishTimeMs: input.finishTimeMs,
     paceMs: input.paceMs,
+    paceNeutralMs,
+    tuneFactor,
+    capScale,
     bestLapMs: input.bestLapMs,
     totalLaps: input.totalLaps,
     trackLength: input.trackLength,
@@ -183,75 +283,90 @@ export function ingestFinishedRace(input: {
   const samples = loadCommunitySamples()
   samples.push(sample)
   saveCommunitySamples(samples)
-  rebuildLearnedModel()
+  rebuildLearnedModel(input.designPaceMs ? { [input.trackId]: input.designPaceMs } : undefined)
   pushCommunityBundle()
+
+  if (settings.upload) {
+    void pushCloudPaceSample(sample, learnClientId()).then((ok) => {
+      if (ok) void syncCloudPaceModel()
+    })
+  }
   return sample
 }
 
-/** Přestav model z celého archivu (median per track×vehicle×difficulty). */
-export function rebuildLearnedModel(): LearnedPaceModel {
+/** Přestav model z celého archivu (robustní median + recent weight). */
+export function rebuildLearnedModel(designByTrack?: Record<string, number>): LearnedPaceModel {
+  const prev = loadLearnedModel()
   const samples = loadCommunitySamples()
-  const groups = new Map<string, number[]>()
+  const groups = new Map<string, { ms: number; at: number }[]>()
 
   for (const s of samples) {
-    // Ukládáme buňky per track + vehicle + difficulty (raw pace)
+    // Ukládáme buňky per track + vehicle + difficulty (neutral pace)
     const key = `${s.trackId}|${s.vehicle}|${s.difficulty}`
     const arr = groups.get(key) ?? []
-    arr.push(s.paceMs)
+    arr.push({ ms: s.paceNeutralMs ?? s.paceMs, at: s.at })
     groups.set(key, arr)
   }
 
   // Také street-normalized medium cells pro AI override na mapě
-  const streetNorm = new Map<string, number[]>()
+  const streetNorm = new Map<string, { ms: number; at: number }[]>()
   for (const s of samples) {
-    const norm = toMediumStreetPace(s.paceMs, s.difficulty, s.vehicle)
+    const base = s.paceNeutralMs ?? s.paceMs
+    const norm = toMediumStreetPace(base, s.difficulty, s.vehicle, 1)
     if (!(norm > 500)) continue
     const key = s.trackId
     const arr = streetNorm.get(key) ?? []
-    arr.push(norm)
+    arr.push({ ms: norm, at: s.at })
     streetNorm.set(key, arr)
   }
 
   const cells: LearnedPaceCell[] = []
-  for (const [key, times] of groups) {
+  for (const [key, rows] of groups) {
     const [trackId, vehicle, difficulty] = key.split('|') as [
       string,
       VehicleKind,
       DifficultyId,
     ]
-    const sorted = [...times].sort((a, b) => a - b)
-    const medianMs = percentile(sorted, 0.5)
+    const times = rows.map((r) => r.ms)
+    const robust = robustTimes(times)
+    const medianMs = weightedMedian(rows)
     cells.push({
       trackId,
       vehicle,
       difficulty,
       paceMs: Math.round(medianMs),
-      sampleCount: sorted.length,
+      sampleCount: rows.length,
       medianMs: Math.round(medianMs),
-      p25Ms: Math.round(percentile(sorted, 0.25)),
-      p75Ms: Math.round(percentile(sorted, 0.75)),
+      p25Ms: Math.round(percentile(robust, 0.25)),
+      p75Ms: Math.round(percentile(robust, 0.75)),
       updatedAt: Date.now(),
     })
   }
 
   // Synthetic cells: track|street|normal from normalized pool (pro AiDriver)
-  for (const [trackId, times] of streetNorm) {
-    const sorted = [...times].sort((a, b) => a - b)
-    if (sorted.length < 1) continue
-    const medianMs = percentile(sorted, 0.5)
+  for (const [trackId, rows] of streetNorm) {
+    if (rows.length < 1) continue
+    const times = rows.map((r) => r.ms)
+    const robust = robustTimes(times)
+    let medianMs = weightedMedian(rows)
+    const prevCell = prev.cells.find(
+      (c) => c.trackId === trackId && c.vehicle === 'street' && c.difficulty === 'normal',
+    )
+    const design = designByTrack?.[trackId] ?? prevCell?.paceMs
+    medianMs = clampPace(medianMs, design)
     const existing = cells.find(
       (c) => c.trackId === trackId && c.vehicle === 'street' && c.difficulty === 'normal',
     )
-    if (existing && existing.sampleCount >= sorted.length) continue
+    if (existing && existing.sampleCount >= rows.length) continue
     cells.push({
       trackId,
       vehicle: 'street',
       difficulty: 'normal',
       paceMs: Math.round(medianMs),
-      sampleCount: sorted.length,
+      sampleCount: rows.length,
       medianMs: Math.round(medianMs),
-      p25Ms: Math.round(percentile(sorted, 0.25)),
-      p75Ms: Math.round(percentile(sorted, 0.75)),
+      p25Ms: Math.round(percentile(robust, 0.25)),
+      p75Ms: Math.round(percentile(robust, 0.75)),
       updatedAt: Date.now(),
     })
   }
@@ -261,11 +376,33 @@ export function rebuildLearnedModel(): LearnedPaceModel {
   return model
 }
 
+/** Stáhni cloud model a slouč (clamp Δ). Volat při startu / menu. */
+export async function syncCloudPaceModel(): Promise<boolean> {
+  const cloud = await pullCloudPaceModel()
+  if (!cloud || !cloud.cells.length) return false
+  const local = loadLearnedModel()
+  const byKey = new Map(local.cells.map((c) => [`${c.trackId}|${c.vehicle}|${c.difficulty}`, c]))
+  for (const c of cloud.cells) {
+    if (!(c.paceMs > 800)) continue
+    const key = `${c.trackId}|${c.vehicle}|${c.difficulty}`
+    const prev = byKey.get(key)
+    const paced = Math.round(clampPace(c.paceMs, prev?.paceMs ?? c.paceMs))
+    byKey.set(key, {
+      ...c,
+      paceMs: paced,
+      medianMs: paced,
+      updatedAt: Date.now(),
+    })
+  }
+  saveLearnedModel({ cells: [...byKey.values()], version: 1 })
+  return true
+}
+
 /**
  * Runtime tempo pro AI (po dojetí aktualizované).
- * Preferuje naučené street/normal pro trať; jinak null → TrackDefs.targetPaceMs.
+ * Preferuje naučené street/normal pro trať; blend s defaultem mapy při málo samplech.
  */
-export function learnedTargetPaceMs(trackId: string): number | null {
+export function learnedTargetPaceMs(trackId: string, fallbackMs?: number): number | null {
   const settings = loadLearnSettings()
   if (!settings.applyToAi) return null
   const model = loadLearnedModel()
@@ -273,7 +410,16 @@ export function learnedTargetPaceMs(trackId: string): number | null {
     (c) => c.trackId === trackId && c.vehicle === 'street' && c.difficulty === 'normal',
   )
   if (!cell || cell.sampleCount < 1 || !(cell.paceMs > 800)) return null
-  return cell.paceMs
+  // Málo dat → jemně mícháme s designovým targetPaceMs (ne skok po 1 jízdě)
+  const fb = fallbackMs && fallbackMs > 800 ? fallbackMs : null
+  let ms = cell.paceMs
+  if (fb && cell.sampleCount < 5) {
+    const w = cell.sampleCount / 5
+    ms = cell.paceMs * w + fb * (1 - w)
+  }
+  // Tvrdý strop změny vs design mapy
+  if (fb) ms = clampPace(ms, fb)
+  return Math.round(ms)
 }
 
 export type CommunityBundle = {

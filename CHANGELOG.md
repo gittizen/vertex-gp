@@ -1,6 +1,30 @@
-# Changelog — Klec GP
+# Changelog — KlecMania
 
 Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nahoru): **[VERSIONS.md](./VERSIONS.md)**.
+
+---
+
+## [0.7.0] — 2026-11-09 · *KlecMania + drift brzda*
+
+### Značka
+- Hra se jmenuje **KlecMania** — skate logo **beze změny** (růžová K/L, cyan C).
+- Produkce: https://klecmania.netlify.app/
+
+### Jméno hráče
+- Default už není Filip — při první návštěvě se vygeneruje náhodné jméno a uloží do localStorage (žebříček / lobby).
+
+### Drift & freestyle
+- **Space** = e-brake / drift brzda u normálních peklostrojů (default zapnuto).
+- Skate a kolo drift brzdu nemají (freestyle / odrážka / šlapání).
+- Sticky boost (Alt/Tab); kolo silnější šlapání; čitelnější AI board / triky.
+
+### Audio & atmosféra
+- Mute toggle ve stylu jazykového přepínače (ZVUK | TICH).
+- Klecany / entry: Tarantino 60:30:10 (asfalt · krém · krev/hořčice); Volvo garage beze změny.
+
+### Co jsme řešili
+- Drift nesmí sahat na freestyle ovládání.
+- Boost při blur okna; release jen dohrává 0.7, staré archivy se nepřepisují.
 
 ---
 

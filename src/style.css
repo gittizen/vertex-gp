@@ -15,6 +15,55 @@ body,
   color: #e6eaef;
 }
 
+/* Full-bleed + visualViewport (adresní řádek / in-app chrome) */
+html {
+  height: 100%;
+  height: 100dvh;
+  height: var(--vvh, 100dvh);
+  --mobile-look: 1;
+  --mobile-ui: 1;
+}
+
+body,
+#app {
+  min-height: 100%;
+  min-height: 100dvh;
+  min-height: var(--vvh, 100dvh);
+}
+
+#app {
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: var(--vv-left, 0px);
+  width: var(--vvw, 100%);
+  height: var(--vvh, 100%);
+}
+
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* Mobilní oddálení UI (ne scale celého #app — touch hitboxy zůstanou) */
+html.mobile-look #menu,
+html.mobile-look #entry,
+html.mobile-look #overlay {
+  font-size: calc(16px * var(--mobile-ui, 0.67));
+}
+
+html.mobile-look .menu-shell,
+html.mobile-look .entry-shell {
+  max-width: min(920px, 94vw);
+}
+
+html.mobile-look .vehicle-preview-canvas {
+  min-height: 180px;
+}
+
 /* Portrait gate — default na telefonu/tabletu jen landscape */
 .rotate-gate {
   position: fixed;
@@ -156,14 +205,83 @@ html.portrait-blocked #app {
   box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.5);
 }
 
-.start-light.on {
-  background: #e11d2e;
-  box-shadow: 0 0 14px rgba(225, 29, 46, 0.75);
-}
-
+.start-light.on,
 .start-light.on.go {
   background: #22c55e;
   box-shadow: 0 0 18px rgba(34, 197, 94, 0.85);
+}
+
+.veh-stat {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+.veh-stat-label {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+.veh-stat-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.veh-stat-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #3d8bfd, #6ee7a8);
+}
+.branch-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.branch-pick-card {
+  min-height: 112px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 18px;
+}
+
+.branch-pick-card span {
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.78;
+  font-weight: 500;
+}
+
+.vehicle-branch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.vehicle-branch-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 0;
+}
+.vehicle-branch-tab {
+  font-size: 0.75rem;
+}
+.vehicle-branch-row .vehicle-tuning-link {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.vehicle-branch-blurb {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  opacity: 0.8;
 }
 
 .overlay-countdown h1.go-flash {
@@ -240,6 +358,43 @@ html.portrait-blocked #app {
 
 .hud-fps.hud-fps-low {
   color: #ff8a6a;
+}
+
+.hud-pause-btn {
+  pointer-events: auto;
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 12;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  min-width: 52px;
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #eef3f8;
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(8px);
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hud-pause-btn:active {
+  filter: brightness(1.15);
+}
+
+.pause-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
 }
 
 .hud-bottom {
@@ -575,8 +730,8 @@ html.portrait-blocked #app {
   max-width: none;
   margin: 0;
   padding: 12px 4px 2px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.42));
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.5);
   border-radius: 0 0 12px 12px;
 }
 
@@ -682,6 +837,44 @@ html.portrait-blocked #app {
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
+}
+
+.mobile-scheme-row,
+.bind-row[data-allow-portrait],
+.bind-row[data-mobile-scheme] {
+  grid-template-columns: 1fr auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.mobile-scheme-row.active,
+.bind-row[data-allow-portrait].active,
+.bind-row[data-mobile-scheme].active {
+  border-color: color-mix(in srgb, var(--menu-accent, #c4a574) 70%, transparent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bind-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bind-row-hint {
+  font-size: 12px;
+  opacity: 0.72;
+  line-height: 1.35;
+}
+
+.bind-row-keys {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.85;
+  white-space: nowrap;
 }
 
 .bind-section-title {
@@ -801,6 +994,12 @@ html.portrait-blocked #app {
   opacity: 0.88;
 }
 
+#entry[data-tone='klecany'] .entry-bg {
+  /* Teplý filmový grade — Klecany večer, ne neon */
+  filter: saturate(0.92) brightness(0.92) contrast(1.08) sepia(0.12);
+  opacity: 0.9;
+}
+
 .entry-bg-shade {
   position: absolute;
   inset: 0;
@@ -808,6 +1007,13 @@ html.portrait-blocked #app {
   pointer-events: none;
   background:
     radial-gradient(ellipse at 50% 36%, rgba(12, 14, 20, 0.08) 0%, rgba(10, 12, 18, 0.2) 55%, rgba(8, 10, 14, 0.36) 100%);
+}
+
+#entry[data-tone='klecany'] .entry-bg-shade {
+  background:
+    linear-gradient(180deg, rgba(8, 6, 5, 0.15) 0%, rgba(12, 8, 6, 0.28) 45%, rgba(6, 5, 4, 0.55) 100%),
+    radial-gradient(ellipse at 70% 18%, rgba(200, 16, 46, 0.12), transparent 42%),
+    radial-gradient(ellipse at 22% 70%, rgba(230, 180, 34, 0.08), transparent 46%);
 }
 
 .track-watermark {
@@ -829,6 +1035,23 @@ html.portrait-blocked #app {
   stroke: rgba(230, 240, 255, 0.78);
   stroke-width: 14;
   filter: none;
+}
+
+#entry[data-tone='klecany'] .track-watermark-path {
+  stroke: rgba(235, 228, 216, 0.72);
+}
+
+#entry[data-tone='klecany'] .track-watermark-label {
+  color: rgba(235, 228, 216, 0.72);
+}
+
+#entry[data-tone='klecany'] .entry-prompt,
+#entry[data-tone='klecany'] .entry-version {
+  color: #ebe4d8;
+}
+
+#entry[data-tone='klecany'] .entry-content-warn {
+  color: rgba(200, 16, 46, 0.85);
 }
 
 #entry .track-watermark-label {
@@ -1068,6 +1291,23 @@ html.portrait-blocked #app {
   filter: drop-shadow(0 0 16px rgba(45, 226, 230, 0.3));
 }
 
+/* Klecany brand — večerní sídliště (lampa / asfalt), ne pulp krev */
+#entry[data-tone='klecany'] .brand-klec,
+#menu[data-tone='klecany'] .brand-klec {
+  background: linear-gradient(115deg, #b8c0c8 0%, #e8eef2 45%, #9aa8b4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.22));
+}
+
+#entry[data-tone='klecany'] .brand-gp,
+#menu[data-tone='klecany'] .brand-gp {
+  background: linear-gradient(115deg, #d4a05a 0%, #f0c878 55%, #ffe6a8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 0 14px rgba(212, 160, 90, 0.28));
+}
+
 @keyframes brandMarkGlow {
   0%,
   100% {
@@ -1081,6 +1321,29 @@ html.portrait-blocked #app {
       0 0 0 1px rgba(45, 226, 230, 0.45),
       0 18px 48px rgba(0, 0, 0, 0.55),
       0 0 40px rgba(45, 226, 230, 0.28);
+  }
+}
+
+#entry[data-tone='klecany'] .brand-mark,
+#menu[data-tone='klecany'] .brand-mark {
+  animation: brandMarkGlowKlecany 3.4s ease-in-out infinite;
+}
+
+@keyframes brandMarkGlowKlecany {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.42),
+      0 0 0 5px rgba(255, 255, 255, 0.12),
+      0 22px 56px rgba(0, 0, 0, 0.65),
+      0 0 36px rgba(255, 255, 255, 0.22);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.55),
+      0 0 0 5px rgba(255, 255, 255, 0.18),
+      0 22px 56px rgba(0, 0, 0, 0.65),
+      0 0 42px rgba(255, 255, 255, 0.32);
   }
 }
 
@@ -1136,6 +1399,18 @@ html.portrait-blocked #app {
   letter-spacing: 0.03em;
   color: rgba(150, 150, 158, 0.78);
   font-weight: 500;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  .entry-content-warn {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    text-align: center;
+    white-space: normal;
+    font-size: 10px;
+    max-width: none;
+  }
 }
 
 .settings-thanks {
@@ -1317,8 +1592,7 @@ html.portrait-blocked #app {
 }
 
 .lang-toggle,
-.mute-toggle,
-.mute-icon-btn {
+.mute-toggle {
   position: fixed;
   top: max(18px, env(safe-area-inset-top));
   right: max(22px, env(safe-area-inset-right));
@@ -1333,33 +1607,8 @@ html.portrait-blocked #app {
   pointer-events: auto;
 }
 
-.mute-icon-btn {
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  color: #f7f1ea;
-  cursor: pointer;
-  appearance: none;
-}
-
-.mute-icon-btn svg {
-  width: 22px;
-  height: 22px;
-  display: block;
-}
-
-.mute-icon-btn.is-muted {
-  color: rgba(247, 241, 234, 0.45);
-}
-
-.mute-icon-btn:hover {
-  border-color: rgba(255, 106, 154, 0.55);
-  color: #ff6a9a;
-}
-
-.lang-btn {
+.lang-btn,
+.mute-btn {
   appearance: none;
   border: none;
   background: transparent;
@@ -1372,9 +1621,29 @@ html.portrait-blocked #app {
   cursor: pointer;
 }
 
-.lang-btn.active {
+.lang-btn.active,
+.mute-btn.active {
   color: #041018;
   background: linear-gradient(135deg, #6a7a8c, #c4a574);
+}
+
+#entry[data-tone='klecany'] .lang-btn.active,
+#menu[data-tone='klecany'] .mute-btn.active,
+#menu[data-tone='klecany'] .lang-btn.active {
+  color: #140e0c;
+  background: linear-gradient(135deg, #f0c878, #c4883a);
+}
+
+#entry[data-tone='klecany'] .lang-toggle,
+#menu[data-tone='klecany'] .mute-toggle,
+#menu[data-tone='klecany'] .lang-toggle {
+  border-color: rgba(212, 160, 90, 0.32);
+  background: rgba(10, 12, 16, 0.78);
+}
+
+.mute-btn:hover:not(.active),
+.lang-btn:hover:not(.active) {
+  color: rgba(247, 241, 234, 0.92);
 }
 
 .menu-author {
@@ -1539,14 +1808,81 @@ html.portrait-blocked #app {
 }
 
 .menu-esc-hint {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   text-align: center;
   margin-top: 14px;
   font-size: 12px;
-  opacity: 0.45;
+  opacity: 0.55;
+  line-height: 1.2;
 }
 
 .menu-esc-hint-home {
+  display: flex;
+  width: 100%;
   margin-top: 18px;
+}
+
+.menu-esc-sep {
+  opacity: 0.55;
+}
+
+.menu-key-arrows {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+
+.menu-key-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.menu-key-arrow svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.menu-key-mouse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.menu-key-mouse svg {
+  width: 14px;
+  height: 20px;
+  display: block;
+}
+
+.menu-key-finger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.menu-key-finger svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 /* Společný řádek: Esc uprostřed, Zpět vpravo */
@@ -1612,6 +1948,102 @@ html.portrait-blocked #app {
   bottom: auto;
 }
 
+.menu-nav-back--split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.menu-nav-back--split .menu-tune-btn {
+  order: 0;
+  margin-right: auto;
+}
+
+.menu-nav-back--split .menu-back-btn:not(.menu-tune-btn) {
+  order: 2;
+  margin-left: auto;
+}
+
+.menu-nav-back--split .menu-esc-hint {
+  order: 3;
+  width: 100%;
+}
+
+.lb-track-details {
+  margin: 12px 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.lb-track-summary {
+  cursor: pointer;
+  font-size: 14px;
+  list-style: none;
+}
+
+.lb-track-summary::-webkit-details-marker {
+  display: none;
+}
+
+.lb-track-details[open] .lb-tabs {
+  margin-top: 10px;
+}
+
+.mc-fs-pad {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  top: max(88px, calc(env(safe-area-inset-top) + 64px));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: min(72vw, 260px);
+  z-index: 4;
+}
+
+.mc-fs-btn {
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  padding: 10px 8px;
+  font: inherit;
+  color: #eef3f8;
+  background: rgba(12, 16, 24, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mc-fs-btn span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mc-fs-btn small {
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+.mc-fs-btn.mc-active {
+  filter: brightness(1.25);
+}
+
+@media (orientation: landscape) {
+  .mc-fs-pad {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   .menu-nav-back .menu-back-btn {
     min-width: 112px;
@@ -1630,14 +2062,15 @@ html.portrait-blocked #app {
   padding: max(56px, calc(env(safe-area-inset-top) + 40px)) 16px 40px;
   box-sizing: border-box;
   overflow: auto;
-  --menu-bg-a: rgba(18, 14, 12, 0.62);
-  --menu-bg-b: rgba(8, 10, 14, 0.78);
-  --menu-glow-a: rgba(255, 140, 90, 0.18);
-  --menu-glow-b: rgba(90, 160, 200, 0.14);
-  --menu-accent: #e8a060;
-  --menu-accent-2: #7ec8e0;
-  --menu-shell: rgba(12, 10, 12, 0.5);
-  --menu-text: #f7f1ea;
+  /* Default = Klecany večer (asfalt / lampa / chladná obloha) */
+  --menu-bg-a: rgba(10, 12, 16, 0.72);
+  --menu-bg-b: rgba(6, 8, 12, 0.88);
+  --menu-glow-a: rgba(255, 190, 110, 0.12);
+  --menu-glow-b: rgba(80, 120, 160, 0.1);
+  --menu-accent: #d4a05a;
+  --menu-accent-2: #8eb4d0;
+  --menu-shell: rgba(12, 14, 18, 0.58);
+  --menu-text: #e8eef2;
   --menu-light: 1;
   --menu-photo: url('/menu/bg-klecany.jpg');
   background:
@@ -1652,15 +2085,16 @@ html.portrait-blocked #app {
   font-family: "Barlow Condensed", "Outfit", sans-serif;
 }
 
+/* Klecany · večerní sídliště — asfalt · pouliční lampa · chladný vzduch */
 #menu[data-tone='klecany'] {
-  --menu-bg-a: rgba(18, 14, 12, 0.62);
-  --menu-bg-b: rgba(8, 10, 14, 0.78);
-  --menu-glow-a: rgba(255, 140, 90, 0.18);
-  --menu-glow-b: rgba(90, 160, 200, 0.14);
-  --menu-accent: #e8a060;
-  --menu-accent-2: #7ec8e0;
-  --menu-shell: rgba(12, 10, 12, 0.5);
-  --menu-text: #f7f1ea;
+  --menu-bg-a: rgba(10, 12, 16, 0.72);
+  --menu-bg-b: rgba(6, 8, 12, 0.88);
+  --menu-glow-a: rgba(255, 190, 110, 0.12);
+  --menu-glow-b: rgba(80, 120, 160, 0.1);
+  --menu-accent: #d4a05a;
+  --menu-accent-2: #8eb4d0;
+  --menu-shell: rgba(12, 14, 18, 0.58);
+  --menu-text: #e8eef2;
   --menu-photo: url('/menu/bg-klecany.jpg');
 }
 
@@ -1761,7 +2195,8 @@ html.portrait-blocked #app {
 }
 
 #entry[data-tone='klecany'] {
-  background: radial-gradient(ellipse at 50% 30%, #2a2018 0%, #101018 55%, #08080c 100%);
+  /* 60 % hluboký asfaltový večer Klecan */
+  background: radial-gradient(ellipse at 48% 28%, #2a1c16 0%, #12100e 48%, #080706 100%);
 }
 
 #entry[data-tone='cesko'] {
@@ -2076,7 +2511,10 @@ button.menu-start:disabled {
 }
 
 .gta-home {
+  display: flex;
+  flex-direction: column;
   width: min(1080px, 96vw);
+  min-height: min(780px, 86vh);
   padding: 28px 28px 36px;
   background: transparent;
   border: none;
@@ -2102,8 +2540,13 @@ button.menu-start:disabled {
 .gta-tiles {
   display: grid;
   grid-template-columns: 1.45fr 1fr 1fr;
-  grid-template-rows: minmax(220px, 32vh) minmax(120px, 16vh);
-  gap: 14px;
+  grid-template-rows: minmax(240px, 36vh) minmax(140px, 18vh);
+  gap: 16px;
+  align-content: center;
+  flex: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
 }
 
 .gta-tile {
@@ -2146,6 +2589,26 @@ button.menu-start:disabled {
 
 .gta-tile:hover::after {
   opacity: 1;
+}
+
+/* Klávesnice: šipky / Enter — viditelný focus */
+.gta-tile:focus-visible,
+.home-chip:focus-visible,
+.track-card:focus-visible,
+.btn-ghost:focus-visible,
+.menu-start:focus-visible,
+.home-panel:focus-visible,
+.menu-back-btn:focus-visible,
+.color-swatch:focus-visible,
+.atm-fx-toggle:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--menu-accent, #c4a574);
+  outline-offset: 3px;
+}
+
+.gta-tile:focus-visible {
+  border-color: color-mix(in srgb, var(--menu-accent, #c4a574) 70%, transparent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.4);
 }
 
 .gta-tile-hero {
@@ -2355,18 +2818,59 @@ button.menu-start:disabled {
   text-align: center;
 }
 
+/* Tuning: levý sliders a pravý výběr barev scrollují odděleně (jako peklostroje). */
+.menu-panel.menu-tuning.vehicles-tune {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-panel.menu-tuning.vehicles-tune .menu-panel-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.menu-panel.menu-tuning.vehicles-tune .menu-flow-actions {
+  flex-shrink: 0;
+}
+
+.menu-panel.menu-tuning.vehicles-tune .vehicles-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
 .menu-tuning.vehicles-tune .tuning-side {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  max-height: min(62vh, 560px);
+  min-height: 0;
+  max-height: none;
+  height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: none;
   padding-right: 2px;
 }
 
 .menu-tuning.vehicles-tune .tuning-side::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.menu-panel.menu-tuning.vehicles-tune .vehicle-stage {
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.menu-panel.menu-tuning.vehicles-tune .vehicle-stage::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
@@ -2381,6 +2885,19 @@ button.menu-start:disabled {
 .menu-tuning.vehicles-tune .tune-rules,
 .menu-tuning.vehicles-tune .tune-hint {
   text-align: left;
+}
+
+@media (max-width: 780px) {
+  .menu-panel.menu-tuning.vehicles-tune .vehicles-layout {
+    height: auto;
+    overflow-y: auto;
+  }
+
+  .menu-tuning.vehicles-tune .tuning-side,
+  .menu-panel.menu-tuning.vehicles-tune .vehicle-stage {
+    height: auto;
+    max-height: min(42vh, 360px);
+  }
 }
 
 .menu-flow-actions {
@@ -2945,6 +3462,53 @@ button.menu-start:disabled {
   gap: 8px;
 }
 
+/* Vozidla: levý seznam a pravý náhled scrollují odděleně (tělo panelu ne). */
+.menu-panel.menu-vehicles {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-panel.menu-vehicles .menu-panel-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.menu-panel.menu-vehicles .menu-scroll-hint,
+.menu-panel.menu-vehicles .vehicle-branch-row,
+.menu-panel.menu-vehicles .vehicle-branch-blurb {
+  flex-shrink: 0;
+}
+
+.menu-panel.menu-vehicles .vehicles-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.menu-panel.menu-vehicles .tracks-list {
+  max-height: none;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.menu-panel.menu-vehicles .vehicle-stage {
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.menu-panel.menu-vehicles .vehicle-stage::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .vehicles-tune .vehicle-preview-canvas {
   height: min(24vh, 180px);
 }
@@ -3336,6 +3900,9 @@ button.menu-start:disabled {
   z-index: 15;
   pointer-events: none;
   touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #mobile-controls.mc-visible {
@@ -3414,7 +3981,7 @@ button.menu-start:disabled {
   pointer-events: auto;
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
-  bottom: max(24px, env(safe-area-inset-bottom));
+  bottom: max(24px, calc(env(safe-area-inset-bottom) + 8px));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3422,17 +3989,30 @@ button.menu-start:disabled {
 }
 
 .mc-buttons-tilt {
-  width: min(42vw, 160px);
+  width: min(28vw, 110px);
+  bottom: max(96px, calc(env(safe-area-inset-bottom) + 72px));
 }
 
 .mc-buttons-float {
-  bottom: max(88px, env(safe-area-inset-bottom));
+  bottom: max(96px, calc(env(safe-area-inset-bottom) + 72px));
   width: min(26vw, 100px);
+}
+
+.mc-brake-center {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px));
+  transform: translateX(-50%);
+  min-width: min(42vw, 168px);
+  min-height: 64px;
+  z-index: 2;
 }
 
 .mc-btn {
   pointer-events: auto;
   touch-action: none;
+  -webkit-touch-callout: none;
   user-select: none;
   -webkit-user-select: none;
   border: 2px solid rgba(255, 255, 255, 0.25);
@@ -3477,7 +4057,7 @@ button.menu-start:disabled {
   pointer-events: auto;
   position: absolute;
   left: 50%;
-  bottom: max(12px, env(safe-area-inset-bottom));
+  bottom: max(92px, calc(env(safe-area-inset-bottom) + 78px));
   transform: translateX(-50%);
   touch-action: manipulation;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -3487,6 +4067,7 @@ button.menu-start:disabled {
   font-size: 12px;
   color: #eef3f8;
   background: rgba(12, 16, 24, 0.6);
+  z-index: 3;
 }
 
 .mc-tilt-hint {
@@ -3519,6 +4100,9 @@ button.menu-start:disabled {
   justify-content: center;
   padding-bottom: max(28px, env(safe-area-inset-bottom));
   background: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .mc-tap-zone span {

@@ -24,6 +24,8 @@ export class Hud {
   private readonly overlay: HTMLElement
   private trackName = 'Nordring'
   private onMenuRequest: (() => void) | null = null
+  private onPauseRequest: (() => void) | null = null
+  private onResumeRequest: (() => void) | null = null
   private onRestartRequest: (() => void) | null = null
   private onChampionshipNext: (() => void) | null = null
   private champResult: {
@@ -72,14 +74,70 @@ export class Hud {
           this.onChampionshipNext?.()
           return
         }
+        if (el.id === 'btn-share') {
+          e.preventDefault()
+          e.stopPropagation()
+          void this.shareResult(el)
+          return
+        }
         if (el.id === 'btn-menu') {
           e.preventDefault()
           e.stopPropagation()
           this.onMenuRequest?.()
+          return
+        }
+        if (el.id === 'btn-resume') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onResumeRequest?.()
+          return
+        }
+        if (el.id === 'btn-hud-pause') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onPauseRequest?.()
         }
       },
       { capture: true },
     )
+    // Pause FAB je v #hud (ne overlay) — pointerdown na root
+    this.root.addEventListener(
+      'pointerdown',
+      (e) => {
+        const el = (e.target as HTMLElement | null)?.closest?.('#btn-hud-pause')
+        if (!el) return
+        e.preventDefault()
+        e.stopPropagation()
+        this.onPauseRequest?.()
+      },
+      { capture: true },
+    )
+  }
+
+  private shareText = ''
+
+  private async shareResult(btn: Element): Promise<void> {
+    const text = this.shareText
+    if (!text) return
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ title: 'KlecMania', text })
+        return
+      }
+    } catch {
+      /* cancel / unsupported → clipboard */
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      const label = btn.querySelector('span') ?? btn
+      const prev = label.textContent
+      label.textContent = t('hud.shareCopied')
+      window.setTimeout(() => {
+        label.textContent = prev
+      }, 1600)
+    } catch {
+      /* ignore */
+    }
   }
 
   setOnlineRace(on: boolean): void {
@@ -97,6 +155,14 @@ export class Hud {
 
   setOnMenuRequest(cb: () => void): void {
     this.onMenuRequest = cb
+  }
+
+  setOnPauseRequest(cb: () => void): void {
+    this.onPauseRequest = cb
+  }
+
+  setOnResumeRequest(cb: () => void): void {
+    this.onResumeRequest = cb
   }
 
   setOnRestartRequest(cb: () => void): void {
@@ -265,7 +331,7 @@ export class Hud {
       if (player.fallen) {
         pushEl.hidden = false
         pushEl.textContent = t(player.crashBurst ? 'hud.crash' : 'hud.remount')
-      } else if (player.isMonsterFamily() && player.wheelie) {
+      } else if (player.wheelie) {
         pushEl.hidden = false
         pushEl.textContent = t('hud.wheelie')
       } else if (player.isMonsterFamily() && player.turboAmount > 0.2) {
@@ -285,6 +351,9 @@ export class Hud {
       } else if (player.freestyleOn && player.trickPoints > 0) {
         pushEl.hidden = false
         pushEl.textContent = `FS ${player.trickPoints}`
+      } else if (player.kind === 'bike' && player.pushAmount > 0.15) {
+        pushEl.hidden = false
+        pushEl.textContent = t('hud.pedal')
       } else if (player.kind === 'skate' && player.pushAmount > 0.15) {
         pushEl.hidden = false
         pushEl.textContent = t('hud.push')
@@ -300,6 +369,7 @@ export class Hud {
     const keepMirror = this.mirrorEl
     this.root.innerHTML = `
       <div class="hud-fps" data-h="fps" aria-hidden="true">— FPS</div>
+      <button type="button" class="hud-pause-btn" id="btn-hud-pause" aria-label="${t('hud.pause')}">${t('hud.pause')}</button>
       <div class="hud-bottom">
         <div class="hud-speed-row">
           <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
@@ -337,9 +407,9 @@ export class Hud {
     }
 
     if (race.phase === 'countdown') {
-      const text = race.countdown > 0 ? String(race.countdown) : 'GO'
-      const lit = race.countdown <= 0 ? 3 : Math.max(0, 3 - race.countdown)
-      const key = `cd:${text}`
+      // Semafor: countdown 3→1 světlo, 2→2, 1→3 zelené; bez GO pauzy
+      const lit = race.countdown > 0 ? Math.max(0, 4 - race.countdown) : 3
+      const key = `cd:${race.countdown}:${lit}`
       if (key === this.lastOverlayKey) return
       this.lastOverlayKey = key
       this.overlay.classList.add('visible')
@@ -350,8 +420,7 @@ export class Hud {
             <span class="start-light ${lit >= 2 ? 'on' : ''}"></span>
             <span class="start-light ${lit >= 3 ? 'on go' : ''}"></span>
           </div>
-          <h1 class="${race.countdown <= 0 ? 'go-flash' : ''}">${text}</h1>
-          <p>Klec GP — ${this.trackName}</p>
+          <p>KlecMania — ${this.trackName}</p>
           <p class="overlay-hint">${t('menu.escBack')}</p>
         </div>
       `
@@ -404,16 +473,35 @@ export class Hud {
             total: champ.points,
           })}</p>`
         : ''
+      const player = race.standings.find((s) => s.vehicle.info.isPlayer)
+      const timeStr =
+        player?.vehicle.finished ? formatTime(player.vehicle.finishTime) : '—'
+      const scoreBit = fs
+        ? scored.find((r) => r.s.vehicle.info.isPlayer)
+        : driftComp
+          ? scored.find((r) => r.s.vehicle.info.isPlayer)
+          : null
+      const extra =
+        fs && scoreBit
+          ? ` · FS ${scoreBit.total}`
+          : driftComp && scoreBit
+            ? ` · drift ${scoreBit.driftPts}`
+            : ''
+      this.shareText = `KlecMania · ${this.trackName} · P${place} · ${timeStr}${extra}`
+      const shareBtn = `<button type="button" class="btn-ghost" id="btn-share"><span>${t('hud.share')}</span></button>`
       const actions = this.onlineRace
-        ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>`
+        ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>${shareBtn}`
         : champ && !champ.done
           ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champNext')}</button>
             <button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
           : champ?.done
             ? `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.champDone')}</button>`
             : `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
       this.overlay.innerHTML = `
         <div class="overlay-card">
@@ -472,6 +560,10 @@ export class Hud {
         <p class="overlay-hint">${t('pause.escHint')}</p>
         <ul class="pause-binds">${bindRows}</ul>
         ${trickBlock}
+        <div class="overlay-actions pause-actions">
+          <button type="button" class="menu-start" id="btn-resume">${t('hud.resume')}</button>
+          <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>
+        </div>
       </div>
     `
   }
@@ -483,7 +575,7 @@ function pauseActionsFor(kind: VehicleKind): BindAction[] {
   if (kind === 'skate') {
     actions.push('push', 'tab')
   } else if (kind === 'monster' || kind === 'truck' || kind === 'tank') {
-    actions.push('push')
+    actions.push('push', 'tab')
   } else if (kind !== 'bike' && kind !== 'scooter') {
     actions.push('ebrake')
   }

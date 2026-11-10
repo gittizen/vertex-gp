@@ -1,6 +1,5 @@
 import { DIFFICULTIES, type DifficultyId } from '../ai/Difficulty'
 import { exportPaceJson, getPaceSamples, pushPaceToWorkspace } from '../ai/PaceCalibration'
-import { allRecords } from '../freestyle/Records'
 import { resetChampionship } from '../race/Championship'
 import {
   analyticsTable,
@@ -21,16 +20,13 @@ import {
 import { VehiclePreview } from './VehiclePreview'
 import {
   TRACKS,
-  VEHICLE_KINDS,
   type TrackDef,
   type VehicleKind,
 } from '../track/TrackDefs'
 import {
   DEFAULT_PLAYER_TUNING,
-  TUNING_BUDGET,
+  TUNING_MAX,
   setTuningStat,
-  tuningHint,
-  tuningSum,
   type PlayerTuningValues,
 } from '../tuning/PlayerTuning'
 import {
@@ -67,6 +63,7 @@ import {
   VISUAL_QUALITIES,
   type VisualQuality,
 } from '../render/VisualSettings'
+import { lastSuggestedQuality, suggestVisualQuality } from '../render/DeviceQuality'
 import {
   COMPETITIONS,
   loadCompetitionSettings,
@@ -76,7 +73,9 @@ import {
 } from '../render/CompetitionSettings'
 import {
   DEFAULT_RACE,
+  RACE_LAP_CHOICES,
   clampOpponentsToCategory,
+  clampRaceLaps,
   randomOpponents,
   soloCategoryPool,
   type RaceSettingsValues,
@@ -101,20 +100,26 @@ import {
   type TrickBindingsMap,
 } from '../input/TrickBindings'
 import { freestyleList } from '../freestyle/FreestyleTricks'
-import { recordsFor } from '../freestyle/Records'
+import { allRecords, recordsFor } from '../freestyle/Records'
 import { formatTime } from '../race/RaceManager'
 import { SCOOTER_INSULT_MAX, scooterInsult } from './scooterInsults'
+import { loadOrCreatePlayerName, savePlayerName } from './PlayerName'
 
-export const COLOR_NONE = -1
-export const NEON_NONE = -1
+import {
+  COLOR_NONE,
+  DEFAULT_VEHICLE_LOOK,
+  kindsInBranch,
+  PAINT_COLOR_CHOICES,
+  vehicleBranch,
+  vehicleHasHelm,
+  vehicleHasRider,
+  type VehicleBranch,
+  type VehicleLook,
+} from '../vehicle/VehicleLook'
+import { statsBarsHtml } from '../vehicle/VehicleStats'
 
-export const PLAYER_COLOR_CHOICES = [
-  0xc62828, 0x1565c0, 0x2e7d32, 0xef6c00, 0x6a1b9a, 0x00838f, 0xf9a825, 0xeceff1,
-]
-
-export const NEON_COLOR_CHOICES = [
-  0xff2bd6, 0x2de2e6, 0xff6a00, 0x7b61ff, 0x39ff14, 0xffee33, 0xff3366, 0xffffff,
-]
+const PLAYER_COLOR_CHOICES = PAINT_COLOR_CHOICES
+const NEON_COLOR_CHOICES = PAINT_COLOR_CHOICES
 
 type RaceModeId = 'classic' | 'online'
 
@@ -151,6 +156,9 @@ export type MenuStartPayload = {
   vehicle: VehicleKind
   color: number
   neon: number
+  wheel: number
+  rider: number
+  helm: number
   tuning: PlayerTuningValues
   name: string
   difficulty: DifficultyId
@@ -177,7 +185,6 @@ type Screen =
   | 'audio'
   | 'atmosphere'
   | 'difficulty'
-  | 'manual'
   | 'competitions'
   | 'aiLearn'
   | 'controls'
@@ -197,11 +204,22 @@ export class Menu {
   private readonly root: HTMLElement
   private selectedTrackId = TRACKS[0].id
   private selectedVehicle: VehicleKind = 'street'
-  private selectedColor = PLAYER_COLOR_CHOICES[0]!
-  private selectedNeon = NEON_COLOR_CHOICES[0]!
+  private selectedColor = DEFAULT_VEHICLE_LOOK.body
+  private selectedNeon = DEFAULT_VEHICLE_LOOK.neon
+  private selectedWheel = DEFAULT_VEHICLE_LOOK.wheel
+  private selectedRider = DEFAULT_VEHICLE_LOOK.rider
+  private selectedHelm = DEFAULT_VEHICLE_LOOK.helm
+  private selectedBranch: VehicleBranch = 'auto'
   private selectedDifficulty: DifficultyId = 'normal'
+  private recordsMode: 'race' | 'freestyle' = 'race'
+  /** Online lobby: doplnit AI do 4 (client preference). */
+  private lobbyFillAi = true
+  /** Online lobby: čekání před auto-startem (ms), default 5 min. */
+  private lobbyWaitMs = 5 * 60 * 1000
+  private lobbyWaitStartedAt = 0
+  private lobbyWaitTimer: number | null = null
   private tuning: PlayerTuningValues = { ...DEFAULT_PLAYER_TUNING }
-  private playerName = 'Filip'
+  private playerName = loadOrCreatePlayerName()
   private publicWsUrl = ''
   private joinCode = roomFromUrl() || ''
   private screen: Screen = roomFromUrl() ? 'online' : 'home'
@@ -224,7 +242,7 @@ export class Menu {
     error: '',
     presence: null,
   }
-  private hostLaps = 2
+  private hostLaps = 3
   private localNetId: string | null = null
   private audioApi: MenuAudioApi | null = null
   private atmosphereApi: MenuAtmosphereApi | null = null
@@ -253,10 +271,6 @@ export class Menu {
   private competition: CompetitionSettingsValues = loadCompetitionSettings()
   private raceModePick: RaceModeId = 'classic'
   private uiAbort: AbortController | null = null
-  private raceHoldTimer: number | null = null
-  private raceHoldRaf = 0
-  private raceEnterHits = 0
-  private raceEnterReset: number | null = null
   visible = false
 
   constructor(root: HTMLElement) {
@@ -321,7 +335,7 @@ export class Menu {
   }
 
   getPlayerName(): string {
-    return this.playerName
+    return this.playerName || loadOrCreatePlayerName()
   }
 
   setLobby(
@@ -331,14 +345,25 @@ export class Menu {
     error = '',
     localNetId: string | null = null,
   ): void {
+    const wasCode = this.lobby?.code
     this.lobby = room
     this.lobbyLink = link
     this.isHost = isHost
     this.lobbyError = error
     if (localNetId) this.localNetId = localNetId
-    if (!room) this.localNetId = null
+    if (!room) {
+      this.localNetId = null
+      this.clearLobbyWaitTimer()
+    } else if (room.code !== wasCode) {
+      this.lobbyWaitStartedAt = 0
+      this.clearLobbyWaitTimer()
+    }
     if (room?.laps) this.hostLaps = room.laps
     if (this.visible) this.render()
+  }
+
+  wantsLobbyFillAi(): boolean {
+    return this.lobbyFillAi
   }
 
   show(): void {
@@ -380,32 +405,223 @@ export class Menu {
   }
 
   private beginUiBindings(): AbortSignal {
-    this.clearRaceHold()
-    this.clearRaceEnterHits()
     this.uiAbort?.abort()
     this.uiAbort = new AbortController()
-    return this.uiAbort.signal
+    const signal = this.uiAbort.signal
+    // Po synchr. renderu HTML — šipky / Enter / Backspace
+    queueMicrotask(() => {
+      if (!signal.aborted && this.visible) this.bindKeyboardNav(signal)
+    })
+    return signal
   }
 
-  private clearRaceHold(): void {
-    if (this.raceHoldTimer !== null) {
-      window.clearTimeout(this.raceHoldTimer)
-      this.raceHoldTimer = null
-    }
-    if (this.raceHoldRaf) {
-      cancelAnimationFrame(this.raceHoldRaf)
-      this.raceHoldRaf = 0
-    }
-    const fill = this.root.querySelector<HTMLElement>('[data-hold-fill]')
-    if (fill) fill.style.width = '0%'
+  /** Interaktivní prvky menu (viditelné). */
+  private menuFocusables(): HTMLElement[] {
+    const nodes = this.root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), summary, a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])',
+    )
+    return [...nodes].filter((el) => {
+      if (el.closest('[hidden], .is-hidden, [aria-hidden="true"]')) return false
+      const r = el.getBoundingClientRect()
+      return r.width > 2 && r.height > 2
+    })
   }
 
-  private clearRaceEnterHits(): void {
-    this.raceEnterHits = 0
-    if (this.raceEnterReset !== null) {
-      window.clearTimeout(this.raceEnterReset)
-      this.raceEnterReset = null
+  private focusFieldKind(el: Element | null): 'text' | 'range' | 'other' | 'none' {
+    if (!(el instanceof HTMLElement) || !this.root.contains(el)) return 'none'
+    const tag = el.tagName
+    if (tag === 'TEXTAREA' || el.isContentEditable) return 'text'
+    if (tag === 'SELECT') return 'text'
+    if (tag === 'INPUT') {
+      const type = (el as HTMLInputElement).type || 'text'
+      if (type === 'range' || type === 'color' || type === 'checkbox' || type === 'radio') return 'range'
+      return 'text'
     }
+    return 'other'
+  }
+
+  /** Prvky seřazené vizuálně: nahoře→dole, vlevo→vpravo. */
+  private menuFocusablesVisual(): HTMLElement[] {
+    const items = this.menuFocusables()
+    return items.sort((a, b) => {
+      const ra = a.getBoundingClientRect()
+      const rb = b.getBoundingClientRect()
+      const row = ra.top - rb.top
+      if (Math.abs(row) > 12) return row
+      return ra.left - rb.left
+    })
+  }
+
+  /** Stejný pás: blízké středy, nebo střed kratšího prvku leží ve vysokém (Jet). */
+  private sameVisualRow(a: DOMRect, b: DOMRect): boolean {
+    const ay = a.top + a.height / 2
+    const by = b.top + b.height / 2
+    if (Math.abs(ay - by) <= Math.max(28, Math.min(a.height, b.height) * 0.55)) return true
+    if (a.height >= b.height * 1.4) return by > a.top + 6 && by < a.bottom - 6
+    if (b.height >= a.height * 1.4) return ay > b.top + 6 && ay < b.bottom - 6
+    const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+    return overlap > Math.min(a.height, b.height) * 0.35
+  }
+
+  private sameVisualCol(a: DOMRect, b: DOMRect): boolean {
+    const ax = a.left + a.width / 2
+    const bx = b.left + b.width / 2
+    if (Math.abs(ax - bx) <= Math.max(36, Math.min(a.width, b.width) * 0.45)) return true
+    if (a.width >= b.width * 1.4) return bx > a.left + 6 && bx < a.right - 6
+    if (b.width >= a.width * 1.4) return ax > b.left + 6 && ax < b.right - 6
+    const overlap = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+    return overlap > Math.min(a.width, b.width) * 0.35
+  }
+
+  /** Nejbližší ve směru; na pásu se točí ve smyčce (žebříček ←→ Jet). */
+  private pickArrowFocus(items: HTMLElement[], idx: number, code: string): HTMLElement {
+    const cur = items[idx]!
+    const cr = cur.getBoundingClientRect()
+    const cx = cr.left + cr.width / 2
+    const cy = cr.top + cr.height / 2
+    const horiz = code === 'ArrowLeft' || code === 'ArrowRight'
+
+    const positioned = items.map((el) => {
+      const r = el.getBoundingClientRect()
+      return { el, r, x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })
+
+    if (horiz) {
+      const row = positioned
+        .filter((p) => p.el === cur || this.sameVisualRow(cr, p.r))
+        .sort((a, b) => a.x - b.x || a.y - b.y)
+      const directed = row.filter((p) => {
+        if (p.el === cur) return false
+        return code === 'ArrowRight' ? p.x > cx + 6 : p.x < cx - 6
+      })
+      if (directed.length) {
+        directed.sort(
+          (a, b) =>
+            Math.abs(a.x - cx) + Math.abs(a.y - cy) * 0.25 - (Math.abs(b.x - cx) + Math.abs(b.y - cy) * 0.25),
+        )
+        return directed[0]!.el
+      }
+      if (row.length > 1) {
+        // Smyčka: doleva z nejlevějšího → nejpravější (a naopak)
+        return code === 'ArrowRight' ? row[0]!.el : row[row.length - 1]!.el
+      }
+    } else {
+      const col = positioned
+        .filter((p) => p.el === cur || this.sameVisualCol(cr, p.r))
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+      const directed = col.filter((p) => {
+        if (p.el === cur) return false
+        return code === 'ArrowDown' ? p.y > cy + 6 : p.y < cy - 6
+      })
+      if (directed.length) {
+        directed.sort(
+          (a, b) =>
+            Math.abs(a.y - cy) + Math.abs(a.x - cx) * 0.25 - (Math.abs(b.y - cy) + Math.abs(b.x - cx) * 0.25),
+        )
+        return directed[0]!.el
+      }
+      if (col.length > 1) {
+        return code === 'ArrowDown' ? col[0]!.el : col[col.length - 1]!.el
+      }
+    }
+
+    const visual = this.menuFocusablesVisual()
+    const vIdx = visual.indexOf(cur)
+    const i = vIdx >= 0 ? vIdx : 0
+    if (code === 'ArrowRight' || code === 'ArrowDown') return visual[(i + 1) % visual.length]!
+    return visual[(i - 1 + visual.length) % visual.length]!
+  }
+
+  private bindKeyboardNav(signal: AbortSignal): void {
+    if (isMobileClient()) return
+
+    queueMicrotask(() => {
+      if (signal.aborted || !this.visible) return
+      const items = this.menuFocusablesVisual()
+      const active = document.activeElement
+      if (active instanceof HTMLElement && items.includes(active)) return
+      // Start: nahoře vlevo (vizuálně), jinak Jet / active karta
+      const prefer =
+        items.find((el) => el.hasAttribute('data-play')) ||
+        items.find((el) => el.classList.contains('gta-tile-hero')) ||
+        items.find((el) => el.classList.contains('active') && el.matches('button, .track-card')) ||
+        items[0]
+      prefer?.focus({ preventScroll: true })
+    })
+
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (!this.visible || signal.aborted) return
+        if (e.altKey || e.ctrlKey || e.metaKey) return
+
+        const kind = this.focusFieldKind(document.activeElement)
+
+        if (e.code === 'Backspace' || e.code === 'Delete') {
+          if (kind === 'text') return
+          e.preventDefault()
+          this.audioApi?.playClick?.()
+          const nav = this.handleEscape()
+          if (nav === 'to-entry') this.onBackToEntry?.()
+          return
+        }
+
+        if (kind === 'text') return
+        if (kind === 'range' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return
+
+        if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+          const el = document.activeElement
+          if (!(el instanceof HTMLElement) || !this.root.contains(el)) return
+          if (el.tagName === 'BUTTON' || el.tagName === 'SUMMARY' || el.tagName === 'A') {
+            e.preventDefault()
+            el.click()
+          }
+          return
+        }
+
+        if (
+          e.code !== 'ArrowUp' &&
+          e.code !== 'ArrowDown' &&
+          e.code !== 'ArrowLeft' &&
+          e.code !== 'ArrowRight'
+        ) {
+          return
+        }
+
+        const items = this.menuFocusablesVisual()
+        if (!items.length) return
+        e.preventDefault()
+        const current = document.activeElement
+        let idx = current instanceof HTMLElement ? items.indexOf(current) : -1
+        if (idx < 0) {
+          items[0]?.focus({ preventScroll: false })
+          return
+        }
+        const next = this.pickArrowFocus(items, idx, e.code)
+        next.focus({ preventScroll: false })
+        next.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      },
+      { signal },
+    )
+  }
+
+  /** SVG ikony šipek pro nápovědu kláves (PC). */
+  private keyArrowsHtml(): string {
+    const arrow = (deg: number) =>
+      `<span class="menu-key-arrow" aria-hidden="true"><svg viewBox="0 0 12 12" focusable="false"><path fill="currentColor" transform="rotate(${deg} 6 6)" d="M6 1.2 L10.2 7.2 H7.4 V10.8 H4.6 V7.2 H1.8 Z"/></svg></span>`
+    return `<span class="menu-key-arrows" title="${t('menu.escArrowsLabel')}" aria-label="${t('menu.escArrowsLabel')}">${arrow(0)}${arrow(90)}${arrow(180)}${arrow(270)}</span>`
+  }
+
+  /** Esc / Backspace / šipky / Enter (bez myši a prstu). */
+  private kbdHintHtml(extraClass = ''): string {
+    if (isMobileClient()) return ''
+    const cls = ['menu-esc-hint', extraClass].filter(Boolean).join(' ')
+    return `<p class="${cls}">
+      <span>Esc</span><span class="menu-esc-sep">/</span>
+      <span>Backspace</span><span class="menu-esc-sep">/</span>
+      ${this.keyArrowsHtml()}<span class="menu-esc-sep">/</span>
+      <span>Enter</span>
+    </p>`
   }
 
   /**
@@ -417,12 +633,40 @@ export class Menu {
     const entry = to === 'entry'
     const label = entry ? t('menu.backEntry') : t('menu.back')
     const attr = entry ? 'data-back-entry' : 'data-back'
-    const esc = isMobileClient()
-      ? ''
-      : `<p class="menu-esc-hint">${entry ? t('menu.escHint') : t('menu.escBack')}</p>`
+    const esc = this.kbdHintHtml()
     const modeClass = mode === 'flow' ? ' menu-nav-back--flow' : ' menu-nav-back--dock'
     return `<div class="menu-nav-back${modeClass}">
       <button type="button" class="btn-ghost menu-back-btn" ${attr}>${label}</button>
+      ${esc}
+    </div>`
+  }
+
+  /** Peklostroj: Tuning vlevo, Zpět vpravo (černý pás). */
+  private vehiclesNavRow(): string {
+    const esc = this.kbdHintHtml()
+    return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-next>${t('menu.tuning')}</button>
+      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      ${esc}
+    </div>`
+  }
+
+  /** Tuning: Hotovo vlevo, Zpět vpravo (stejná černá lišta jako u peklostrojů). */
+  private tuningNavRow(): string {
+    const esc = this.kbdHintHtml()
+    return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-next>${t('menu.tuningDone')}</button>
+      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      ${esc}
+    </div>`
+  }
+
+  /** Trať: Hotovo vlevo, Zpět vpravo. */
+  private tracksNavRow(): string {
+    const esc = this.kbdHintHtml()
+    return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-next>${t('menu.tuningDone')}</button>
+      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
       ${esc}
     </div>`
   }
@@ -518,7 +762,6 @@ export class Menu {
       this.screen === 'audio' ||
       this.screen === 'atmosphere' ||
       this.screen === 'difficulty' ||
-      this.screen === 'manual' ||
       this.screen === 'competitions' ||
       this.screen === 'aiLearn' ||
       this.screen === 'controls'
@@ -539,7 +782,13 @@ export class Menu {
       this.render()
       return 'stay'
     }
-    if (this.screen === 'online' || this.screen === 'raceMode' || this.screen === 'records') {
+    if (this.screen === 'online') {
+      this.raceModePick = 'online'
+      this.screen = 'raceMode'
+      this.render()
+      return 'stay'
+    }
+    if (this.screen === 'raceMode' || this.screen === 'records') {
       this.screen = this.screen === 'records' ? this.recordsBack : 'home'
       this.render()
       return 'stay'
@@ -588,6 +837,29 @@ export class Menu {
     }
   }
 
+  /** Scroll pozice panelu / seznamu / náhledu — po kliknutí na kartu se nesmí skákat nahoru. */
+  private savePanelScroll(): { body: number; list: number; preview: number } {
+    const body = this.root.querySelector<HTMLElement>('.menu-panel-body')
+    const list = this.root.querySelector<HTMLElement>('.tracks-list')
+    const preview = this.root.querySelector<HTMLElement>('.vehicle-stage')
+    return {
+      body: body?.scrollTop ?? 0,
+      list: list?.scrollTop ?? 0,
+      preview: preview?.scrollTop ?? 0,
+    }
+  }
+
+  private restorePanelScroll(pos: { body: number; list: number; preview: number }): void {
+    requestAnimationFrame(() => {
+      const body = this.root.querySelector<HTMLElement>('.menu-panel-body')
+      const list = this.root.querySelector<HTMLElement>('.tracks-list')
+      const preview = this.root.querySelector<HTMLElement>('.vehicle-stage')
+      if (body) body.scrollTop = pos.body
+      if (list) list.scrollTop = pos.list
+      if (preview) preview.scrollTop = pos.preview
+    })
+  }
+
   private render(): void {
     this.disposeVehiclePreview()
     const signal = this.beginUiBindings()
@@ -602,7 +874,6 @@ export class Menu {
       const art = menuArtForTone(atmHome.tone, atmHome.calendarPack)
       const trackName = this.escape(this.trackLabel())
       const vehicleName = this.vehicleLabel(this.selectedVehicle)
-      const diffName = this.diffLabel()
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -612,9 +883,7 @@ export class Menu {
           </header>
           <div class="gta-tiles">
             <button type="button" class="gta-tile gta-tile-hero" data-play style="--tile:url('${art.race}')">
-              <span class="gta-tile-kicker">${t('menu.raceClassic')}</span>
-              <strong class="gta-tile-label">${t('menu.playNow')}</strong>
-              <span class="gta-tile-sub">${trackName} · ${vehicleName}</span>
+              <strong class="gta-tile-label">${t('menu.playPick')}</strong>
             </button>
             <button type="button" class="gta-tile" data-go="tracks" style="--tile:url('${art.tracks}')">
               <strong class="gta-tile-label">${t('menu.trackSelect')}</strong>
@@ -624,44 +893,21 @@ export class Menu {
               <strong class="gta-tile-label">${t('menu.vehicleSelect')}</strong>
               <span class="gta-tile-sub">${vehicleName}</span>
             </button>
-            <button type="button" class="gta-tile" data-go="online" style="--tile:url('${art.race}')">
-              <strong class="gta-tile-label">${t('menu.onlineShort')}</strong>
-              <span class="gta-tile-sub">${t('menu.onlineTileSub')}</span>
+            <button type="button" class="gta-tile" data-go="records" style="--tile:url('${art.board}')">
+              <strong class="gta-tile-label">${t('menu.leaderboard')}</strong>
             </button>
             <button type="button" class="gta-tile" data-go="settings" style="--tile:url('${art.settings}')">
               <strong class="gta-tile-label">${t('menu.settings')}</strong>
-              <span class="gta-tile-sub">${t('menu.leaderboard')} · ${t('menu.difficulty')}</span>
             </button>
           </div>
-          <div class="home-chips" role="group" aria-label="${t('menu.statusTrack')}">
-            <button type="button" class="home-chip" data-go="tracks">
-              <span class="home-chip-k">${t('menu.statusTrack')}</span>
-              <strong>${trackName}</strong>
-            </button>
-            <button type="button" class="home-chip" data-go="vehicles">
-              <span class="home-chip-k">${t('menu.statusVehicle')}</span>
-              <strong>${vehicleName}</strong>
-            </button>
-            <button type="button" class="home-chip" data-go="difficulty">
-              <span class="home-chip-k">${t('menu.statusDiff')}</span>
-              <strong>${diffName}</strong>
-            </button>
-            <button type="button" class="home-chip" data-go="records">
-              <span class="home-chip-k">${t('menu.leaderboard')}</span>
-              <strong>${t('menu.recordsOpen')}</strong>
-            </button>
-          </div>
-          ${
-            isMobileClient()
-              ? ''
-              : `<p class="menu-esc-hint menu-esc-hint-home">${t('menu.escHint')}</p>`
-          }
+          ${this.kbdHintHtml('menu-esc-hint-home')}
         </div>
       `
       this.bindMuteBar()
       this.root.querySelector<HTMLButtonElement>('[data-play]')?.addEventListener('click', () => {
         this.raceModePick = 'classic'
-        this.confirmRaceMode()
+        this.screen = 'raceMode'
+        this.render()
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -689,17 +935,15 @@ export class Menu {
         this.raceModePick = 'classic'
       }
       const modes: { id: RaceModeId; title: string; blurb: string; online?: boolean }[] = [
-        { id: 'classic', title: t('menu.raceClassic'), blurb: t('menu.raceClassicBlurb') },
+        { id: 'classic', title: t('menu.raceSingle'), blurb: t('menu.raceClassicBlurb') },
         {
           id: 'online',
-          title: t('menu.online'),
+          title: t('menu.raceMulti'),
           blurb: t('menu.raceOnlineBlurb'),
           online: true,
         },
       ]
       const pick = modes.find((m) => m.id === this.raceModePick) ?? modes[0]!
-      const confirmHint =
-        pick.id === 'online' ? t('menu.raceModeConfirmOnline') : t('menu.raceModeConfirm')
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -720,8 +964,7 @@ export class Menu {
               <div class="race-mode-detail" data-race-detail>
                 <strong data-race-title>${pick.title}</strong>
                 <p data-race-blurb>${pick.blurb}</p>
-                <p class="tune-rules" data-race-hint>${confirmHint}</p>
-                <div class="hold-track ${pick.id === 'online' ? '' : 'is-hidden'}" aria-hidden="true"><div class="hold-bar" data-hold-fill></div></div>
+                <p class="tune-rules" data-race-hint>${t('menu.raceModeConfirm')}</p>
               </div>
             </div>
             ${
@@ -735,90 +978,38 @@ export class Menu {
       `
       this.bindMuteBar()
       this.bindBack('home')
-      const fill = this.root.querySelector<HTMLElement>('[data-hold-fill]')
-      const holdTrack = this.root.querySelector<HTMLElement>('.hold-track')
       const titleEl = this.root.querySelector<HTMLElement>('[data-race-title]')
       const blurbEl = this.root.querySelector<HTMLElement>('[data-race-blurb]')
-      const hintEl = this.root.querySelector<HTMLElement>('[data-race-hint]')
       const setPick = (id: RaceModeId) => {
         if (id !== 'classic' && id !== 'online') id = 'classic'
-        this.clearRaceHold()
-        this.clearRaceEnterHits()
         this.raceModePick = id
         const m = modes.find((x) => x.id === id) ?? modes[0]!
         if (titleEl) titleEl.textContent = m.title
         if (blurbEl) blurbEl.textContent = m.blurb
-        if (hintEl) {
-          hintEl.textContent =
-            id === 'online' ? t('menu.raceModeConfirmOnline') : t('menu.raceModeConfirm')
-        }
-        holdTrack?.classList.toggle('is-hidden', id !== 'online')
         this.root.querySelectorAll<HTMLButtonElement>('[data-race-mode]').forEach((b) => {
           b.classList.toggle('active', b.dataset.raceMode === id)
         })
       }
       const confirm = () => {
-        this.clearRaceHold()
-        this.clearRaceEnterHits()
         this.confirmRaceMode()
-      }
-      const startHold = () => {
-        if (this.raceModePick !== 'online') return
-        this.clearRaceHold()
-        const t0 = performance.now()
-        const tick = (now: number) => {
-          const p = Math.min(1, (now - t0) / 1000)
-          if (fill) fill.style.width = `${p * 100}%`
-          if (p < 1) this.raceHoldRaf = requestAnimationFrame(tick)
-        }
-        this.raceHoldRaf = requestAnimationFrame(tick)
-        this.raceHoldTimer = window.setTimeout(() => confirm(), 1000)
       }
       this.root.querySelectorAll<HTMLButtonElement>('[data-race-mode]').forEach((btn) => {
         const id = (btn.dataset.raceMode || 'classic') as RaceModeId
-        btn.addEventListener(
-          'pointerdown',
-          (e) => {
-            if (e.button !== 0) return
-            setPick(id)
-            if (id === 'online') startHold()
-          },
-          { signal },
-        )
-        btn.addEventListener('pointerup', () => this.clearRaceHold(), { signal })
-        btn.addEventListener('pointerleave', () => this.clearRaceHold(), { signal })
-        btn.addEventListener('pointercancel', () => this.clearRaceHold(), { signal })
         btn.addEventListener(
           'click',
           (e) => {
             e.preventDefault()
             setPick(id)
-            if (id !== 'online') confirm()
+            confirm()
           },
           { signal },
         )
       })
-      window.addEventListener(
-        'keydown',
-        (e) => {
-          if (!this.visible || this.screen !== 'raceMode') return
-          if (e.code !== 'Enter' && e.code !== 'NumpadEnter') return
-          e.preventDefault()
-          if (this.raceModePick === 'online') {
-            this.raceEnterHits += 1
-            if (this.raceEnterReset !== null) window.clearTimeout(this.raceEnterReset)
-            this.raceEnterReset = window.setTimeout(() => this.clearRaceEnterHits(), 550)
-            if (this.raceEnterHits >= 2) confirm()
-            return
-          }
-          confirm()
-        },
-        { signal },
-      )
       return
     }
 
     if (this.screen === 'tracks') {
+      const scrollPos = this.savePanelScroll()
       const selected = TRACKS.find((tr) => tr.id === this.selectedTrackId) ?? TRACKS[0]
       const race = this.raceApi?.get() ?? { ...DEFAULT_RACE }
       this.root.innerHTML = `
@@ -851,41 +1042,59 @@ export class Menu {
               </div>
             </div>
           </div>
-          ${this.backRow('home', 'flow')}
+          ${this.tracksNavRow()}
         </div>
       `
       this.bindMuteBar()
       this.bindBack('home')
       this.bindTracks()
+      this.root.querySelector('[data-next]')?.addEventListener('click', () => {
+        this.screen = 'home'
+        this.render()
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-reverse]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.raceApi?.set({ reverse: btn.dataset.reverse === '1' })
           this.render()
         })
       })
+      this.restorePanelScroll(scrollPos)
       return
     }
 
     if (this.screen === 'vehicles') {
+      const scrollPos = this.savePanelScroll()
       const kind = this.selectedVehicle
+      this.selectedBranch = vehicleBranch(kind)
+      const branchKinds = kindsInBranch(this.selectedBranch)
       const confirmVehicle = () => {
         if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
         this.screen = 'tuning'
         this.render()
       }
+      const branches: VehicleBranch[] = ['auto', 'moto', 'monster', 'freestyle']
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock">
+        <div class="menu-shell menu-panel menu-panel-dock menu-vehicles">
           <div class="menu-panel-body">
             <p class="tune-rules menu-scroll-hint">${t('menu.vehiclesScrollHint')}</p>
+            <div class="vehicle-branch-row">
+              <div class="vehicle-branch-tabs">
+                ${branches
+                  .map((b) => {
+                    const active = b === this.selectedBranch ? 'active' : ''
+                    return `<button type="button" class="btn-ghost vehicle-branch-tab ${active}" data-branch="${b}">${t(`menu.branch.${b}`)}</button>`
+                  })
+                  .join('')}
+              </div>
+            </div>
             <div class="tracks-layout vehicles-layout">
               <div class="tracks-list">
-                ${VEHICLE_KINDS.map((k) => {
+                ${branchKinds.map((k) => {
                   const active = k === kind ? 'active' : ''
                   return `<button type="button" class="track-card ${active}" data-vehicle="${k}">
                     <strong>${this.vehicleLabel(k)}</strong>
-                    <span>${t(`vehicle.${k}.max`)}</span>
                   </button>`
                 }).join('')}
               </div>
@@ -894,35 +1103,27 @@ export class Menu {
                 <p class="tune-help">${t('menu.vehicleDrag')}</p>
                 <div class="track-preview-meta">
                   <strong>${this.vehicleLabel(kind)}</strong>
-                  <span>${t(`vehicle.${kind}.max`)}</span>
-                </div>
-                <p class="tune-rules">${t('menu.colorPick')}</p>
-                <div class="color-grid">
-                  ${this.colorSwatchHtml('color', COLOR_NONE, this.selectedColor)}
-                  ${PLAYER_COLOR_CHOICES.map((c) => this.colorSwatchHtml('color', c, this.selectedColor)).join('')}
-                  <label class="color-rgb" title="${t('menu.colorRgb')}">
-                    <input type="color" id="color-rgb" value="${this.selectedColor < 0 ? '#c62828' : '#' + this.selectedColor.toString(16).padStart(6, '0')}" />
-                  </label>
+                  <span>${t(`menu.branch.${vehicleBranch(kind)}`)}</span>
                 </div>
                 ${
                   kind === 'scooter'
-                    ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
+                    ? `<p class="tune-rules scooter-warn">${t('menu.scooterEgg')}</p>`
                     : ''
                 }
-                <details class="vehicle-more">
+                ${this.paintRowHtml('color', t('menu.colorPick'), this.selectedColor, PLAYER_COLOR_CHOICES, true)}
+                <details class="vehicle-more" open>
                   <summary>${t('menu.vehicleMore')}</summary>
+                  <p class="tune-rules">${t(`vehicle.${kind}.max`)}</p>
+                  <div class="veh-stats">${statsBarsHtml(kind, (key) => t(`menu.stat.${key}`), this.tuning)}</div>
                   <p class="vehicle-lore">${t(`vehicle.${kind}.invented`)}</p>
                   <p class="vehicle-lore">${t(`vehicle.${kind}.first`)}</p>
                   <p class="tune-rules">${t('menu.vehicleControls')}</p>
                   <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>
                 </details>
-                <div class="vehicle-flow-foot">
-                  <button type="button" class="btn-ghost vehicle-tuning-link" data-next>${t('menu.tuning')}</button>
-                </div>
               </div>
             </div>
           </div>
-          ${this.backRow('home', 'flow')}
+          ${this.vehiclesNavRow()}
         </div>
         ${
           this.scooterPopup
@@ -946,9 +1147,22 @@ export class Menu {
         }
         this.render()
       })
+      this.root.querySelectorAll<HTMLButtonElement>('[data-branch]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const b = (btn.dataset.branch || 'auto') as VehicleBranch
+          this.selectedBranch = b
+          const pool = kindsInBranch(b)
+          if (!pool.includes(this.selectedVehicle)) {
+            this.selectedVehicle = pool.find((k) => k !== 'scooter') ?? pool[0]!
+            this.clearScooterTrap()
+          }
+          this.render()
+        })
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-vehicle]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.selectedVehicle = (btn.dataset.vehicle as VehicleKind) || 'street'
+          this.selectedBranch = vehicleBranch(this.selectedVehicle)
           if (this.selectedVehicle !== 'scooter') this.clearScooterTrap()
           const race = this.raceApi?.get()
           if (race && this.selectedVehicle !== 'scooter') {
@@ -958,29 +1172,6 @@ export class Menu {
           }
           this.render()
         })
-      })
-      const syncColorActive = () => {
-        this.root.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) => {
-          b.classList.toggle('active', Number(b.dataset.color) === this.selectedColor)
-        })
-      }
-      this.root.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          this.selectedColor = Number(btn.dataset.color)
-          if (Number.isNaN(this.selectedColor)) this.selectedColor = PLAYER_COLOR_CHOICES[0]!
-          if (this.vehiclePreview) {
-            this.vehiclePreview.setColor(this.selectedColor)
-            syncColorActive()
-          } else {
-            this.render()
-          }
-        })
-      })
-      this.root.querySelector<HTMLInputElement>('#color-rgb')?.addEventListener('input', (e) => {
-        const el = e.target as HTMLInputElement
-        this.selectedColor = parseInt(el.value.slice(1), 16)
-        this.vehiclePreview?.setColor(this.selectedColor)
-        syncColorActive()
       })
       window.addEventListener(
         'keydown',
@@ -996,14 +1187,16 @@ export class Menu {
       const canvas = this.root.querySelector<HTMLCanvasElement>('#vehicle-preview')
       if (canvas) {
         this.vehiclePreview = new VehiclePreview(canvas)
-        this.vehiclePreview.setVehicle(kind, this.selectedColor, this.selectedNeon)
+        this.vehiclePreview.setVehicle(kind, this.currentLook())
       }
+      this.bindPaintPickers()
+      this.restorePanelScroll(scrollPos)
       return
     }
 
     if (this.screen === 'tuning') {
       const kind = this.selectedVehicle
-      const used = tuningSum(this.tuning)
+      const freestyle = vehicleBranch(kind) === 'freestyle'
       const confirmTuning = () => {
         this.screen = 'home'
         this.render()
@@ -1013,14 +1206,11 @@ export class Menu {
         ${this.muteBar()}
         <div class="menu-shell menu-panel menu-tuning vehicles-tune menu-panel-dock">
           <div class="menu-panel-body">
-            <p class="tune-rules menu-budget-line">${this.vehicleLabel(kind)} · ${t('menu.budget')} <span class="budget-pill">${used} / ${TUNING_BUDGET} ${t('menu.points')}</span></p>
             <div class="tracks-layout vehicles-layout">
               <div class="tuning-side">
-                <p class="tune-rules">${t('menu.tuneRules')}</p>
                 <div class="tune-stack">
                   ${TUNE_KEYS.map((key) => this.slider(key, t(`menu.${key}`), this.tuning[key])).join('')}
                 </div>
-                <p class="tune-hint" id="tune-hint">${tuningHint(this.tuning)}</p>
               </div>
               <div class="tracks-preview-pane vehicle-stage">
                 <canvas id="vehicle-preview" class="vehicle-preview-canvas"></canvas>
@@ -1029,54 +1219,38 @@ export class Menu {
                   <strong>${this.vehicleLabel(kind)}</strong>
                   <span>${t(`vehicle.${kind}.max`)}</span>
                 </div>
-                <p class="tune-rules">${kind === 'bike' ? t('menu.wheelPick') : kind === 'scooter' ? t('menu.neonNone') : t('menu.neonPick')}</p>
+                <div class="veh-stats" id="tune-stats">${statsBarsHtml(kind, (key) => t(`menu.stat.${key}`), this.tuning)}</div>
                 ${
                   kind === 'scooter'
                     ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
-                    : `<div class="color-grid">
-                  ${this.colorSwatchHtml('neon', NEON_NONE, this.selectedNeon)}
-                  ${NEON_COLOR_CHOICES.map((c) => this.colorSwatchHtml('neon', c, this.selectedNeon)).join('')}
-                  <label class="color-rgb" title="${t('menu.neonRgb')}">
-                    <input type="color" id="neon-rgb" value="${this.selectedNeon < 0 ? '#ff2bd6' : '#' + this.selectedNeon.toString(16).padStart(6, '0')}" />
-                  </label>
-                </div>`
+                    : ''
+                }
+                ${
+                  freestyle
+                    ? ''
+                    : this.paintRowHtml('neon', t('menu.neonPick'), this.selectedNeon, NEON_COLOR_CHOICES, true)
+                }
+                ${this.paintRowHtml('wheel', t('menu.wheelPick'), this.selectedWheel, NEON_COLOR_CHOICES, true)}
+                ${
+                  vehicleHasRider(kind)
+                    ? this.paintRowHtml('rider', t('menu.riderPick'), this.selectedRider, NEON_COLOR_CHOICES, true)
+                    : ''
+                }
+                ${
+                  vehicleHasHelm(kind)
+                    ? this.paintRowHtml('helm', t('menu.helmPick'), this.selectedHelm, NEON_COLOR_CHOICES, true)
+                    : ''
                 }
               </div>
             </div>
-            <div class="menu-flow-actions">
-              <button type="button" class="btn-ghost" data-next>${t('menu.tuningDone')}</button>
-            </div>
           </div>
-          ${this.backRow('vehicles', 'flow')}
+          ${this.tuningNavRow()}
         </div>
       `
       this.bindMuteBar()
       this.bindBack('vehicles')
       this.bindTuning()
       this.root.querySelector('[data-next]')?.addEventListener('click', () => confirmTuning())
-      const syncNeonActive = () => {
-        this.root.querySelectorAll<HTMLButtonElement>('[data-neon]').forEach((b) => {
-          b.classList.toggle('active', Number(b.dataset.neon) === this.selectedNeon)
-        })
-      }
-      this.root.querySelectorAll<HTMLButtonElement>('[data-neon]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          this.selectedNeon = Number(btn.dataset.neon)
-          if (Number.isNaN(this.selectedNeon)) this.selectedNeon = NEON_COLOR_CHOICES[0]!
-          if (this.vehiclePreview) {
-            this.vehiclePreview.setNeon(this.selectedNeon)
-            syncNeonActive()
-          } else {
-            this.render()
-          }
-        })
-      })
-      this.root.querySelector<HTMLInputElement>('#neon-rgb')?.addEventListener('input', (e) => {
-        const el = e.target as HTMLInputElement
-        this.selectedNeon = parseInt(el.value.slice(1), 16)
-        this.vehiclePreview?.setNeon(this.selectedNeon)
-        syncNeonActive()
-      })
       window.addEventListener(
         'keydown',
         (e) => {
@@ -1092,8 +1266,9 @@ export class Menu {
       const canvas = this.root.querySelector<HTMLCanvasElement>('#vehicle-preview')
       if (canvas) {
         this.vehiclePreview = new VehiclePreview(canvas)
-        this.vehiclePreview.setVehicle(kind, this.selectedColor, this.selectedNeon)
+        this.vehiclePreview.setVehicle(kind, this.currentLook())
       }
+      this.bindPaintPickers()
       return
     }
 
@@ -1114,7 +1289,6 @@ export class Menu {
                 <div class="settings-advanced-list">
                   <button type="button" class="btn-ghost home-panel" data-go="competitions">${t('menu.settingsCompetitions')}</button>
                   <button type="button" class="btn-ghost home-panel" data-go="aiLearn">${t('menu.settingsAiLearn')}</button>
-                  <button type="button" class="btn-ghost home-panel" data-go="records">${t('menu.leaderboard')}</button>
                 </div>
               </details>
             </div>
@@ -1129,7 +1303,6 @@ export class Menu {
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const go = (btn.dataset.go as Screen) || 'settings'
-          if (go === 'records') this.recordsBack = 'settings'
           this.settingsSubBack = 'settings'
           this.screen = go
           this.render()
@@ -1221,6 +1394,10 @@ export class Menu {
                 <strong>${t('menu.aiLearnCollect')}</strong>
                 <span>${learn.enabled ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
               </button>
+              <button type="button" class="track-card ${learn.upload ? 'active' : ''}" data-learn-upload>
+                <strong>${t('menu.aiLearnUpload')}</strong>
+                <span>${learn.upload ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+              </button>
               <button type="button" class="track-card ${learn.applyToAi ? 'active' : ''}" data-learn-apply>
                 <strong>${t('menu.aiLearnApply')}</strong>
                 <span>${learn.applyToAi ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
@@ -1310,19 +1487,25 @@ export class Menu {
               <h3 class="bind-section-title">${t('menu.ctrlMobileTitle')}</h3>
               <p class="tune-rules menu-mobile-warn">${t('menu.mobileLimits')}</p>
               <p class="tune-rules">${t('menu.ctrlMobileBlurb')}</p>
-              <div class="dir-grid mobile-scheme-grid">
-                ${MOBILE_DRIVE_SCHEMES.map((s) => {
-                  const active = s === feel.mobileScheme ? 'active' : ''
-                  return `<button type="button" class="track-card ${active}" data-mobile-scheme="${s}">
+              <h3 class="bind-section-title" style="margin-top:14px">${t('menu.ctrlSectionDrive')}</h3>
+              ${MOBILE_DRIVE_SCHEMES.map((s) => {
+                const active = s === feel.mobileScheme ? 'active' : ''
+                return `<div class="bind-row mobile-scheme-row ${active}" data-mobile-scheme="${s}" role="button" tabindex="0">
+                  <div class="bind-row-label">
                     <strong>${t(`menu.ctrlMobile.${s}`)}</strong>
-                    <span>${t(`menu.ctrlMobile.${s}.blurb`)}</span>
-                  </button>`
-                }).join('')}
+                    <span class="bind-row-hint">${t(`menu.ctrlMobile.${s}.blurb`)}</span>
+                  </div>
+                  <span class="bind-row-keys">${active ? '✓' : ''}</span>
+                </div>`
+              }).join('')}
+              <h3 class="bind-section-title" style="margin-top:14px">${t('menu.ctrlSectionSpecial')}</h3>
+              <div class="bind-row ${feel.allowPortraitRotation ? 'active' : ''}" data-allow-portrait role="button" tabindex="0">
+                <div class="bind-row-label">
+                  <strong>${t('menu.ctrlAllowPortrait')}</strong>
+                  <span class="bind-row-hint">${t('menu.ctrlAllowPortraitBlurb')}</span>
+                </div>
+                <span class="bind-row-keys">${feel.allowPortraitRotation ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
               </div>
-              <button type="button" class="track-card ${feel.allowPortraitRotation ? 'active' : ''}" data-allow-portrait style="margin-top:12px;width:100%">
-                <strong>${t('menu.ctrlAllowPortrait')}</strong>
-                <span>${feel.allowPortraitRotation ? t('menu.ctrlOn') : t('menu.ctrlOff')} · ${t('menu.ctrlAllowPortraitBlurb')}</span>
-              </button>
             </div>`
       this.root.innerHTML = `
         ${wm}
@@ -1376,7 +1559,7 @@ export class Menu {
                   </button>
                   <button type="button" class="track-card ${feel.driftMode ? 'active' : ''}" data-feel-drift>
                     <strong>${t('menu.ctrlDrift')}</strong>
-                    <span>${feel.driftMode ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                    <span>${feel.driftMode ? t('menu.ctrlOn') : t('menu.ctrlOff')} · ${t('menu.ctrlDriftBlurb')}</span>
                   </button>
                   <button type="button" class="track-card ${raceFeel.skipCountdown ? 'active' : ''}" data-feel-skip-cd>
                     <strong>${t('menu.ctrlSkipCountdown')}</strong>
@@ -1535,8 +1718,19 @@ export class Menu {
 
     if (this.screen === 'records') {
       const filter = this.lbTrackId
-      const list = (filter ? recordsFor(filter) : recordsFor()).slice(0, 30)
-      const tabs = [
+      const board = this.recordsMode
+      const list = (filter ? recordsFor(filter, undefined, board) : recordsFor(undefined, undefined, board)).slice(
+        0,
+        30,
+      )
+      const modeTabs = `
+        <button type="button" class="btn-ghost vehicle-branch-tab ${board === 'race' ? 'active' : ''}" data-rec-mode="race">${t('menu.recordsRace')}</button>
+        <button type="button" class="btn-ghost vehicle-branch-tab ${board === 'freestyle' ? 'active' : ''}" data-rec-mode="freestyle">${t('menu.recordsFs')}</button>
+      `
+      const filterLabel = filter
+        ? this.escape(this.trackName(TRACKS.find((x) => x.id === filter) ?? TRACKS[0]!))
+        : t('menu.lbAll')
+      const trackOptions = [
         `<button type="button" class="track-card ${!filter ? 'active' : ''}" data-lb="">${t('menu.lbAll')}</button>`,
         ...TRACKS.map((tr) => {
           const active = filter === tr.id ? 'active' : ''
@@ -1548,13 +1742,15 @@ export class Menu {
           const tr = TRACKS.find((x) => x.id === e.trackId)
           const trackLabel = tr ? this.trackName(tr) : e.trackId
           const time = e.bestTimeMs > 0 ? formatTime(e.bestTimeMs) : '—'
-          const fs = e.bestFsScore > 0 ? `FS ${e.bestFsScore}` : '—'
-          const tricks = e.bestTrickPts > 0 ? `· triky ${e.bestTrickPts}` : ''
+          const score =
+            board === 'freestyle'
+              ? `FS ${e.bestFsScore || 0}${e.bestTrickPts > 0 ? ` · ${e.bestTrickPts.toFixed(1)}` : ''}`
+              : '—'
           return `<li class="lb-row">
             <span class="lb-rank">${i + 1}.</span>
             <span class="lb-player">${this.escape(e.player)}</span>
             <span class="lb-meta">${this.escape(trackLabel)} · ${this.vehicleLabel(e.vehicle)}</span>
-            <span class="lb-score">${fs} ${tricks}</span>
+            <span class="lb-score">${score}</span>
             <span class="lb-time">${time}</span>
           </li>`
         })
@@ -1565,7 +1761,11 @@ export class Menu {
         <div class="menu-shell menu-panel menu-panel-dock">
           <div class="menu-panel-body">
             <p class="tune-rules">${t('menu.lbBlurb')}</p>
-            <div class="lb-tabs">${tabs}</div>
+            <div class="vehicle-branch-tabs">${modeTabs}</div>
+            <details class="lb-track-details">
+              <summary class="lb-track-summary">${t('menu.lbTrackFilter')}: <strong>${filterLabel}</strong></summary>
+              <div class="lb-tabs">${trackOptions}</div>
+            </details>
             <ol class="records-list lb-list">${rows || `<li>${t('menu.recEmpty')}</li>`}</ol>
           </div>
           ${this.backRow(this.recordsBack, 'flow')}
@@ -1573,19 +1773,18 @@ export class Menu {
       `
       this.bindMuteBar()
       this.bindBack(this.recordsBack)
+      this.root.querySelectorAll<HTMLButtonElement>('[data-rec-mode]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          this.recordsMode = btn.dataset.recMode === 'freestyle' ? 'freestyle' : 'race'
+          this.render()
+        })
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-lb]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.lbTrackId = btn.dataset.lb || ''
           this.render()
         })
       })
-      return
-    }
-
-    if (this.screen === 'manual') {
-      // Manuální řazení je teď v Ovládání
-      this.screen = isMobileClient() ? 'settings' : 'controls'
-      this.render()
       return
     }
 
@@ -1632,6 +1831,16 @@ export class Menu {
               </div>
             </div>
             <div class="atm-scene-panel" style="margin-top:18px">
+              <p class="atm-scene-title">${t('menu.circuitLaps')}</p>
+              <p class="tune-help">${t('menu.circuitLapsBlurb')}</p>
+              <div class="dir-grid" style="margin:12px 0">
+                ${RACE_LAP_CHOICES.map((n) => {
+                  const active = n === clampRaceLaps(race.laps) ? 'active' : ''
+                  return `<button type="button" class="track-card ${active}" data-race-laps="${n}"><strong>${n}</strong></button>`
+                }).join('')}
+              </div>
+            </div>
+            <div class="atm-scene-panel" style="margin-top:18px">
               <p class="atm-scene-title">${t('menu.opponents')}</p>
               <p class="tune-help">${t('menu.opponentsBlurb')}</p>
               <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
@@ -1670,6 +1879,13 @@ export class Menu {
       `
       this.bindMuteBar()
       this.bindBack(this.settingsSubBack)
+      this.root.querySelectorAll<HTMLButtonElement>('[data-race-laps]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          this.audioApi?.playClick?.()
+          this.raceApi?.set({ laps: clampRaceLaps(Number(btn.dataset.raceLaps)) })
+          this.render()
+        })
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-diff]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.audioApi?.playClick?.()
@@ -1811,6 +2027,9 @@ export class Menu {
             ${calendarPacksHtml}
             <p class="tune-rules" style="margin-top:18px">${t('menu.visualQuality')}</p>
             <p class="tune-help">${t('menu.visualQualityBlurb')}</p>
+            <p class="tune-help">${t('menu.visualRecommend', {
+              q: t(`menu.visual.${lastSuggestedQuality() ?? suggestVisualQuality()}`),
+            })}</p>
             <div class="track-grid">
               ${VISUAL_QUALITIES.map((q) => {
                 const active = q === vis.quality ? 'active' : ''
@@ -1946,11 +2165,11 @@ export class Menu {
             </details>
             ${this.lobbyError || ob.error ? `<p class="menu-error">${this.escape(this.lobbyError || ob.error)}</p>` : ''}
           </div>
-          ${this.backRow('home', 'flow')}
+          ${this.backRow('raceMode', 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('home')
+      this.bindBack('raceMode')
       this.root.querySelector('#player-name')?.addEventListener('change', () => {
         this.readFields()
         this.onBrowseOnline?.()
@@ -1963,7 +2182,7 @@ export class Menu {
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-host-laps]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          this.hostLaps = Number(btn.dataset.hostLaps) || 2
+          this.hostLaps = clampRaceLaps(Number(btn.dataset.hostLaps) || 3)
           this.render()
         })
       })
@@ -1985,13 +2204,128 @@ export class Menu {
     }
   }
 
+  private currentLook(): VehicleLook {
+    const freestyle = vehicleBranch(this.selectedVehicle) === 'freestyle'
+    return {
+      body: this.selectedColor,
+      neon: freestyle ? COLOR_NONE : this.selectedNeon,
+      wheel: this.selectedWheel,
+      rider: this.selectedRider,
+      helm: this.selectedHelm,
+    }
+  }
+
+  private paintRowHtml(
+    kind: 'color' | 'neon' | 'wheel' | 'rider' | 'helm',
+    label: string,
+    selected: number,
+    choices: readonly number[],
+    allowNone: boolean,
+  ): string {
+    return `<p class="tune-rules">${label}</p>
+      <div class="color-grid">
+        ${allowNone ? this.colorSwatchHtml(kind, COLOR_NONE, selected) : ''}
+        ${choices.map((c) => this.colorSwatchHtml(kind, c, selected)).join('')}
+        <label class="color-rgb" title="${t('menu.colorRgb')}">
+          <input type="color" id="${kind}-rgb" value="${selected < 0 ? '#c62828' : '#' + selected.toString(16).padStart(6, '0')}" />
+        </label>
+      </div>`
+  }
+
+  private bindPaintPickers(): void {
+    const slots: Array<{
+      key: 'color' | 'neon' | 'wheel' | 'rider' | 'helm'
+      get: () => number
+      set: (v: number) => void
+      apply: (v: number) => void
+      fallback: number
+    }> = [
+      {
+        key: 'color',
+        get: () => this.selectedColor,
+        set: (v) => {
+          this.selectedColor = v
+        },
+        apply: (v) => this.vehiclePreview?.setColor(v),
+        fallback: PLAYER_COLOR_CHOICES[0]!,
+      },
+      {
+        key: 'neon',
+        get: () => this.selectedNeon,
+        set: (v) => {
+          this.selectedNeon = v
+        },
+        apply: (v) => this.vehiclePreview?.setNeon(v),
+        fallback: NEON_COLOR_CHOICES[0]!,
+      },
+      {
+        key: 'wheel',
+        get: () => this.selectedWheel,
+        set: (v) => {
+          this.selectedWheel = v
+        },
+        apply: (v) => this.vehiclePreview?.setWheelColor(v),
+        fallback: DEFAULT_VEHICLE_LOOK.wheel,
+      },
+      {
+        key: 'rider',
+        get: () => this.selectedRider,
+        set: (v) => {
+          this.selectedRider = v
+        },
+        apply: (v) => this.vehiclePreview?.setRiderColor(v),
+        fallback: DEFAULT_VEHICLE_LOOK.rider,
+      },
+      {
+        key: 'helm',
+        get: () => this.selectedHelm,
+        set: (v) => {
+          this.selectedHelm = v
+        },
+        apply: (v) => this.vehiclePreview?.setHelmColor(v),
+        fallback: DEFAULT_VEHICLE_LOOK.helm,
+      },
+    ]
+    for (const slot of slots) {
+      const sync = () => {
+        this.root.querySelectorAll<HTMLButtonElement>(`[data-${slot.key}]`).forEach((b) => {
+          b.classList.toggle('active', Number(b.dataset[slot.key]) === slot.get())
+        })
+      }
+      this.root.querySelectorAll<HTMLButtonElement>(`[data-${slot.key}]`).forEach((btn) => {
+        btn.addEventListener('click', () => {
+          let v = Number(btn.dataset[slot.key])
+          if (Number.isNaN(v)) v = slot.fallback
+          slot.set(v)
+          if (this.vehiclePreview) {
+            slot.apply(v)
+            sync()
+          } else {
+            this.render()
+          }
+        })
+      })
+      this.root.querySelector<HTMLInputElement>(`#${slot.key}-rgb`)?.addEventListener('input', (e) => {
+        const el = e.target as HTMLInputElement
+        const v = parseInt(el.value.slice(1), 16)
+        slot.set(v)
+        slot.apply(v)
+        sync()
+      })
+    }
+  }
+
   private emitStart(mode: 'host' | 'join'): void {
+    const look = this.currentLook()
     this.onStart?.({
       mode,
       trackId: this.selectedTrackId,
       vehicle: this.selectedVehicle,
-      color: this.selectedColor,
-      neon: this.selectedNeon,
+      color: look.body,
+      neon: look.neon,
+      wheel: look.wheel,
+      rider: look.rider,
+      helm: look.helm,
       tuning: { ...this.tuning },
       name: this.playerName,
       difficulty: this.selectedDifficulty,
@@ -2032,6 +2366,9 @@ export class Menu {
         if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
         this.clearScooterTrap()
       }
+      if (this.screen === 'online' && to === 'raceMode') {
+        this.raceModePick = 'online'
+      }
       this.screen = to
       this.render()
     })
@@ -2062,12 +2399,16 @@ export class Menu {
       this.tryLeaveScooter()
       return
     }
+    const look = this.currentLook()
     this.onStart?.({
       mode: 'solo',
       trackId: this.selectedTrackId,
       vehicle: this.selectedVehicle,
-      color: this.selectedColor,
-      neon: this.selectedNeon,
+      color: look.body,
+      neon: look.neon,
+      wheel: look.wheel,
+      rider: look.rider,
+      helm: look.helm,
       tuning: { ...this.tuning },
       name: this.playerName,
       difficulty: this.selectedDifficulty,
@@ -2075,7 +2416,7 @@ export class Menu {
   }
 
   private colorSwatchHtml(
-    kind: 'color' | 'neon',
+    kind: 'color' | 'neon' | 'wheel' | 'rider' | 'helm',
     value: number,
     selected: number,
   ): string {
@@ -2128,12 +2469,23 @@ export class Menu {
         return `<li class="${p.ready ? 'is-ready' : ''}"><strong>${this.escape(p.name)}</strong> <span>${tags}</span></li>`
       })
       .join('')
+    if (this.isHost && !this.lobbyWaitStartedAt) {
+      this.lobbyWaitStartedAt = Date.now()
+      this.armLobbyWaitTimer()
+    }
+    const waitLeft = Math.max(
+      0,
+      Math.ceil((this.lobbyWaitMs - (Date.now() - (this.lobbyWaitStartedAt || Date.now()))) / 1000),
+    )
+    const waitMin = Math.floor(waitLeft / 60)
+    const waitSec = String(waitLeft % 60).padStart(2, '0')
     this.root.innerHTML = `
       ${wm}
       ${this.muteBar()}
       <div class="menu-shell menu-panel menu-panel-dock">
         <div class="menu-panel-body">
           <p class="menu-sub">${t('menu.room')} ${room.code} · ${room.players.length}/${room.maxPlayers || 4} ${t('menu.playersOf')} · ${this.escape(trackLabel)} · ${room.laps} ${t('menu.onlineLaps').toLowerCase()}</p>
+          <p class="tune-rules">${t('menu.lobbyWait')}: ${waitMin}:${waitSec}</p>
           <section class="menu-section">
             <h2>${t('menu.players')}</h2>
             <ol class="lobby-list">${players}</ol>
@@ -2141,6 +2493,10 @@ export class Menu {
           ${
             this.isHost
               ? `<section class="menu-section">
+              <label class="manual-option ${this.lobbyFillAi ? 'active' : ''}" style="margin:8px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+                <input type="checkbox" id="lobby-fill-ai" ${this.lobbyFillAi ? 'checked' : ''} />
+                <span><strong>${t('menu.lobbyFillAi')}</strong></span>
+              </label>
               <h2>${t('menu.onlineLaps')}</h2>
               <div class="dir-grid">
                 ${[1, 2, 3, 4, 5]
@@ -2175,8 +2531,8 @@ export class Menu {
           </button>
           ${
             this.isHost
-              ? `<button type="button" class="menu-start" id="btn-race" ${allReady ? '' : 'disabled'} style="margin-top:8px">${t('menu.lobbyStart')}</button>
-                 ${allReady ? '' : `<p class="tune-rules">${t('menu.onlineStartNeedReady')}</p>`}`
+              ? `<button type="button" class="menu-start" id="btn-race" style="margin-top:8px">${t('menu.lobbyStartNow')}</button>
+                 <p class="tune-rules">${allReady ? '' : t('menu.onlineStartNeedReady')}</p>`
               : ''
           }
           <button type="button" class="btn-ghost" id="btn-leave" style="margin-top:12px">${t('menu.leaveLobby')}</button>
@@ -2185,6 +2541,9 @@ export class Menu {
       </div>
     `
     this.bindMuteBar()
+    this.root.querySelector('#lobby-fill-ai')?.addEventListener('change', (e) => {
+      this.lobbyFillAi = (e.target as HTMLInputElement).checked
+    })
     this.root.querySelector('#btn-copy')?.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(this.lobbyLink)
@@ -2207,10 +2566,39 @@ export class Menu {
       })
     })
     this.root.querySelector('#btn-race')?.addEventListener('click', () => {
-      if (!allReady) return
+      this.clearLobbyWaitTimer()
       this.onHostStart?.()
     })
-    this.root.querySelector('#btn-leave')?.addEventListener('click', () => this.onLeaveLobby?.())
+    this.root.querySelector('#btn-leave')?.addEventListener('click', () => {
+      if (!window.confirm(t('menu.leaveConfirm'))) return
+      this.clearLobbyWaitTimer()
+      this.onLeaveLobby?.()
+    })
+  }
+
+  private armLobbyWaitTimer(): void {
+    this.clearLobbyWaitTimer()
+    this.lobbyWaitTimer = window.setInterval(() => {
+      if (!this.lobby || !this.isHost) {
+        this.clearLobbyWaitTimer()
+        return
+      }
+      const left = this.lobbyWaitMs - (Date.now() - this.lobbyWaitStartedAt)
+      if (left <= 0) {
+        this.clearLobbyWaitTimer()
+        this.onHostStart?.()
+        return
+      }
+      if (this.visible && this.lobby) this.render()
+    }, 1000)
+  }
+
+  private clearLobbyWaitTimer(): void {
+    if (this.lobbyWaitTimer != null) {
+      window.clearInterval(this.lobbyWaitTimer)
+      this.lobbyWaitTimer = null
+    }
+    this.lobbyWaitStartedAt = 0
   }
 
   private bindTracks(): void {
@@ -2228,17 +2616,24 @@ export class Menu {
         const key = input.dataset.tune as keyof PlayerTuningValues
         this.tuning = setTuningStat(this.tuning, key, Number(input.value))
         this.syncSliders()
-        const hint = this.root.querySelector('#tune-hint')
-        if (hint) hint.textContent = tuningHint(this.tuning)
-        const pill = this.root.querySelector('.budget-pill')
-        if (pill) pill.textContent = `${tuningSum(this.tuning)} / ${TUNING_BUDGET} ${t('menu.points')}`
+        const stats = this.root.querySelector('#tune-stats')
+        if (stats) {
+          stats.innerHTML = statsBarsHtml(
+            this.selectedVehicle,
+            (k) => t(`menu.stat.${k}`),
+            this.tuning,
+          )
+        }
       })
     })
   }
 
   private readFields(): void {
     const name = this.root.querySelector<HTMLInputElement>('#player-name')
-    if (name) this.playerName = name.value.trim() || t('menu.defaultName')
+    if (name) {
+      this.playerName = savePlayerName(name.value.trim() || loadOrCreatePlayerName())
+      name.value = this.playerName
+    }
     const ws = this.root.querySelector<HTMLInputElement>('#public-ws')
     if (ws) this.publicWsUrl = ws.value.trim()
     const code = this.root.querySelector<HTMLInputElement>('#join-code')
@@ -2295,7 +2690,7 @@ export class Menu {
     return `
       <label class="tune-row">
         <span class="tune-label">${label} <span class="tune-val">${value}</span></span>
-        <input type="range" min="0" max="100" value="${value}" data-tune="${key}" />
+        <input type="range" min="0" max="${TUNING_MAX}" step="1" value="${value}" data-tune="${key}" />
         <p class="tune-help">${t(`menu.${key}.help`)}</p>
       </label>
     `
@@ -2383,18 +2778,33 @@ export class Menu {
         this.render()
       })
     })
-    this.root.querySelectorAll<HTMLButtonElement>('[data-mobile-scheme]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const scheme = btn.dataset.mobileScheme as MobileDriveScheme
+    this.root.querySelectorAll<HTMLElement>('[data-mobile-scheme]').forEach((row) => {
+      const pick = () => {
+        const scheme = row.dataset.mobileScheme as MobileDriveScheme
         if (!MOBILE_DRIVE_SCHEMES.includes(scheme)) return
         this.controlFeelApi?.set({ mobileScheme: scheme })
         this.render()
+      }
+      row.addEventListener('click', pick)
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          pick()
+        }
       })
     })
-    this.root.querySelector<HTMLButtonElement>('[data-allow-portrait]')?.addEventListener('click', () => {
+    const portrait = this.root.querySelector<HTMLElement>('[data-allow-portrait]')
+    const togglePortrait = () => {
       const cur = this.controlFeelApi?.get() ?? DEFAULT_CONTROL_FEEL
       this.controlFeelApi?.set({ allowPortraitRotation: !cur.allowPortraitRotation })
       this.render()
+    }
+    portrait?.addEventListener('click', togglePortrait)
+    portrait?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        togglePortrait()
+      }
     })
   }
 
@@ -2493,6 +2903,11 @@ export class Menu {
     this.root.querySelector<HTMLButtonElement>('[data-learn-enabled]')?.addEventListener('click', () => {
       const cur = loadLearnSettings()
       saveLearnSettings({ ...cur, enabled: !cur.enabled })
+      this.render()
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-learn-upload]')?.addEventListener('click', () => {
+      const cur = loadLearnSettings()
+      saveLearnSettings({ ...cur, upload: !cur.upload })
       this.render()
     })
     this.root.querySelector<HTMLButtonElement>('[data-learn-apply]')?.addEventListener('click', () => {
@@ -2610,10 +3025,6 @@ export class Menu {
 
   private vehicleLabel(kind: VehicleKind): string {
     return t(`vehicle.${kind}`)
-  }
-
-  private diffLabel(): string {
-    return t(`diff.${this.selectedDifficulty}`)
   }
 
   private escape(s: string): string {

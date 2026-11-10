@@ -184,18 +184,19 @@ export class VehiclePhysics {
     if (absSpeed > 0.05) {
       this.speed -= Math.sign(this.speed) * aero * absSpeed * dt
     }
-    // Po boostu: jemně zpět k cruise max (boost ve Vehicle pak zase zatlačí výš).
-    if (this.speed > cruiseMax) {
+    const pushHeld = (controls.push ?? 0) > 0.5
+    // Po boostu: jemně zpět k cruise — při Shift (2×/3× board) nestahuj
+    if (this.speed > cruiseMax && !pushHeld) {
       const over = this.speed - cruiseMax
-      this.speed -= over * (1 - Math.exp(-1.4 * dt))
+      this.speed -= over * (1 - Math.exp(-0.65 * dt))
     }
     if (Math.abs(this.speed) < 0.05 && controls.throttle === 0 && controls.brake === 0) {
       this.speed = 0
     }
 
     const maxReverse = 16
-    // Tab/Alt boost strop (+45 % nad cruise) — skate/kolo
-    const boostCeil = cruiseMax * 1.45
+    // Tab/turbo ~1.5×; Shift na skate/kole až 3× (Vehicle.applyBoardShiftBoost)
+    const boostCeil = cruiseMax * (pushHeld ? 3.05 : 1.5)
     this.speed = Math.max(-maxReverse, Math.min(boostCeil, this.speed))
 
     if (!this.manualShift) {
@@ -246,20 +247,22 @@ export class VehiclePhysics {
       if (icy) this.latVel += steerInput * absSpeed * 0.06 * dt
     }
 
-    // NFS Carbon e-brake drift — Space na drift mapách
+    // NFS Carbon e-brake drift — Space u normálních peklostrojů (ne skate/kolo)
     const ebrake = controls.ebrake ?? 0
-    if (this.driftMode && ebrake > 0.5 && absSpeed > 12) {
+    if (this.driftMode && ebrake > 0.5 && absSpeed > 6) {
       const dir =
-        Math.abs(steerInput) > 0.08
-          ? steerInput
+        Math.abs(steerInput) > 0.05
+          ? Math.sign(steerInput)
           : Math.sign(this.angularVel || this.latVel || 1)
-      this.angularVel += dir * 2.55 * dt
-      this.latVel += dir * absSpeed * 0.34 * dt
-      this.speed *= Math.exp(-0.62 * dt)
-      if (controls.throttle > 0.25) {
-        this.angularVel *= 1 + 0.22 * dt
-        this.latVel *= 1 + 0.1 * dt
-        this.speed += (controls.throttle * power * 0.22 * dt) / mass
+      // Silný impulz do smyku (čitelný NFS e-brake)
+      this.angularVel += dir * (3.4 + absSpeed * 0.04) * dt
+      this.latVel += dir * Math.max(14, absSpeed * 0.55) * dt
+      // E-brake brzdí méně než klasika — spíš smyk než zastavení
+      this.speed *= Math.exp(-0.28 * dt)
+      if (controls.throttle > 0.2) {
+        this.angularVel *= 1 + 0.35 * dt
+        this.latVel *= 1 + 0.2 * dt
+        this.speed += (controls.throttle * power * 0.32 * dt) / mass
       }
     }
 
@@ -272,11 +275,12 @@ export class VehiclePhysics {
     // Rychlejší návrat z bočního smyku = čitelnější řízení
     // V aktivním driftu pomalejší „lepivost“ (Carbon chain)
     const assist = this.stabilityAssist && !this.driftMode ? 2.4 : 0
-    const driftHold = this.driftMode && ebrake > 0.5 ? 0.45 : 1
+    // Při e-brake výrazně pomalejší návrat smyku (Carbon chain)
+    const driftHold = this.driftMode && ebrake > 0.5 ? 0.22 : 1
     const latDecay = Math.exp(-(3.2 + grip * surf * 6.5 * driftHold + assist) * dt)
     this.latVel *= latDecay
     if (this.stabilityAssist && !this.driftMode) this.angularVel *= Math.exp(-1.1 * dt)
-    const latCap = absSpeed * (this.driftMode ? 0.55 : icy ? 0.38 : 0.28)
+    const latCap = absSpeed * (this.driftMode && ebrake > 0.5 ? 0.72 : this.driftMode ? 0.55 : icy ? 0.38 : 0.28)
     if (Math.abs(this.latVel) > latCap) {
       this.latVel = Math.sign(this.latVel) * latCap
     }
@@ -305,13 +309,20 @@ export class VehiclePhysics {
       this.driftChain = Math.max(0, this.driftChain - dt * 2)
       return
     }
-    const slip = Math.abs(Math.atan2(this.latVel, Math.max(1.2, absSpeed)))
-    const drifting = absSpeed > 15 && slip > 0.16 && (ebrake > 0.35 || slip > 0.28)
+    // Poměr boční složky — atan2 při vysoké rychlosti podstřeloval e-brake drift
+    const slip = Math.abs(this.latVel) / Math.max(6, absSpeed)
+    const yawSlip = Math.abs(this.angularVel) * 0.35
+    const slipAmt = Math.max(slip, yawSlip)
+    const drifting =
+      absSpeed > 7 &&
+      (ebrake > 0.35
+        ? slipAmt > 0.055 || Math.abs(this.latVel) > 2.2
+        : slipAmt > 0.14)
     this.driftLive = drifting
     if (drifting) {
       this.driftChain = Math.min(4.5, this.driftChain + dt * 0.55)
       const mult = 1 + this.driftChain
-      this.driftPoints += absSpeed * slip * mult * 14 * dt
+      this.driftPoints += absSpeed * Math.max(slipAmt, 0.08) * mult * 14 * dt
     } else {
       this.driftChain = Math.max(0, this.driftChain - dt * 1.4)
     }
@@ -319,7 +330,7 @@ export class VehiclePhysics {
 
   /**
    * Cruise max (km/h na HUD) — jen plyn dopředu.
-   * Shift / turbo / triky můžou krátkodobě jet výš (až ~1.45×).
+   * Shift na board = 2×/3×; Tab/turbo jinak ~1.5×.
    */
   get maxSpeedAbs(): number {
     const { downforce, speedCapMult } = this.tuning
