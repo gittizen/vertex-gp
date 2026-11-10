@@ -1,9 +1,9 @@
-# 0.7 — KlecMania *(současná)*
+# 0.7 — KlecMania
 
 **Oproti 0.6:** rebrand na **KlecMania** (logo skate pink/cyan beze změny) + Space drift brzda, mute, bike boost, Tarantino Klecany.
 
 ## Hrát
-- Netlify (produkce): https://klecmania.netlify.app/
+- Netlify (produkce zatím): https://klecmania.netlify.app/
 - GitHub Pages archiv: https://gittizen.github.io/vertex-gp/0.7/
 
 ## Co je nového

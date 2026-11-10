@@ -176,19 +176,29 @@ export function menuArtForTone(
   race: string
   garage: string
   tracks: string
-  /** Ozubené kolo — dlaždice Nastavení (sdílené, aby sedělo „strojařsky“) */
+  /** Dlaždice Nastavení */
   settings: string
-  /** Obecný žebříček / podium — dlaždice Žebříček */
+  /** Dlaždice Žebříček */
   board: string
+  /** Setup: Jet */
+  jet: string
+  /** Setup: Multiplayer */
+  multi: string
+  /** Setup: Join */
+  join: string
 } {
   const key = tone === 'calendar' ? calendarArtSuffix(calendarPack) : tone
   return {
     bg: assetUrl(`menu/bg-${key}.jpg`),
-    race: assetUrl(`menu/race-${key}.jpg`),
+    // Domů → Závod: Volvo V70 1. gen, tmavě modrá, nabídkový / tuning look
+    race: assetUrl('menu/race-volvo-v70.jpg'),
     garage: assetUrl(`menu/garage-${key}.jpg`),
     tracks: assetUrl(`menu/tracks-${key}.jpg`),
-    settings: assetUrl('menu/settings-gear.jpg'),
-    board: assetUrl('menu/board-podium.jpg'),
+    settings: assetUrl(`menu/settings-${key}.jpg`),
+    board: assetUrl(`menu/board-${key}.jpg`),
+    jet: assetUrl('menu/tile-jet-start.jpg'),
+    multi: assetUrl('menu/tile-multi-grid.jpg'),
+    join: assetUrl('menu/tile-join-lobby.jpg'),
   }
 }
 

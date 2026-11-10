@@ -14,6 +14,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/records-list"
+  to = "/.netlify/functions/records-list"
+  status = 200
+
+[[redirects]]
+  from = "/api/records-ingest"
+  to = "/.netlify/functions/records-ingest"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

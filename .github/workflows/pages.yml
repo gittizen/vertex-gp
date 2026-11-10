@@ -33,8 +33,9 @@ jobs:
           git branch -f 0.4 v0.4.0^{} 2>/dev/null || git branch -f 0.4 bb6d0e3 || true
           git branch -f 0.5 v0.5.0^{} 2>/dev/null || git branch -f 0.5 origin/0.5 2>/dev/null || git branch -f 0.5 b5e9107 || true
           git rev-parse v0.6.0^{} >/dev/null
+          git rev-parse v0.7.0^{} >/dev/null
       - run: npm ci
-      - name: Build version pages (0.7 → 0.1 + hub, newest first)
+      - name: Build version pages (0.8 → 0.1 + hub, newest first)
         run: node scripts/build-version-pages.mjs
       - uses: actions/upload-pages-artifact@v3
         with:

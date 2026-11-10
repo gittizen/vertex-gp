@@ -8,3 +8,6 @@ site
 .netlify
 community-learn.json
 pace-cal.json
+.chrome-shot-profile
+*.pre-tarantino.bak.jpg
+*.bak.jpg

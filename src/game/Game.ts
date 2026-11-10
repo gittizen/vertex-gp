@@ -444,6 +444,7 @@ export class Game {
       timeMs: 0,
       fsScore: trickPts,
       trickPts,
+      immortal: this.player.immortal,
     })
   }
 
@@ -814,6 +815,10 @@ export class Game {
     for (const v of this.vehicles) {
       v.physics.stabilityAssist = this.controlFeel.stabilityAssist
     }
+    // Nesmrtelnost jen solo; online vždy vypnuto
+    if (this.player) {
+      this.player.immortal = !this.multiplayer && !!this.controlFeel.immortality
+    }
   }
 
   private syncMobileBoostUi(): void {
@@ -860,8 +865,11 @@ export class Game {
       this.vehicles[i].info.name = AI_NAMES[i - 1].name
       this.vehicles[i].info.team = AI_NAMES[i - 1].team
       this.vehicles[i].applyLook(this.aiLook(i))
+      this.vehicles[i].immortal = false
     }
     this.player = this.vehicles[0]
+    // Nesmrtelnost jen solo
+    this.player.immortal = !!this.controlFeel.immortality
   }
 
   private setupGridMultiplayer(order: string[], room: NetRoom): void {
@@ -870,6 +878,7 @@ export class Game {
     const byId = new Map(room.players.map((p) => [p.id, p]))
 
     for (let i = 0; i < 4; i++) {
+      this.vehicles[i].immortal = false
       const netId = order[i]
       if (netId) {
         const p = byId.get(netId)!
@@ -1389,6 +1398,7 @@ export class Game {
           fsScore,
           trickPts:
             this.activeCompetition === 'driftScore' ? driftPts : isFs ? trickPts : 0,
+          immortal: this.player.immortal,
         })
         this.recordPaceCalibration(finishTimeMs)
         if (this.activeCompetition === 'championship') {

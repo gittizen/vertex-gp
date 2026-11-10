@@ -4,6 +4,30 @@ Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nah
 
 ---
 
+## [0.8.0] — 2026-11-10 · *Race setup + žebříček*
+
+### Domů & závod
+- Domů: **Závod** nahoře, pod ním **Žebříček | Nastavení**.
+- Setup: **Trať | Peklostroj** nahoře → **Jet | Multiplayer | Join** dole.
+- Dlaždice Závod: **Volvo V70 1. gen**, tmavě modrá, nabídkový look; Jet/Multi/Join mají vlastní fotky.
+
+### Nesmrtelnost & žebříček
+- **Nesmrtelnost** v Ovládání (jen singleplayer, default off) + 👻 na HUD.
+- Rekordy s immortal flag zůstávají na žebříčku s ghost badge.
+- Cloud sync (**Moje / Svět**) včetně immortal flagu.
+
+### Freestyle & mobil
+- FS startup animace ~0.5 s (crouch; skate + kick předku).
+- Pauza nad mobilní tap vrstvou; FS pád jen při nárazu mid-trick.
+
+### Atmosféra
+- Klecany celkově světlejší (slabší překryvy, jasnější entry).
+
+### Release
+- GitHub tag `v0.8.0` + Pages archiv `/0.8/` — **Netlify zatím nepřidáno** (produkce zůstává 0.7).
+
+---
+
 ## [0.7.0] — 2026-11-09 · *KlecMania + drift brzda*
 
 ### Značka

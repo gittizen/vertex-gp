@@ -101,6 +101,7 @@ import {
 } from '../input/TrickBindings'
 import { freestyleList } from '../freestyle/FreestyleTricks'
 import { allRecords, recordsFor } from '../freestyle/Records'
+import { fetchCloudRecords, type CloudRecordRow } from '../freestyle/CloudRecords'
 import { formatTime } from '../race/RaceManager'
 import { SCOOTER_INSULT_MAX, scooterInsult } from './scooterInsults'
 import { loadOrCreatePlayerName, savePlayerName } from './PlayerName'
@@ -177,6 +178,7 @@ export type OnlineBrowserState = {
 
 type Screen =
   | 'home'
+  | 'raceSetup'
   | 'raceMode'
   | 'tracks'
   | 'vehicles'
@@ -212,6 +214,9 @@ export class Menu {
   private selectedBranch: VehicleBranch = 'auto'
   private selectedDifficulty: DifficultyId = 'normal'
   private recordsMode: 'race' | 'freestyle' = 'race'
+  private recordsScope: 'local' | 'world' = 'local'
+  private worldRecords: CloudRecordRow[] = []
+  private worldRecordsLoading = false
   /** Online lobby: doplnit AI do 4 (client preference). */
   private lobbyFillAi = true
   /** Online lobby: čekání před auto-startem (ms), default 5 min. */
@@ -778,13 +783,18 @@ export class Menu {
     if (this.screen === 'vehicles') {
       if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return 'stay'
       this.clearScooterTrap()
-      this.screen = 'home'
+      this.screen = 'raceSetup'
+      this.render()
+      return 'stay'
+    }
+    if (this.screen === 'tracks' || this.screen === 'raceSetup') {
+      this.screen = this.screen === 'tracks' ? 'raceSetup' : 'home'
       this.render()
       return 'stay'
     }
     if (this.screen === 'online') {
       this.raceModePick = 'online'
-      this.screen = 'raceMode'
+      this.screen = 'raceSetup'
       this.render()
       return 'stay'
     }
@@ -881,17 +891,10 @@ export class Menu {
           <header class="gta-home-hero">
             ${brandLockupHtml({ size: 'menu' })}
           </header>
-          <div class="gta-tiles">
-            <button type="button" class="gta-tile gta-tile-hero" data-play style="--tile:url('${art.race}')">
-              <strong class="gta-tile-label">${t('menu.playPick')}</strong>
-            </button>
-            <button type="button" class="gta-tile" data-go="tracks" style="--tile:url('${art.tracks}')">
-              <strong class="gta-tile-label">${t('menu.trackSelect')}</strong>
-              <span class="gta-tile-sub">${trackName}</span>
-            </button>
-            <button type="button" class="gta-tile" data-go="vehicles" style="--tile:url('${art.garage}')">
-              <strong class="gta-tile-label">${t('menu.vehicleSelect')}</strong>
-              <span class="gta-tile-sub">${vehicleName}</span>
+          <div class="gta-tiles gta-tiles-home3">
+            <button type="button" class="gta-tile gta-tile-hero" data-go-setup style="--tile:url('${art.race}')">
+              <strong class="gta-tile-label">${t('menu.raceTile')}</strong>
+              <span class="gta-tile-sub">${trackName} · ${vehicleName}</span>
             </button>
             <button type="button" class="gta-tile" data-go="records" style="--tile:url('${art.board}')">
               <strong class="gta-tile-label">${t('menu.leaderboard')}</strong>
@@ -904,27 +907,91 @@ export class Menu {
         </div>
       `
       this.bindMuteBar()
-      this.root.querySelector<HTMLButtonElement>('[data-play]')?.addEventListener('click', () => {
-        this.raceModePick = 'classic'
-        this.screen = 'raceMode'
+      this.root.querySelector<HTMLButtonElement>('[data-go-setup]')?.addEventListener('click', () => {
+        this.screen = 'raceSetup'
         this.render()
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const go = (btn.dataset.go as Screen) || 'home'
           if (go === 'records') this.recordsBack = 'home'
-          if (go === 'difficulty') this.settingsSubBack = 'home'
           if (go === 'settings') this.settingsSubBack = 'settings'
-          if (go === 'online') {
-            this.raceModePick = 'online'
-            this.screen = 'online'
-            this.render()
-            this.onBrowseOnline?.()
-            return
-          }
           this.screen = go
           this.render()
         })
+      })
+      return
+    }
+
+    if (this.screen === 'raceSetup') {
+      const atm = this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE
+      const art = menuArtForTone(atm.tone, atm.calendarPack)
+      const trackName = this.escape(this.trackLabel())
+      const vehicleName = this.vehicleLabel(this.selectedVehicle)
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+          </header>
+          <div class="gta-tiles gta-tiles-setup">
+            <button type="button" class="gta-tile gta-tile-setup" data-go="tracks" style="--tile:url('${art.tracks}')">
+              <strong class="gta-tile-label">${t('menu.trackSelect')}</strong>
+              <span class="gta-tile-sub">${trackName}</span>
+            </button>
+            <button type="button" class="gta-tile gta-tile-setup" data-go="vehicles" style="--tile:url('${art.garage}')">
+              <strong class="gta-tile-label">${t('menu.vehicleSelect')}</strong>
+              <span class="gta-tile-sub">${vehicleName}</span>
+            </button>
+            <button type="button" class="gta-tile gta-tile-action" data-setup-jet style="--tile:url('${art.jet}')">
+              <strong class="gta-tile-label">${t('menu.jet')}</strong>
+            </button>
+            <button type="button" class="gta-tile gta-tile-action" data-setup-multi style="--tile:url('${art.multi}')">
+              <strong class="gta-tile-label">${t('menu.raceMulti')}</strong>
+            </button>
+            <button type="button" class="gta-tile gta-tile-action" data-setup-join style="--tile:url('${art.join}')">
+              <strong class="gta-tile-label">${t('menu.onlineJoin')}</strong>
+            </button>
+          </div>
+          ${this.backRow('home', 'flow')}
+        </div>
+      `
+      this.bindMuteBar()
+      this.bindBack('home')
+      this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const go = (btn.dataset.go as Screen) || 'raceSetup'
+          this.screen = go
+          this.render()
+        })
+      })
+      this.root.querySelector('[data-setup-jet]')?.addEventListener('click', () => {
+        this.raceModePick = 'classic'
+        this.raceApi?.set({ freestyle: false })
+        const race = this.raceApi?.get()
+        if (race) {
+          this.raceApi?.set({
+            opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, false),
+          })
+        }
+        this.startSolo()
+      })
+      this.root.querySelector('[data-setup-multi]')?.addEventListener('click', () => {
+        this.raceModePick = 'online'
+        this.screen = 'online'
+        this.render()
+        this.onBrowseOnline?.()
+        // Založ místnost s aktuální tratí/vozem
+        requestAnimationFrame(() => {
+          this.root.querySelector<HTMLButtonElement>('#btn-host')?.click()
+        })
+      })
+      this.root.querySelector('[data-setup-join]')?.addEventListener('click', () => {
+        this.raceModePick = 'online'
+        this.screen = 'online'
+        this.render()
+        this.onBrowseOnline?.()
       })
       return
     }
@@ -1046,10 +1113,10 @@ export class Menu {
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('home')
+      this.bindBack('raceSetup')
       this.bindTracks()
       this.root.querySelector('[data-next]')?.addEventListener('click', () => {
-        this.screen = 'home'
+        this.screen = 'raceSetup'
         this.render()
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-reverse]').forEach((btn) => {
@@ -1137,7 +1204,7 @@ export class Menu {
         }
       `
       this.bindMuteBar()
-      this.bindBack('home')
+      this.bindBack('raceSetup')
       this.root.querySelector('[data-next]')?.addEventListener('click', () => confirmVehicle())
       this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
         this.scooterPopup = null
@@ -1198,7 +1265,7 @@ export class Menu {
       const kind = this.selectedVehicle
       const freestyle = vehicleBranch(kind) === 'freestyle'
       const confirmTuning = () => {
-        this.screen = 'home'
+        this.screen = 'raceSetup'
         this.render()
       }
       this.root.innerHTML = `
@@ -1565,6 +1632,10 @@ export class Menu {
                     <strong>${t('menu.ctrlSkipCountdown')}</strong>
                     <span>${raceFeel.skipCountdown ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
                   </button>
+                  <button type="button" class="track-card ${feel.immortality ? 'active' : ''}" data-feel-immortal>
+                    <strong>${t('menu.ctrlImmortal')}</strong>
+                    <span>${feel.immortality ? t('menu.ctrlOn') : t('menu.ctrlOff')} · ${t('menu.ctrlImmortalBlurb')}</span>
+                  </button>
                 </div>
                 <p class="tune-rules">${t('menu.ctrlCamFollow')}</p>
                 <div class="dir-grid">
@@ -1719,13 +1790,25 @@ export class Menu {
     if (this.screen === 'records') {
       const filter = this.lbTrackId
       const board = this.recordsMode
-      const list = (filter ? recordsFor(filter, undefined, board) : recordsFor(undefined, undefined, board)).slice(
-        0,
-        30,
-      )
+      const scope = this.recordsScope
+      const localList = (
+        filter ? recordsFor(filter, undefined, board) : recordsFor(undefined, undefined, board)
+      ).slice(0, 30)
+      const worldList = this.worldRecords
+        .filter((e) => {
+          if (filter && e.trackId !== filter) return false
+          const fs = e.vehicle === 'skate' || e.vehicle === 'bike' || e.vehicle === 'scooter'
+          return board === 'freestyle' ? fs : !fs
+        })
+        .slice(0, 30)
+      const list = scope === 'world' ? worldList : localList
       const modeTabs = `
         <button type="button" class="btn-ghost vehicle-branch-tab ${board === 'race' ? 'active' : ''}" data-rec-mode="race">${t('menu.recordsRace')}</button>
         <button type="button" class="btn-ghost vehicle-branch-tab ${board === 'freestyle' ? 'active' : ''}" data-rec-mode="freestyle">${t('menu.recordsFs')}</button>
+      `
+      const scopeTabs = `
+        <button type="button" class="btn-ghost vehicle-branch-tab ${scope === 'local' ? 'active' : ''}" data-rec-scope="local">${t('menu.recordsLocal')}</button>
+        <button type="button" class="btn-ghost vehicle-branch-tab ${scope === 'world' ? 'active' : ''}" data-rec-scope="world">${t('menu.recordsWorld')}</button>
       `
       const filterLabel = filter
         ? this.escape(this.trackName(TRACKS.find((x) => x.id === filter) ?? TRACKS[0]!))
@@ -1737,6 +1820,10 @@ export class Menu {
           return `<button type="button" class="track-card ${active}" data-lb="${tr.id}">${this.escape(this.trackName(tr))}</button>`
         }),
       ].join('')
+      const empty =
+        scope === 'world' && this.worldRecordsLoading
+          ? `<li>${t('menu.recordsLoading')}</li>`
+          : `<li>${t('menu.recEmpty')}</li>`
       const rows = list
         .map((e, i) => {
           const tr = TRACKS.find((x) => x.id === e.trackId)
@@ -1746,10 +1833,13 @@ export class Menu {
             board === 'freestyle'
               ? `FS ${e.bestFsScore || 0}${e.bestTrickPts > 0 ? ` · ${e.bestTrickPts.toFixed(1)}` : ''}`
               : '—'
-          return `<li class="lb-row">
+          const ghost = e.immortal
+            ? `<span class="lb-ghost" title="${t('menu.immortalBadge')}" aria-label="${t('menu.immortalBadge')}">👻</span>`
+            : ''
+          return `<li class="lb-row ${e.immortal ? 'lb-row-immortal' : ''}">
             <span class="lb-rank">${i + 1}.</span>
-            <span class="lb-player">${this.escape(e.player)}</span>
-            <span class="lb-meta">${this.escape(trackLabel)} · ${this.vehicleLabel(e.vehicle)}</span>
+            <span class="lb-player">${ghost}${this.escape(e.player)}</span>
+            <span class="lb-meta">${this.escape(trackLabel)} · ${this.vehicleLabel(e.vehicle as VehicleKind)}</span>
             <span class="lb-score">${score}</span>
             <span class="lb-time">${time}</span>
           </li>`
@@ -1760,13 +1850,14 @@ export class Menu {
         ${this.muteBar()}
         <div class="menu-shell menu-panel menu-panel-dock">
           <div class="menu-panel-body">
-            <p class="tune-rules">${t('menu.lbBlurb')}</p>
+            <p class="tune-rules">${scope === 'world' ? t('menu.lbBlurbWorld') : t('menu.lbBlurb')}</p>
+            <div class="vehicle-branch-tabs">${scopeTabs}</div>
             <div class="vehicle-branch-tabs">${modeTabs}</div>
             <details class="lb-track-details">
               <summary class="lb-track-summary">${t('menu.lbTrackFilter')}: <strong>${filterLabel}</strong></summary>
               <div class="lb-tabs">${trackOptions}</div>
             </details>
-            <ol class="records-list lb-list">${rows || `<li>${t('menu.recEmpty')}</li>`}</ol>
+            <ol class="records-list lb-list">${rows || empty}</ol>
           </div>
           ${this.backRow(this.recordsBack, 'flow')}
         </div>
@@ -1776,13 +1867,23 @@ export class Menu {
       this.root.querySelectorAll<HTMLButtonElement>('[data-rec-mode]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.recordsMode = btn.dataset.recMode === 'freestyle' ? 'freestyle' : 'race'
-          this.render()
+          if (this.recordsScope === 'world') void this.loadWorldRecords()
+          else this.render()
+        })
+      })
+      this.root.querySelectorAll<HTMLButtonElement>('[data-rec-scope]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const next = btn.dataset.recScope === 'world' ? 'world' : 'local'
+          this.recordsScope = next
+          if (next === 'world') void this.loadWorldRecords()
+          else this.render()
         })
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-lb]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.lbTrackId = btn.dataset.lb || ''
-          this.render()
+          if (this.recordsScope === 'world') void this.loadWorldRecords()
+          else this.render()
         })
       })
       return
@@ -2165,11 +2266,11 @@ export class Menu {
             </details>
             ${this.lobbyError || ob.error ? `<p class="menu-error">${this.escape(this.lobbyError || ob.error)}</p>` : ''}
           </div>
-          ${this.backRow('raceMode', 'flow')}
+          ${this.backRow('raceSetup', 'flow')}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('raceMode')
+      this.bindBack('raceSetup')
       this.root.querySelector('#player-name')?.addEventListener('change', () => {
         this.readFields()
         this.onBrowseOnline?.()
@@ -2362,7 +2463,7 @@ export class Menu {
     }
     this.root.querySelector('[data-back]')?.addEventListener('click', () => {
       this.audioApi?.playClick?.()
-      if (this.screen === 'vehicles' && to === 'home') {
+      if (this.screen === 'vehicles' && (to === 'home' || to === 'raceSetup')) {
         if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
         this.clearScooterTrap()
       }
@@ -2413,6 +2514,20 @@ export class Menu {
       name: this.playerName,
       difficulty: this.selectedDifficulty,
     })
+  }
+
+  private async loadWorldRecords(): Promise<void> {
+    this.worldRecordsLoading = true
+    this.render()
+    const trackId = this.lbTrackId || undefined
+    const board = this.recordsMode
+    try {
+      this.worldRecords = await fetchCloudRecords({ trackId, board })
+    } catch {
+      this.worldRecords = []
+    }
+    this.worldRecordsLoading = false
+    if (this.screen === 'records') this.render()
   }
 
   private colorSwatchHtml(
@@ -2768,6 +2883,11 @@ export class Menu {
     this.root.querySelector<HTMLButtonElement>('[data-feel-skip-cd]')?.addEventListener('click', () => {
       const cur = this.raceApi?.get() ?? DEFAULT_RACE
       this.raceApi?.set({ skipCountdown: !cur.skipCountdown })
+      this.render()
+    })
+    this.root.querySelector<HTMLButtonElement>('[data-feel-immortal]')?.addEventListener('click', () => {
+      const cur = this.controlFeelApi?.get() ?? DEFAULT_CONTROL_FEEL
+      this.controlFeelApi?.set({ immortality: !cur.immortality })
       this.render()
     })
     this.root.querySelectorAll<HTMLButtonElement>('[data-feel-cam]').forEach((btn) => {

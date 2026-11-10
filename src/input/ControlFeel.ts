@@ -20,6 +20,8 @@ export type ControlFeelValues = {
   mobileScheme: MobileDriveScheme
   /** Povolit portrait na telefonu/tabletu. Default false = jen šířka. */
   allowPortraitRotation: boolean
+  /** Solo: bez pádu / bouračky. Na žebříčku s duchem; online ignorovat. */
+  immortality: boolean
 }
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.control-feel`
@@ -36,6 +38,7 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
   mobileScheme: 'tap',
   /** Otáčení volné — landscape doporučený, portrait OK (Messenger/in-app). */
   allowPortraitRotation: true,
+  immortality: false,
 }
 
 const CAM_FOLLOWS: CamFollow[] = ['soft', 'normal', 'tight']
@@ -111,6 +114,7 @@ export function loadControlFeel(): ControlFeelValues {
       hudScale,
       mobileScheme: migrateMobileScheme(p.mobileScheme),
       allowPortraitRotation: migrateAllowPortrait(p.allowPortraitRotation),
+      immortality: typeof p.immortality === 'boolean' ? p.immortality : DEFAULT_CONTROL_FEEL.immortality,
     }
   } catch {
     return { ...DEFAULT_CONTROL_FEEL }

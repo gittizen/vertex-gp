@@ -56,6 +56,8 @@ export class Vehicle {
   private trailerReady = false
   /** Pád (moto/skate/bike) nebo crash formule — nasedání / objevení */
   fallen = false
+  /** Solo nesmrtelnost — beginFall no-op. */
+  immortal = false
   /** true = formule bouchla (HUD); false = pád ze sedla */
   crashBurst = false
   remountLeft = 0
@@ -423,6 +425,7 @@ export class Vehicle {
   }
 
   private beginFall(formulaCrash: boolean): void {
+    if (this.immortal) return
     this.fallen = true
     this.crashBurst = formulaCrash
     this.impactImpulse = Math.max(this.impactImpulse, formulaCrash ? 0.75 : 0.55)
@@ -767,6 +770,23 @@ export class Vehicle {
     const def = this.trickDef
     if (!def) return
     const pose = evalTrickAnim(u, def.spin, def.peak, def.difficulty)
+    // Prvních ~0.5 s: realistický startup (crouch; skate + kick předku)
+    const st = Math.min(1, this.trickT / 0.5)
+    const stPulse = Math.sin(Math.PI * st)
+    if (this.kind === 'bike') {
+      pose.crouch = Math.max(pose.crouch, stPulse * 0.9)
+      pose.arms = Math.max(pose.arms, stPulse * 0.35)
+      pose.backLeg = Math.min(pose.backLeg, -stPulse * 0.55)
+      pose.frontLeg = Math.min(pose.frontLeg, -stPulse * 0.4)
+    } else if (this.kind === 'skate') {
+      pose.crouch = Math.max(pose.crouch, stPulse * 0.95)
+      pose.arms = Math.max(pose.arms, stPulse * 0.45)
+      pose.backLeg = Math.min(pose.backLeg, -stPulse * 0.7)
+      // Přední noha kopne do frontu desky
+      pose.frontLeg = Math.max(pose.frontLeg, stPulse * 1.15)
+      pose.board.x -= stPulse * 0.4
+      pose.body.pitch -= stPulse * 0.12
+    }
     // Během rampy řídí výšku fyzika skoku; trik jen přidá „pop“
     if (this.rampAirborne) {
       this.airY = Math.max(this.airY, pose.airY * 0.35)
@@ -787,7 +807,7 @@ export class Vehicle {
       if (obj instanceof THREE.Group && obj.userData.ollieFrontLeg) {
         if (this.pushAmount < 0.1) {
           obj.rotation.x = pose.frontLeg
-          obj.position.z = 0.08 + Math.sin(u * Math.PI) * 0.1
+          obj.position.z = 0.08 + Math.sin(u * Math.PI) * 0.1 + (this.kind === 'skate' ? stPulse * 0.06 : 0)
         }
       }
       if (obj instanceof THREE.Mesh && obj.userData.ollieTorso) {

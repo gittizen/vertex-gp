@@ -320,6 +320,11 @@ export class Hud {
       this.elSpeed.innerHTML = `${player.displaySpeedKmh}<span>km/h</span>`
     }
 
+    const immortalEl = this.root.querySelector('[data-h="immortal"]')
+    if (immortalEl instanceof HTMLElement) {
+      immortalEl.hidden = !player.immortal
+    }
+
     const boosting =
       (player.isMonsterFamily() && player.turboAmount > 0.25) ||
       player.pushAmount > 0.2 ||
@@ -369,6 +374,7 @@ export class Hud {
     const keepMirror = this.mirrorEl
     this.root.innerHTML = `
       <div class="hud-fps" data-h="fps" aria-hidden="true">— FPS</div>
+      <div class="hud-immortal" data-h="immortal" hidden title="${t('hud.immortal')}" aria-label="${t('hud.immortal')}">👻</div>
       <button type="button" class="hud-pause-btn" id="btn-hud-pause" aria-label="${t('hud.pause')}">${t('hud.pause')}</button>
       <div class="hud-bottom">
         <div class="hud-speed-row">

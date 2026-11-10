@@ -1,5 +1,6 @@
 import { FREESTYLE_VEHICLE_KINDS, type VehicleKind } from '../track/TrackDefs'
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
+import { pushCloudRecord } from './CloudRecords'
 
 export type RecordsBoard = 'race' | 'freestyle'
 
@@ -20,6 +21,8 @@ export type RecordEntry = {
   /** Nejvíc bodů jen z triků */
   bestTrickPts: number
   at: number
+  /** Solo nesmrtelnost — ve žebříčku s duchem */
+  immortal?: boolean
 }
 
 export type RecordsStore = {
@@ -48,11 +51,17 @@ export function submitRaceRecord(input: {
   timeMs: number
   fsScore: number
   trickPts: number
+  immortal?: boolean
 }): RecordEntry {
   const store = loadStore()
   const player = (input.player || 'Hráč').trim().slice(0, 24)
+  const immortal = !!input.immortal
   const existing = store.entries.find(
-    (e) => e.player === player && e.trackId === input.trackId && e.vehicle === input.vehicle,
+    (e) =>
+      e.player === player &&
+      e.trackId === input.trackId &&
+      e.vehicle === input.vehicle &&
+      !!e.immortal === immortal,
   )
   if (existing) {
     if (input.timeMs > 0 && (existing.bestTimeMs <= 0 || input.timeMs < existing.bestTimeMs)) {
@@ -61,7 +70,9 @@ export function submitRaceRecord(input: {
     if (input.fsScore > existing.bestFsScore) existing.bestFsScore = input.fsScore
     if (input.trickPts > existing.bestTrickPts) existing.bestTrickPts = input.trickPts
     existing.at = Date.now()
+    existing.immortal = immortal
     saveStore(store)
+    void pushCloudRecord(existing)
     return existing
   }
   const entry: RecordEntry = {
@@ -72,9 +83,11 @@ export function submitRaceRecord(input: {
     bestFsScore: input.fsScore,
     bestTrickPts: input.trickPts,
     at: Date.now(),
+    immortal,
   }
   store.entries.push(entry)
   saveStore(store)
+  void pushCloudRecord(entry)
   return entry
 }
 

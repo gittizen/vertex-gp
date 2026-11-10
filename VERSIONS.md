@@ -1,21 +1,22 @@
 # KlecMania / Klec GP / Vertex GP — verze
 
-**0.7** = současná produkce (**KlecMania**).  
+**0.8** = současná na GitHubu / Pages.  
+**0.7** = Netlify produkce zatím (0.8 na Netlify nešlo).  
 Na hubu jsou karty **od nejnovější po nejstarší**. Níže v textu jde příběh **od 0.1 nahoru** — u každé další je, *co se oproti předchozí změnilo*, co se přidalo a co se dlouho ladilo.  
 Staré tagy a archivy se nemažou / nepřepisují.
 
 **Hub:** https://gittizen.github.io/vertex-gp/  
 **Složky:** [versions/](./versions/) · **Changelog:** [CHANGELOG.md](./CHANGELOG.md)  
-**Hrát teď:** https://klecmania.netlify.app/
+**Hrát (Netlify 0.7):** https://klecmania.netlify.app/ · **Hrát (Pages 0.8):** https://gittizen.github.io/vertex-gp/0.8/
 
 ---
 
 ## Přehled (nejnovější → nejstarší)
 
-| **0.7** *(teď)* | **0.6** | **0.5** | **0.4** | **0.3** | **0.2** | **0.1** |
-| --- | --- | --- | --- | --- | --- | --- |
-| [Netlify](https://klecmania.netlify.app/) · [Pages](https://gittizen.github.io/vertex-gp/0.7/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.1/) |
-| **KlecMania** · drift Space | UX + zvuk | AI tempo + demo | reálnější svět | mobil + hosting | Klec GP · identita | Vertex GP · základ |
+| **0.8** *(GH teď)* | **0.7** *(Netlify)* | **0.6** | **0.5** | **0.4** | **0.3** | **0.2** | **0.1** |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [Pages](https://gittizen.github.io/vertex-gp/0.8/) | [Netlify](https://klecmania.netlify.app/) · [Pages](https://gittizen.github.io/vertex-gp/0.7/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.1/) |
+| setup · 👻 · cloud LB | **KlecMania** · drift Space | UX + zvuk | AI tempo + demo | reálnější svět | mobil + hosting | Klec GP · identita | Vertex GP · základ |
 
 ---
 
@@ -151,7 +152,7 @@ Staré tagy a archivy se nemažou / nepřepisují.
 
 ---
 
-## 0.7 — KlecMania *(současná)*
+## 0.7 — KlecMania
 
 **Oproti 0.6:** z **Klec GP** je **KlecMania** — stejné skate logo (růžová K/L, cyan C), nový feel řízení u aut a freestyle, čistší audio/entry a Tarantino tón Klecan.
 
@@ -173,6 +174,30 @@ Hráč má poznat, že jde o *Mania* produkt (název, entry, atmosféra), ne jen
 - Release: nepřepisovat archivy 0.1–0.6, jen dohrát 0.7 + povídání
 
 **Shrnutí:** KlecMania je pojmenovaná, driftuje se mezerníkem, freestyle drží vlastní rytmus a produkce sedí na nové Netlify doméně.
+
+---
+
+## 0.8 — race setup + žebříček *(současná na GitHubu)*
+
+**Oproti 0.7:** cesta do závodu je dvouúrovňová (Domů → setup), žebříček umí svět + ghost běhy, Klecany jsou světlejší a Závod má vlastní Volvo art.
+
+**Proč tahle verze**
+Hráč má nejdřív vybrat trať a peklostroj, pak Jet / Multi / Join — bez ztraceného flat menu. Nesmrtelnost je čitelný SP cheat s badge, ne tiché filtrování z boardu.
+
+**Co přibylo / se změnilo**
+- Domů: Závod nahoře → Žebříček | Nastavení
+- Setup: Trať | Peklostroj nahoře → Jet | Multiplayer | Join dole
+- Nesmrtelnost (Ovládání, SP) + 👻 HUD / žebříček; cloud Moje/Svět
+- FS startup anim ~0.5 s; pauza nad mobilní tap vrstvou
+- Klecany světlejší; unikátní tile fotky; Závod = Volvo V70 1. gen tmavě modrá
+- Tag `v0.8.0`; Pages `/0.8/` — Netlify zatím ne
+
+**Co se řešilo**
+- Layout menu 1/2 jako dvě mřížky (ne jedna řada)
+- Immortal rekordy synchronizovat, ale vizuálně označit
+- Release bez Netlify deploye (jen GitHub)
+
+**Shrnutí:** setup je přehlednější, žebříček umí svět a ghosty, Závod má V70 a 0.8 žije na Pages.
 
 ---
 

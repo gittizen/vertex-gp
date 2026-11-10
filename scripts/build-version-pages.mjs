@@ -17,12 +17,19 @@ const WORK = path.join(ROOT, '.worktrees')
 /** Pořadí: nejnovější → nejstarší (hub i build log). */
 const VERSIONS = [
   {
-    id: '0.7',
+    id: '0.8',
     ref: 'HEAD',
+    base: '/vertex-gp/0.8/',
+    title: '0.8 — race setup + LB',
+    blurb: 'Závod setup, nesmrtelnost 👻, cloud žebříček, Volvo V70 dlaždice.',
+    current: true,
+  },
+  {
+    id: '0.7',
+    ref: 'v0.7.0',
     base: '/vertex-gp/0.7/',
     title: '0.7 — KlecMania',
     blurb: 'KlecMania + Space drift brzda, mute, bike boost, Tarantino Klecany.',
-    current: true,
   },
   {
     id: '0.6',
@@ -211,7 +218,7 @@ function writeHub() {
 <body>
   <main>
     <h1>KlecMania</h1>
-    <p class="sub">Hratelné archivy — nejnovější nahoře, nejstarší dole. Příběh změn je ve VERSIONS.md v repu. Aktuální produkce: <strong>0.7</strong>.</p>
+    <p class="sub">Hratelné archivy — nejnovější nahoře, nejstarší dole. Příběh změn je ve VERSIONS.md v repu. Aktuální archiv: <strong>0.8</strong> (Netlify produkce zatím 0.7).</p>
     <div class="grid">
 ${cards}
     </div>
