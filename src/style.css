@@ -118,7 +118,8 @@ html.portrait-blocked #app {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 10;
+  /* Nad #mobile-controls (15): jinak tap vrstva překryje pauzu (stacking context) */
+  z-index: 20;
   --hud-scale: 1;
   zoom: var(--hud-scale);
 }
