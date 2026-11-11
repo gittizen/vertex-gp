@@ -10,7 +10,12 @@ export type VehicleKind =
   | 'cabrio'
   | 'muscle'
   | 'skate'
+  | 'skates'
   | 'bike'
+  | 'rocketSkate'
+  | 'rocketSkates'
+  | 'rocketBike'
+  | 'rocketScooter'
   | 'truck'
   | 'tank'
   | 'buggy'
@@ -41,7 +46,7 @@ export type TrackDef = {
   tension: number
   vehicle: VehicleKind
   world: WorldKind
-  /** true = okruh, false = start→cíl */
+  /** true = okruh (vždy středová tratovací čára), false = start→cíl */
   loop: boolean
   surfaceGrip: number
   aiSpeedMult: number
@@ -56,7 +61,7 @@ export type TrackDef = {
   heights?: number[]
   points: [number, number][]
   theme: TrackTheme
-  /** Předpokládaný čas (orientačně z kalibrace / 2 kola u okruhu) */
+  /** Orientační čas z kalibrace Závoďákem (street) na střední — ne formule. */
   estTime: string
   /**
    * Volná plocha (ne závod) — Plácek apod.
@@ -64,6 +69,11 @@ export type TrackDef = {
    */
   sandbox?: boolean
   sandboxBounds?: { halfX: number; halfZ: number }
+  /**
+   * Náklon tratě (stupně) — vnější hrana výš, vnitřní na roadLift (NASCAR).
+   * 0 / undefined = flat.
+   */
+  bankAngleDeg?: number
 }
 
 /**
@@ -86,10 +96,34 @@ function rbt(
   return out
 }
 
-/** Pořadí v menu: Námko první, Plácek poslední. */
+/** NASCAR stadium ovál (CCW) — středová linie. */
+function nascarOval(halfStraight: number, turnR: number, cornerSegs = 12, straightSegs = 8): [number, number][] {
+  const pts: [number, number][] = []
+  const Ls = halfStraight
+  const R = turnR
+  for (let i = 0; i <= straightSegs; i++) {
+    const t = i / straightSegs
+    pts.push([-Ls + 2 * Ls * t, -R])
+  }
+  for (let i = 1; i <= cornerSegs; i++) {
+    const a = -Math.PI / 2 + (Math.PI * i) / cornerSegs
+    pts.push([Ls + Math.cos(a) * R, Math.sin(a) * R])
+  }
+  for (let i = 1; i <= straightSegs; i++) {
+    const t = i / straightSegs
+    pts.push([Ls - 2 * Ls * t, R])
+  }
+  for (let i = 1; i < cornerSegs; i++) {
+    const a = Math.PI / 2 + (Math.PI * i) / cornerSegs
+    pts.push([-Ls + Math.cos(a) * R, Math.sin(a) * R])
+  }
+  return pts
+}
+
+/** Pořadí v menu: Do Klecánek první (default), Plácek poslední. */
 const TRACK_MENU_ORDER = [
-  'klecany',
   'klecanek',
+  'klecany',
   'city',
   'turini',
   'mexiku',
@@ -97,6 +131,7 @@ const TRACK_MENU_ORDER = [
   'zlaty',
   'serpentiny',
   'kasarny',
+  'vodochody',
   'placek',
 ] as const
 
@@ -426,22 +461,22 @@ const TRACKS_RAW: TrackDef[] = [
       8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5,
     ],
     theme: {
-      road: 0x9e9088,
-      ground: 0x2a3820,
-      barrierL: 0xe8a020,
-      barrierR: 0xe8a020,
-      edge: 0xffffff,
-      sky: 0x5a8aaa,
-      fog: 0x4a6878,
-      building: 0xc0b098,
-      accent: 0xff6a9a,
-      detail: 0x1e3a22,
+      road: 0x7a7874,
+      ground: 0x4a6a3a,
+      barrierL: 0x8a8078,
+      barrierR: 0x8a8078,
+      edge: 0xe0dcd4,
+      sky: 0x7aa0b8,
+      fog: 0xb8c8b0,
+      building: 0xc4b8a4,
+      accent: 0xa87848,
+      detail: 0x3a5a28,
     },
   },
   {
     id: 'hruby',
     name: 'Hrubý',
-    blurb: 'Sedlec → 3 kruháče → Hrubý → Zdibsko — obousměrně',
+    blurb: 'Sedlec → 3 kruháče → benzínka Hrubý → sklady a pole — obousměrně',
     halfWidth: 8.2,
     tension: 0.3,
     vehicle: 'street',
@@ -485,15 +520,15 @@ const TRACKS_RAW: TrackDef[] = [
     ],
     theme: {
       road: 0x989aa2,
-      ground: 0x3d522c,
+      ground: 0x5a6a38,
       barrierL: 0xc4a574,
       barrierR: 0xc4a574,
       edge: 0xffffff,
-      sky: 0x8ab4d4,
-      fog: 0xc8d8e8,
-      building: 0xc8b8a4,
-      accent: 0x2e7d32,
-      detail: 0x4a6a38,
+      sky: 0x9ab8c8,
+      fog: 0xc4c8a8,
+      building: 0x9a9a94,
+      accent: 0xc62828,
+      detail: 0x6a7a40,
     },
   },
   {
@@ -557,7 +592,7 @@ const TRACKS_RAW: TrackDef[] = [
     // OSM / obecní mapa: Hlavní + Červená Skála, Husinec–Řež (~50.17, 14.36)
     id: 'serpentiny',
     name: 'Serpentýny Řež',
-    blurb: 'Husinec → Řež: krpál a vlásenky u Červené skály',
+    blurb: 'Husinec → Řež lesem: krpál a vlásenky u Červené skály',
     halfWidth: 7.0,
     tension: 0.2,
     vehicle: 'moto',
@@ -707,6 +742,36 @@ const TRACKS_RAW: TrackDef[] = [
       detail: 0xc8c0a8,
     },
   },
+  {
+    // Letiště Vodochody — vojenský NASCAR ovál, banked inward
+    id: 'vodochody',
+    name: 'Letiště Vodochody',
+    blurb: 'Vojenský ovál na letišti — banked NASCAR, hangáry a asfaltová páska',
+    halfWidth: 12.5,
+    tension: 0.42,
+    vehicle: 'formula',
+    world: 'town',
+    loop: true,
+    bankAngleDeg: 18,
+    surfaceGrip: 1.08,
+    aiSpeedMult: 1.05,
+    targetPaceMs: 22000,
+    skyBody: 'sun',
+    estTime: '0:22',
+    points: nascarOval(210, 95, 14, 10),
+    theme: {
+      road: 0x6a6e72,
+      ground: 0x6a7a58,
+      barrierL: 0x4a5a3a,
+      barrierR: 0x4a5a3a,
+      edge: 0xe8e0c8,
+      sky: 0x8aa8b8,
+      fog: 0xc8d4c0,
+      building: 0x5a5e58,
+      accent: 0xc4a030,
+      detail: 0x5a7048,
+    },
+  },
 ]
 
 export const TRACKS: TrackDef[] = TRACK_MENU_ORDER.map((id) => {
@@ -735,16 +800,30 @@ export const VEHICLE_KINDS: VehicleKind[] = [
   'cabrio',
   'muscle',
   'limo',
-  'skate',
+  'rocketBike',
+  'rocketSkates',
+  'rocketSkate',
+  'rocketScooter',
   'bike',
+  'skates',
+  'skate',
   'scooter',
 ]
 
-/** Soupeři / závod — bez koloběžky (trap). */
-export const RACE_VEHICLE_KINDS: VehicleKind[] = VEHICLE_KINDS.filter((k) => k !== 'scooter')
+/** Soupeři / závod — bez koloběžkových pastí. */
+export const RACE_VEHICLE_KINDS: VehicleKind[] = VEHICLE_KINDS.filter(
+  (k) => k !== 'scooter' && k !== 'rocketScooter',
+)
 
 /** Freestyle peklostroje (rychlejší nahoře). */
-export const FREESTYLE_VEHICLE_KINDS: VehicleKind[] = ['bike', 'skate']
+export const FREESTYLE_VEHICLE_KINDS: VehicleKind[] = [
+  'rocketBike',
+  'rocketSkates',
+  'rocketSkate',
+  'bike',
+  'skates',
+  'skate',
+]
 
 /** Otočí body (a výšky) — jízda v opačném směru. */
 export function resolveTrackDef(def: TrackDef, reverse: boolean): TrackDef {

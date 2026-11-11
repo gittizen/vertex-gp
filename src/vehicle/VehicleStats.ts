@@ -30,7 +30,7 @@ function rawMetrics(kind: VehicleKind): {
   brakes: number
   accel: number
 } {
-  if (kind === 'scooter') {
+  if (kind === 'scooter' || kind === 'rocketScooter') {
     return { speed: 0, handling: 0, grip: 0, brakes: 0, accel: 0 }
   }
   const p = profileForKind(kind, DEFAULT_PLAYER_TUNING)
@@ -54,7 +54,10 @@ function buildBase(): Record<VehicleKind, VehicleStatBars> {
   const kinds = Object.keys(CATALOG_MAX_KMH) as VehicleKind[]
   const raws = kinds.map((k) => ({ k, m: rawMetrics(k) }))
   const maxOf = (sel: (m: (typeof raws)[0]['m']) => number) =>
-    Math.max(0.001, ...raws.filter((r) => r.k !== 'scooter').map((r) => sel(r.m)))
+    Math.max(
+      0.001,
+      ...raws.filter((r) => r.k !== 'scooter' && r.k !== 'rocketScooter').map((r) => sel(r.m)),
+    )
 
   const maxSpeed = maxOf((m) => m.speed)
   const maxHand = maxOf((m) => m.handling)
@@ -64,7 +67,7 @@ function buildBase(): Record<VehicleKind, VehicleStatBars> {
 
   const out = {} as Record<VehicleKind, VehicleStatBars>
   for (const { k, m } of raws) {
-    if (k === 'scooter') {
+    if (k === 'scooter' || k === 'rocketScooter') {
       out[k] = { speed: 1, handling: 1, grip: 1, brakes: 1, accel: 1 }
       continue
     }
@@ -90,7 +93,7 @@ export function vehicleStatBars(
   tuning: PlayerTuningValues = DEFAULT_PLAYER_TUNING,
 ): VehicleStatBars {
   const base = baseBars(kind)
-  if (kind === 'scooter') return base
+  if (kind === 'scooter' || kind === 'rocketScooter') return base
 
   const v = normalizeTuning(tuning)
   const pM = tuningMult(v.power)

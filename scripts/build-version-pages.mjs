@@ -21,7 +21,7 @@ const VERSIONS = [
     ref: 'HEAD',
     base: '/vertex-gp/0.8/',
     title: '0.8 — setup + šampionát',
-    blurb: 'Závod setup, šampionát kariéra, nesmrtelnost 👻, cloud LB, Volvo V70.',
+    blurb: 'Závod setup, šampionát, FS polish, Do Klecánek default, Netlify.',
     current: true,
   },
   {

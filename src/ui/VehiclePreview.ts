@@ -134,7 +134,15 @@ export class VehiclePreview {
       disposeGroup(this.mesh)
       this.mesh = null
     }
-    const fs = kind === 'skate' || kind === 'bike' || kind === 'scooter'
+    const fs =
+      kind === 'skate' ||
+      kind === 'skates' ||
+      kind === 'bike' ||
+      kind === 'scooter' ||
+      kind === 'rocketScooter' ||
+      kind === 'rocketSkate' ||
+      kind === 'rocketSkates' ||
+      kind === 'rocketBike'
     const full: VehicleLook =
       typeof look === 'number'
         ? { ...DEFAULT_VEHICLE_LOOK, body: look, neon: fs ? -1 : neon }

@@ -368,7 +368,8 @@ export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTextu
   }
   if (world === 'climb') {
     if (trackId === 'mexiku') {
-      const t = richGroundTexture('ground-mex-v6', '#5a6a3a', '#8a9a4a', '#3a4020', true)
+      // Teplejší travnatý podklad — reálnější Mexiko
+      const t = richGroundTexture('ground-mex-v8', '#4a6a3a', '#5a7a48', '#3a5028', true)
       t.repeat.set(36, 36)
       return t
     }
@@ -388,9 +389,14 @@ export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTextu
   }
   // town
   if (trackId === 'hruby') {
-    // Bez „modrozeleného“ jezera na kruháči — suchá louka
-    const t = richGroundTexture('ground-hruby-v7', '#4a5a34', '#6a6a40', '#3a4028', false)
+    // Pole u benzínky — suchá ornice / strniště
+    const t = richGroundTexture('ground-hruby-v8', '#6a7a40', '#8a8a48', '#4a5028', false)
     t.repeat.set(44, 44)
+    return t
+  }
+  if (trackId === 'vodochody') {
+    const t = richGroundTexture('ground-vodo-v2', '#5a6a48', '#6a7a50', '#3a4a30', false)
+    t.repeat.set(40, 40)
     return t
   }
   if (trackId === 'kasarny') {

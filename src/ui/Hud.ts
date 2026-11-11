@@ -4,7 +4,9 @@ import type { RaceManager } from '../race/RaceManager'
 import { formatTime } from '../race/RaceManager'
 import type { Vehicle } from '../vehicle/Vehicle'
 import type { VehicleKind } from '../track/TrackDefs'
-import { freestyleList, placePoints } from '../freestyle/FreestyleTricks'
+import { freestyleList, freestyleRaceScore, placePoints } from '../freestyle/FreestyleTricks'
+import { isFsBoardKind } from '../vehicle/FsKinds'
+import { FATAL_SPEED_KMH } from '../vehicle/VehicleProfiles'
 import {
   BIND_ACTION_ORDER,
   codeLabel,
@@ -14,10 +16,21 @@ import {
 import { loadTrickBindings, TRICK_LETTERS } from '../input/TrickBindings'
 import type { CompetitionId } from '../render/CompetitionSettings'
 
+/** Radar barvy (všichni stejně, bez ohledu na to jestli můžou umřít). */
+const RADAR_GREEN_KMH = 100
+const RADAR_YELLOW_KMH = 200
+type RadarBand = 'ok' | 'mid' | 'warn' | 'fatal'
+
 export type PauseHelp = {
   kind: VehicleKind
   immortal?: boolean
   allowImmortal?: boolean
+  /** Šampionát: ukázat i „Zrušit závod“. Rychlý závod = jen odstoupit. */
+  championship?: boolean
+  /** Multiplayer — bez odstoupení / zrušení solo flow. */
+  multiplayer?: boolean
+  /** Počet Esc ve pauze (1–3); 3 = odejít. */
+  escQuitCount?: number
 }
 
 /** HUD bez přepisování celého DOM každý frame. */
@@ -43,12 +56,18 @@ export class Hud {
   } | null = null
   private built = false
   private elRaceMeta: HTMLElement | null = null
-  private elRaceClock: HTMLElement | null = null
-  private elRaceGap: HTMLElement | null = null
   private elSpeed: HTMLElement | null = null
+  private elRadarPanel: HTMLElement | null = null
+  private elPlateText: HTMLElement | null = null
   private elGear: HTMLElement | null = null
+  private elSplit: HTMLElement | null = null
   private elFps: HTMLElement | null = null
+  private lastSpeedShown = -1
+  private lastFsPtsShown = -1
+  private lastRadarBand: RadarBand | '' = ''
+  private lastPlateKey = ''
   private lastOverlayKey = ''
+  private lastSplitKey = ''
   private hudAcc = 0
   private helpKind: VehicleKind | '' = ''
   private shellSandbox = false
@@ -307,9 +326,11 @@ export class Hud {
       this.elRaceMeta = null
       this.elSpeed = null
       this.elGear = null
+      this.elSplit = null
       this.overlay.classList.remove('visible')
       this.overlay.innerHTML = ''
       this.lastOverlayKey = ''
+      this.lastSplitKey = ''
       this.setMirrorFrame(false)
       return
     }
@@ -331,61 +352,84 @@ export class Hud {
       this.hudAcc = 0
       if (this.elRaceMeta) {
         if (race.isSandbox) {
-          this.elRaceMeta.textContent = `FS ${player.trickPoints}`
+          // Body jsou v radaru — nahoře jen kontext tratě
+          this.elRaceMeta.hidden = true
+        } else if (race.phase === 'countdown') {
+          this.elRaceMeta.hidden = true
         } else if (loopRace) {
+          this.elRaceMeta.hidden = false
           const place = race.playerPlace()
           const lap = race.displayLap(player)
           this.elRaceMeta.textContent = `${t('hud.lapShort')} ${lap}/${race.totalLaps} · P${place}`
         } else {
-          const place = race.playerPlace()
-          this.elRaceMeta.textContent = `P${place}`
-        }
-      }
-      if (this.elRaceClock) {
-        if (race.phase === 'countdown') {
-          this.elRaceClock.textContent = race.timeLimitMs > 0 ? formatTime(race.timeLimitMs) : '—'
-        } else if (race.isSandbox && race.timeLimitMs > 0) {
-          const left = Math.max(
-            0,
-            race.timeLimitMs - (race.phase === 'finished' ? race.timeLimitMs : race.raceTimeMs),
-          )
-          this.elRaceClock.textContent = formatTime(left)
-        } else if (race.isSandbox) {
-          this.elRaceClock.textContent = '—'
-        } else {
-          const clockMs =
-            race.phase === 'finished'
-              ? player.finishTime || race.raceTimeMs
-              : race.raceTimeMs
-          this.elRaceClock.textContent = formatTime(clockMs)
-        }
-      }
-      if (this.elRaceGap) {
-        const gap = race.playerGap()
-        if (!gap || race.isSandbox || race.phase === 'countdown') {
-          this.elRaceGap.hidden = true
-        } else {
-          this.elRaceGap.hidden = false
-          const sec = (gap.ms / 1000).toFixed(1)
-          const sign = gap.ahead ? '+' : '−'
-          const label = gap.ahead ? t('hud.gapLead') : t('hud.gapBehind')
-          this.elRaceGap.textContent = `${label} ${gap.name} ${sign}${sec}s`
-          this.elRaceGap.classList.toggle('gap-lead', gap.ahead)
-          this.elRaceGap.classList.toggle('gap-behind', !gap.ahead)
+          this.elRaceMeta.hidden = false
+          this.elRaceMeta.textContent = `P${race.playerPlace()}`
         }
       }
       if (this.elGear) {
-        const gear = player.physics.gear < 0 ? 'R' : String(player.physics.gear)
-        const tx = player.physics.transmission
-        const txLabel =
-          tx === 'clutch' ? t('hud.clutch') : tx === 'manual' ? t('hud.manual') : t('hud.auto')
-        this.elGear.textContent = `${t('hud.gear')}: ${gear} (${txLabel})`
+        const manual = player.physics.manualShift
+        this.elGear.hidden = !manual
+        if (manual) {
+          const gear = player.physics.gear < 0 ? 'R' : String(player.physics.gear)
+          this.elGear.textContent = `${t('hud.gear')} ${gear}`
+        }
       }
     }
 
-    if (this.elSpeed) {
-      this.elSpeed.innerHTML = `${player.displaySpeedKmh}<span>km/h</span>`
+    const kmh = player.displaySpeedKmh
+    if (this.elSpeed && kmh !== this.lastSpeedShown) {
+      this.lastSpeedShown = kmh
+      this.elSpeed.textContent = String(kmh)
     }
+    // ≤100 zelená · ≤200 žlutá · ≤zóna smrti oranžová · nad ní červená
+    const band: RadarBand =
+      kmh <= RADAR_GREEN_KMH
+        ? 'ok'
+        : kmh <= RADAR_YELLOW_KMH
+          ? 'mid'
+          : kmh <= FATAL_SPEED_KMH
+            ? 'warn'
+            : 'fatal'
+    if (this.elRadarPanel && band !== this.lastRadarBand) {
+      this.lastRadarBand = band
+      this.elRadarPanel.classList.remove(
+        'hud-radar--ok',
+        'hud-radar--mid',
+        'hud-radar--warn',
+        'hud-radar--fatal',
+      )
+      this.elRadarPanel.classList.add(`hud-radar--${band}`)
+    }
+    const fsOn = player.freestyleOn || race.isSandbox
+    this.root.classList.toggle('hud-fs', fsOn)
+    // SPZ: FS = jen body · jinak hláška dle barvy
+    if (this.elPlateText) {
+      if (fsOn) {
+        const pts = Math.round(player.trickPoints)
+        const key = `fs:${pts}`
+        if (key !== this.lastPlateKey || pts !== this.lastFsPtsShown) {
+          this.lastPlateKey = key
+          this.lastFsPtsShown = pts
+          this.elPlateText.textContent = `${t('hud.fsPoints')} ${pts}`
+        }
+      } else {
+        const sloganKey =
+          band === 'ok'
+            ? 'hud.radarSloganOk'
+            : band === 'mid'
+              ? 'hud.radarSloganMid'
+              : band === 'warn'
+                ? 'hud.radarSloganWarn'
+                : 'hud.radarSloganFatal'
+        const key = `race:${band}`
+        if (key !== this.lastPlateKey) {
+          this.lastPlateKey = key
+          this.elPlateText.textContent = t(sloganKey)
+        }
+      }
+    }
+
+    this.renderSplitFlash(race)
 
     const immortalEl = this.root.querySelector('[data-h="immortal"]')
     if (immortalEl instanceof HTMLElement) {
@@ -398,59 +442,53 @@ export class Hud {
       player.tabBoostAmount > 0.25
     this.root.classList.toggle('hud-boost', boosting)
     this.root.classList.toggle('hud-fallen', player.fallen)
-    const pushEl = this.root.querySelector('[data-h="push"]')
-    if (pushEl instanceof HTMLElement) {
-      if (player.fallen) {
-        pushEl.hidden = false
-        pushEl.textContent = t(player.crashBurst ? 'hud.crash' : 'hud.remount')
-      } else if (player.wheelie) {
-        pushEl.hidden = false
-        pushEl.textContent = t('hud.wheelie')
-      } else if (player.isMonsterFamily() && player.turboAmount > 0.2) {
-        pushEl.hidden = false
-        pushEl.textContent = 'TURBO'
-      } else if (player.tabBoostAmount > 0.25) {
-        pushEl.hidden = false
-        pushEl.textContent = 'BOOST'
-      } else if (player.freestyleOn && player.lastTrickLabel && player.trickLocked) {
-        pushEl.hidden = false
-        pushEl.textContent = player.lastTrickLabel
-      } else if (player.physics.driftMode && player.driftPoints > 0) {
-        pushEl.hidden = false
-        pushEl.textContent = player.physics.driftActive
-          ? `${t('hud.drift')} ${player.driftPoints}`
-          : `${t('hud.driftScore')} ${player.driftPoints}`
-      } else if (player.freestyleOn && player.trickPoints > 0) {
-        pushEl.hidden = false
-        pushEl.textContent = `FS ${player.trickPoints}`
-      } else if (player.kind === 'bike' && player.pushAmount > 0.15) {
-        pushEl.hidden = false
-        pushEl.textContent = t('hud.pedal')
-      } else if (player.kind === 'skate' && player.pushAmount > 0.15) {
-        pushEl.hidden = false
-        pushEl.textContent = t('hud.push')
-      } else {
-        pushEl.hidden = true
-      }
-    }
 
     this.renderOverlay(race)
   }
 
   private buildShell(kind: VehicleKind, sandbox = false, loopRace = false): void {
     const keepMirror = this.mirrorEl
+    const kidsSvg = `<svg class="hud-kids-icon" viewBox="0 0 64 56" aria-hidden="true">
+      <polygon points="32,4 60,52 4,52" fill="#f5d547" stroke="#c62828" stroke-width="4" stroke-linejoin="round"/>
+      <g fill="#1a1a1a">
+        <circle cx="24" cy="22" r="3.2"/>
+        <path d="M21 26.2h6l1.2 9.2h-8.4z"/>
+        <path d="M20.2 35.2l-4.8 8.4h3.4l3.2-5.6 1.4 5.6h2.8z"/>
+        <path d="M27.8 35.2l2.2 8.4h3.2l-1.6-8.4z"/>
+        <circle cx="40" cy="24" r="3"/>
+        <path d="M37.2 28h5.6l1 8.4h-7.6z"/>
+        <path d="M36.4 36.2l-3.6 7.6h3.2l2.2-4.8 1.2 4.8h2.6z"/>
+        <path d="M42.8 36.2l1.8 7.6h3l-1.4-7.6z"/>
+        <circle cx="33.5" cy="40.5" r="2.6"/>
+      </g>
+    </svg>`
     this.root.innerHTML = `
       <div class="hud-fps" data-h="fps" aria-hidden="true">— FPS</div>
       <div class="hud-immortal" data-h="immortal" hidden title="${t('hud.immortal')}" aria-label="${t('hud.immortal')}">👻</div>
+      <div class="hud-top-meta" data-h="raceMeta" hidden>—</div>
+      <div class="hud-split" data-h="split" hidden aria-live="polite">
+        <div class="hud-split-time" data-h="splitTime">0:00.00</div>
+        <div class="hud-split-gap" data-h="splitGap"></div>
+      </div>
       <div class="hud-bottom">
-        <div class="hud-speed-row">
-          <div class="hud-speed" data-h="speed">0<span>km/h</span></div>
-          <div class="hud-race-meta" data-h="raceMeta">—</div>
+        <div class="hud-radar-sign hud-radar--ok" data-h="radarPanel" title="${t('hud.kidsCaution')}">
+          <div class="hud-radar-top">
+            <div class="hud-kids-sign">
+              ${kidsSvg}
+              <span class="hud-kids-label">${t('hud.kidsCaution')}</span>
+            </div>
+            <div class="hud-radar-speed-col">
+              <div class="hud-radar-readout">
+                <span class="hud-speed" data-h="speed">0</span>
+                <span class="hud-radar-unit">km/h</span>
+              </div>
+            </div>
+          </div>
+          <div class="hud-radar-plate" data-h="plate">
+            <span class="hud-radar-plate-text" data-h="plateText">${t('hud.radarSloganOk')}</span>
+          </div>
         </div>
-        <div class="hud-race-clock" data-h="raceClock">0:00.00</div>
-        <div class="hud-race-gap" data-h="raceGap" hidden></div>
-        <div class="hud-gear" data-h="gear">${t('hud.gear')}: 1 (${t('hud.auto')})</div>
-        <div class="hud-push" data-h="push" hidden>${t('hud.push')}</div>
+        <div class="hud-gear" data-h="gear" hidden>${t('hud.gear')} 1</div>
       </div>
       <div class="hud-boost-flash" aria-hidden="true"></div>
     `
@@ -462,15 +500,55 @@ export class Hud {
       this.setMirrorFrame(true)
     }
     this.elRaceMeta = this.root.querySelector('[data-h="raceMeta"]')
-    this.elRaceClock = this.root.querySelector('[data-h="raceClock"]')
-    this.elRaceGap = this.root.querySelector('[data-h="raceGap"]')
     this.elSpeed = this.root.querySelector('[data-h="speed"]')
+    this.elRadarPanel = this.root.querySelector('[data-h="radarPanel"]')
+    this.elPlateText = this.root.querySelector('[data-h="plateText"]')
     this.elGear = this.root.querySelector('[data-h="gear"]')
+    this.elSplit = this.root.querySelector('[data-h="split"]')
     this.elFps = this.root.querySelector('[data-h="fps"]')
     this.helpKind = kind
     this.shellSandbox = sandbox
     this.shellLoop = loopRace
+    this.lastSplitKey = ''
+    this.lastSpeedShown = -1
+    this.lastFsPtsShown = -1
+    this.lastRadarBand = ''
+    this.lastPlateKey = ''
     this.built = true
+  }
+
+  /** Checkpoint flash — jako semafor nahoře uprostřed (zelená/červená). */
+  private renderSplitFlash(race: RaceManager): void {
+    if (!this.elSplit) return
+    const toast = race.splitToast
+    if (!toast || race.phase !== 'racing' || race.isSandbox) {
+      if (this.lastSplitKey !== '') {
+        this.elSplit.hidden = true
+        this.lastSplitKey = ''
+      }
+      return
+    }
+    const key = `${toast.untilMs}:${toast.timeMs}:${toast.gapMs}:${toast.ahead ? 1 : 0}`
+    if (key === this.lastSplitKey) return
+    this.lastSplitKey = key
+    this.elSplit.hidden = false
+    this.elSplit.classList.toggle('hud-split--lead', toast.ahead)
+    this.elSplit.classList.toggle('hud-split--behind', !toast.ahead)
+    const timeEl = this.elSplit.querySelector('[data-h="splitTime"]')
+    const gapEl = this.elSplit.querySelector('[data-h="splitGap"]')
+    if (timeEl) timeEl.textContent = formatTime(toast.timeMs)
+    if (gapEl instanceof HTMLElement) {
+      if (!toast.name || toast.gapMs <= 0) {
+        gapEl.hidden = true
+        gapEl.textContent = ''
+      } else {
+        gapEl.hidden = false
+        const sec = (toast.gapMs / 1000).toFixed(1)
+        const sign = toast.ahead ? '+' : '−'
+        const label = toast.ahead ? t('hud.gapLead') : t('hud.gapBehind')
+        gapEl.textContent = `${label} ${toast.name} ${sign}${sec}s`
+      }
+    }
   }
 
   private renderOverlay(race: RaceManager): void {
@@ -507,7 +585,12 @@ export class Hud {
         const placePts = placePoints(s.place)
         const trickPts = s.vehicle.trickPoints
         const driftPts = s.vehicle.driftPoints
-        const total = driftComp ? driftPts : placePts + trickPts
+        // FS: triky víc než umístění (čas); umístění pořád přispívá
+        const total = driftComp
+          ? driftPts
+          : fs
+            ? freestyleRaceScore(trickPts, s.place)
+            : placePts + trickPts
         return { s, placePts, trickPts, driftPts, total }
       })
       if (fs || driftComp) scored.sort((a, b) => b.total - a.total || a.s.place - b.s.place)
@@ -530,7 +613,7 @@ export class Hud {
           const time = s.vehicle.finished ? formatTime(s.vehicle.finishTime) : '—'
           const tag = s.vehicle.info.isPlayer ? '' : ` · ${s.vehicle.info.team}`
           const fsLine = fs
-            ? ` · FS ${row.total} (umístění ${row.placePts} + triky ${row.trickPts})`
+            ? ` · FS ${row.total} (triky ${row.trickPts} + čas/místo ${Math.round(row.placePts * 0.35)})`
             : driftComp
               ? ` · ${t('hud.driftScore')} ${row.driftPts}`
               : s.vehicle.driftPoints > 0
@@ -592,18 +675,16 @@ export class Hud {
             ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
       const placeTier = place <= 1 ? 'p1' : place === 2 ? 'p2' : place === 3 ? 'p3' : 'p4'
+      const sparkN = place === 1 ? 22 : place === 2 ? 12 : place === 3 ? 6 : 0
       const burst =
-        place <= 2
-          ? `<div class="finish-burst" aria-hidden="true">${Array.from(
-              { length: place === 1 ? 18 : 10 },
-              (_, i) => {
-                const ang = (i / (place === 1 ? 18 : 10)) * Math.PI * 2
-                const dist = 90 + (i % 5) * 14
-                const dx = Math.round(Math.cos(ang) * dist)
-                const dy = Math.round(Math.sin(ang) * dist * 0.72 - 28)
-                return `<span class="finish-spark" style="--i:${i};--dx:${dx}px;--dy:${dy}px"></span>`
-              },
-            ).join('')}</div>`
+        sparkN > 0
+          ? `<div class="finish-burst" aria-hidden="true">${Array.from({ length: sparkN }, (_, i) => {
+              const ang = (i / sparkN) * Math.PI * 2
+              const dist = (place === 1 ? 100 : place === 2 ? 86 : 70) + (i % 5) * 12
+              const dx = Math.round(Math.cos(ang) * dist)
+              const dy = Math.round(Math.sin(ang) * dist * 0.72 - 28)
+              return `<span class="finish-spark" style="--i:${i};--dx:${dx}px;--dy:${dy}px"></span>`
+            }).join('')}</div>`
           : ''
       const modeBit = fs
         ? ` · Freestyle`
@@ -613,18 +694,19 @@ export class Hud {
             ? ` · ${t('comp.championship')}`
             : ''
       this.overlay.innerHTML = `
-        <div class="overlay-card overlay-finish overlay-finish--${placeTier}">
+        <div class="overlay-card pause-card overlay-finish overlay-finish--${placeTier}">
           ${burst}
-          <div class="finish-hero">
-            <span class="finish-place-badge">P${place}</span>
-            <p class="overlay-winner">${t(placeKey)}</p>
+          <header class="pause-card-head finish-hero">
+            <p class="pause-kicker finish-kicker">${t('hud.results')}${modeBit}</p>
+            <p class="overlay-winner">${place >= 4 ? t('hud.placeConsolation') : t(placeKey)}</p>
             <p class="finish-time">${timeStr}${extra}</p>
+            <p class="finish-track overlay-hint">${this.trackName}</p>
+          </header>
+          <div class="pause-card-body">
+            ${champLine}
+            <ol class="finish-standings">${rows}</ol>
           </div>
-          <h2>${t('hud.results')}${modeBit}</h2>
-          <p class="finish-track">${this.trackName}</p>
-          ${champLine}
-          <ol class="finish-standings">${rows}</ol>
-          <div class="overlay-actions">${actions}</div>
+          <div class="overlay-actions pause-actions finish-actions">${actions}</div>
         </div>
       `
       return
@@ -639,7 +721,10 @@ export class Hud {
 
   private renderPause(help: PauseHelp): void {
     const immortalOn = !!help.immortal
-    const key = `pause:${help.kind}:${immortalOn ? 1 : 0}:${help.allowImmortal ? 1 : 0}`
+    const champ = !!help.championship
+    const mp = !!help.multiplayer
+    const escN = Math.max(1, Math.min(3, help.escQuitCount ?? 1))
+    const key = `pause:${help.kind}:${immortalOn ? 1 : 0}:${help.allowImmortal ? 1 : 0}:${champ ? 1 : 0}:${mp ? 1 : 0}:${escN}`
     if (key === this.lastOverlayKey) return
     this.lastOverlayKey = key
     this.overlay.classList.add('visible')
@@ -649,43 +734,82 @@ export class Hud {
       .filter((a) => BIND_ACTION_ORDER.includes(a))
       .map((a) => {
         const [k0, k1] = binds[a]
-        const keys = [codeLabel(k0), codeLabel(k1)].filter((x) => x !== '—').join(' / ')
-        return `<li><strong>${t(`bind.${a}`)}</strong> — ${keys || '—'}</li>`
+        const k0l = codeLabel(k0)
+        const k1l = codeLabel(k1)
+        const keyBtns = [
+          k0l !== '—' ? `<span class="bind-key pause-key">${k0l}</span>` : '',
+          k1l !== '—' ? `<span class="bind-key pause-key">${k1l}</span>` : '',
+        ]
+          .filter(Boolean)
+          .join('')
+        return `<div class="bind-row pause-bind-row">
+          <div class="bind-row-label">
+            <span class="bind-name">${t(`bind.${a}`)}</span>
+          </div>
+          ${keyBtns || `<span class="bind-key pause-key">—</span>`}
+        </div>`
       })
       .join('')
 
     let trickBlock = ''
-    if (help.kind === 'skate' || help.kind === 'bike') {
+    if (isFsBoardKind(help.kind)) {
       const tricks = freestyleList(help.kind)
       const tb = loadTrickBindings()
       const cells = TRICK_LETTERS.map((ch) => {
         const def = tricks.find((tr) => tr.letter === ch)
         const name = def?.nameCs ?? ch
-        return `<span class="pause-trick"><kbd>${codeLabel(tb[ch] ?? null)}</kbd> ${name}</span>`
+        return `<div class="bind-row bind-row-trick pause-bind-row">
+          <div class="bind-row-label"><span class="bind-name">${name}</span></div>
+          <span class="bind-key pause-key">${codeLabel(tb[ch] ?? null)}</span>
+        </div>`
       }).join('')
       trickBlock = `
-        <h3>${t('pause.tricks')}</h3>
-        <div class="pause-trick-grid">${cells}</div>
+        <h3 class="bind-section-title">${t('pause.tricks')}</h3>
+        <div class="pause-bind-list">${cells}</div>
       `
     }
 
+    const immortalLabel = `${t('hud.immortal')}: ${immortalOn ? t('menu.ctrlOn') : t('menu.ctrlOff')}`
     const immortalBtn = help.allowImmortal
-      ? `<button type="button" class="btn-ghost ${immortalOn ? 'active' : ''}" id="btn-immortal">${t('hud.immortal')}: ${immortalOn ? t('menu.ctrlOn') : t('menu.ctrlOff')}</button>`
+      ? `<button type="button" class="btn-ghost pause-exit-btn pause-immortal-btn ${immortalOn ? 'is-on' : ''}" id="btn-immortal">${immortalLabel}</button>
+        <p class="bind-row-hint pause-action-hint">${t('pause.immortalHint')}</p>`
       : ''
+
+    // Rychlý závod: jen odstoupit. Šamp: odstoupit + zrušit. MP: bez solo exitů.
+    let exitBlock = ''
+    if (!mp) {
+      const retireHint = champ ? t('pause.retireHintChamp') : t('pause.retireHintSolo')
+      exitBlock = `
+        <button type="button" class="btn-ghost pause-exit-btn" id="btn-retire">${t('pause.retire')}</button>
+        <p class="bind-row-hint pause-action-hint">${retireHint}</p>
+        ${
+          champ
+            ? `<button type="button" class="btn-ghost pause-exit-btn" id="btn-menu">${t('pause.cancelRace')}</button>
+        <p class="bind-row-hint pause-action-hint">${t('pause.cancelHint')}</p>`
+            : ''
+        }`
+    }
+
+    const escHint =
+      escN >= 2
+        ? t('pause.escHintQuit', { n: escN, left: 3 - escN })
+        : t('pause.escHintSolo')
 
     this.overlay.innerHTML = `
       <div class="overlay-card pause-card">
-        <h2>${t('pause.controls')}</h2>
-        <p class="overlay-hint">${t('pause.escHint')}</p>
-        <ul class="pause-binds">${bindRows}</ul>
-        ${trickBlock}
+        <header class="pause-card-head">
+          <p class="pause-kicker">${t('hud.pause')}</p>
+          <h2>${t('pause.controls')}</h2>
+          <p class="overlay-hint pause-esc-hint">${escHint}</p>
+        </header>
+        <div class="pause-card-body">
+          <div class="pause-bind-list bind-list">${bindRows}</div>
+          ${trickBlock}
+        </div>
         <div class="overlay-actions pause-actions">
-          <button type="button" class="menu-start" id="btn-resume">${t('hud.resume')}</button>
+          <button type="button" class="menu-start pause-resume-btn" id="btn-resume">${t('hud.resume')}</button>
           ${immortalBtn}
-          <button type="button" class="btn-ghost" id="btn-retire">${t('pause.retire')}</button>
-          <p class="overlay-hint pause-action-hint">${t('pause.retireHint')}</p>
-          <button type="button" class="btn-ghost" id="btn-menu">${t('pause.cancelRace')}</button>
-          <p class="overlay-hint pause-action-hint">${t('pause.cancelHint')}</p>
+          ${exitBlock}
         </div>
       </div>
     `
@@ -695,7 +819,7 @@ export class Hud {
 /** Jen ovládání, které daný peklostroj skutečně používá. */
 function pauseActionsFor(kind: VehicleKind): BindAction[] {
   const actions: BindAction[] = ['throttle', 'brake', 'steerLeft', 'steerRight']
-  if (kind === 'skate') {
+  if (isFsBoardKind(kind)) {
     actions.push('push', 'tab')
   } else if (
     kind === 'monster' ||
@@ -707,7 +831,7 @@ function pauseActionsFor(kind: VehicleKind): BindAction[] {
     actions.push('push', 'tab')
   } else if (kind === 'moto' || kind === 'harley' || kind === 'kroska' || kind === 'naked' || kind === 'enduro') {
     actions.push('push')
-  } else if (kind !== 'bike' && kind !== 'scooter') {
+  } else if (kind !== 'scooter') {
     actions.push('ebrake')
   }
   actions.push('camera', 'restart')

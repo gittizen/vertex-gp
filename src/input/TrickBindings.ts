@@ -1,4 +1,4 @@
-/** Remap písmen freestyle triků → KeyboardEvent.code (bez konfliktů R/C/WASD/QE). */
+/** Remap písmen freestyle triků → KeyboardEvent.code (bez konfliktů R/C/WASD/P; Q/E ok). */
 
 import { RESERVED_TRICK_LETTERS } from '../freestyle/FreestyleTricks'
 import { GAME_STORAGE_NS } from './KeyBindings'

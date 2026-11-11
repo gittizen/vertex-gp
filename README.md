@@ -35,9 +35,9 @@ Autor: **Filip Khunt** · ve hře věkové omezení **16+** · repozitář histo
 
 ## Hra stručně
 
-- **Tratě** podle Klecan a okolí (Námko, Noční Klecany, Do Klecánek, Novostavby…) + freestyle Plácek  
-- **Vozidla** od formule po skate; tuning s rozpočtem bodů  
-- **AI** — Lehká / Střední / Těžká; default *každý solo závod jiní soupeři*  
+- **Tratě** podle Klecan a okolí (Do Klecánek default, Námko, Noční Klecany…) + freestyle Plácek  
+- **Vozidla** od formule po skate / raketové FS; tuning s rozpočtem bodů  
+- **AI** — Lehká / Střední / Těžká; default *každý solo závod jiní soupeři* (vč. raketových FS)  
 - **Online** — Multi založí místnost, Join prohlíží / připojuje  
 - **Menu** — Závod setup (Trať · Peklostroj · Jet/Multi/Join), hráčské vs pokročilé nastavení  
 - **Šampionát** — koupě startovního stroje → kvalifikace → liga/série (45k / 15k ekonomika)  

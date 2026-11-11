@@ -2,7 +2,17 @@ import { getStore } from '@netlify/blobs'
 
 const STORE = 'klec-records'
 const KEY = 'board-v1'
-const FS = new Set(['skate', 'bike', 'scooter'])
+const FS = new Set([
+  'skate',
+  'skates',
+  'bike',
+  'scooter',
+  'rocketScooter',
+  'rocketSkate',
+  'rocketSkates',
+  'rocketBike',
+])
+const BOT_NAMES = new Set(['Nikola Beran', 'Petra Holá', 'Marek Diviš'])
 
 function cors(body, status = 200) {
   return new Response(body, {
@@ -33,21 +43,28 @@ export default async (req) => {
     entries = []
   }
 
+  entries = entries.filter((e) => e?.player && !BOT_NAMES.has(String(e.player)))
   if (board === 'freestyle') entries = entries.filter((e) => FS.has(e.vehicle))
   else entries = entries.filter((e) => !FS.has(e.vehicle))
   if (trackId) entries = entries.filter((e) => e.trackId === trackId)
 
-  entries = [...entries].sort((a, b) => {
-    if (board === 'freestyle') {
-      if ((b.bestFsScore || 0) !== (a.bestFsScore || 0)) {
-        return (b.bestFsScore || 0) - (a.bestFsScore || 0)
+  entries = [...entries]
+    .map((e) => ({
+      ...e,
+      laps: Math.max(1, Math.min(69, Math.round(Number(e.laps) || 1))),
+    }))
+    .sort((a, b) => {
+      if (board === 'freestyle') {
+        if ((b.bestFsScore || 0) !== (a.bestFsScore || 0)) {
+          return (b.bestFsScore || 0) - (a.bestFsScore || 0)
+        }
+        return (b.bestTrickPts || 0) - (a.bestTrickPts || 0)
       }
-      return (b.bestTrickPts || 0) - (a.bestTrickPts || 0)
-    }
-    if (!(a.bestTimeMs > 0)) return 1
-    if (!(b.bestTimeMs > 0)) return -1
-    return a.bestTimeMs - b.bestTimeMs
-  }).slice(0, 80)
+      if (!(a.bestTimeMs > 0)) return 1
+      if (!(b.bestTimeMs > 0)) return -1
+      return a.bestTimeMs - b.bestTimeMs
+    })
+    .slice(0, 80)
 
   return cors(JSON.stringify({ entries }))
 }

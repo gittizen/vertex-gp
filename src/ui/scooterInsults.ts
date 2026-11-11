@@ -34,6 +34,40 @@ const CS: string[] = [
   'Buzna level 30. Dost. Dostáváš skate. Buznoběžko končí.',
 ]
 
+/** Raketová past — „raketová buzna“ tam, kde to sedí. */
+const CS_ROCKET: string[] = [
+  'Raketová buzna',
+  'Ha, raketová dvojtá buzna',
+  'Raketová trojitá buzna. Fakt?',
+  'Čtyřnásobná raketová buzna. Ani s plamenem to není peklostroj.',
+  'Pětidílná raketová buzna. Ještě pořád tu stojíš?',
+  'Šestinásobná raketová buzna. KlecMania se směje.',
+  'Sedminásobná raketová buzna. Vem si skate.',
+  'Osminásobná raketová buzna. Asfalt tě odmítá.',
+  'Devítinásobná raketová buzna. Tohle už bolí i mě.',
+  'Desetinásobná raketová buzna. Legenda o blbci na raketové koloběžce.',
+  'Raketová buzna level 11. Opravdu to zkoušíš dál?',
+  'Raketová buzna level 12. Rodiče by se styděli.',
+  'Raketová buzna level 13. I raketová koloběžka chce pryč.',
+  'Raketová buzna level 14. Freestyle bez freestylu.',
+  'Raketová buzna level 15. Poloviční cesta k skatu.',
+  'Raketová buzna level 16. Do 3 let — věkové omezení tě varovalo.',
+  'Raketová buzna level 17. KlecMania blacklist: ty.',
+  'Raketová buzna level 18. Ještě dvanáct a dostaneš skate násilím.',
+  'Raketová buzna level 19. Historický moment: největší raketová buzna Klecánek.',
+  'Raketová buzna level 20. Dvacet. Gratuluju. Stále blbost.',
+  'Raketová buzna level 21. Plameny ti nepomůžou. Nemáš žádný tah.',
+  'Raketová buzna level 22. Spojka? Nemáš. Mozek? Sporné.',
+  'Raketová buzna level 23. Trať se stydí, že na ni koukáš.',
+  'Raketová buzna level 24. Skate už na tebe mává z dálky.',
+  'Raketová buzna level 25. Pět do automatického skatu.',
+  'Raketová buzna level 26. Čtyři. Ještě stihneš zvolit sám.',
+  'Raketová buzna level 27. Tři. Poslední šance na důstojnost.',
+  'Raketová buzna level 28. Dva. Raketová koloběžka pláče. Ty taky bys měl.',
+  'Raketová buzna level 29. Jedna. Příště už je skate povinný.',
+  'Raketová buzna level 30. Dost. Dostáváš skate. Raketové buznoběžko končí.',
+]
+
 const EN: string[] = [
   'Buzna',
   'Ha, double buzna',
@@ -67,10 +101,44 @@ const EN: string[] = [
   'Buzna level 30. Enough. You get the skate. Buznoběžko ends.',
 ]
 
+const EN_ROCKET: string[] = [
+  'Rocket buzna',
+  'Ha, rocket double buzna',
+  'Rocket triple buzna. Really?',
+  'Quadruple rocket buzna. Flames still don’t make a Hellrig.',
+  'Five-stack rocket buzna. Still standing here?',
+  'Six-stack rocket buzna. KlecMania is laughing.',
+  'Seven-stack rocket buzna. Take the skate.',
+  'Eight-stack rocket buzna. The asphalt rejects you.',
+  'Nine-stack rocket buzna. This hurts me too.',
+  'Ten-stack rocket buzna. Legend of the rocket-scooter fool.',
+  'Rocket buzna level 11. You’re still trying?',
+  'Rocket buzna level 12. Your parents would be ashamed.',
+  'Rocket buzna level 13. Even the rocket scooter wants out.',
+  'Rocket buzna level 14. Freestyle without freestyle.',
+  'Rocket buzna level 15. Halfway to the skate.',
+  'Rocket buzna level 16. Ages 3 and under — the rating warned you.',
+  'Rocket buzna level 17. KlecMania blacklist: you.',
+  'Rocket buzna level 18. Twelve more and you get skate by force.',
+  'Rocket buzna level 19. Historic: biggest rocket buzna in Klecany.',
+  'Rocket buzna level 20. Twenty. Congrats. Still nonsense.',
+  'Rocket buzna level 21. Flames won’t help. You’ve got no thrust.',
+  'Rocket buzna level 22. Clutch? None. Brain? Debatable.',
+  'Rocket buzna level 23. The track is embarrassed you’re looking at it.',
+  'Rocket buzna level 24. The skate is waving from afar.',
+  'Rocket buzna level 25. Five until forced skate.',
+  'Rocket buzna level 26. Four. You can still pick it yourself.',
+  'Rocket buzna level 27. Three. Last shot at dignity.',
+  'Rocket buzna level 28. Two. The rocket scooter is crying. You should too.',
+  'Rocket buzna level 29. One. Next time skate is mandatory.',
+  'Rocket buzna level 30. Enough. You get the skate. Rocket buznoběžko ends.',
+]
+
 export const SCOOTER_INSULT_MAX = 30
 
-export function scooterInsult(attempt: number): string {
-  const list = getLocale() === 'en' ? EN : CS
+export function scooterInsult(attempt: number, rocket = false): string {
+  const en = getLocale() === 'en'
+  const list = rocket ? (en ? EN_ROCKET : CS_ROCKET) : en ? EN : CS
   const i = Math.max(0, Math.min(SCOOTER_INSULT_MAX, attempt) - 1)
   return list[i] ?? list[list.length - 1]!
 }

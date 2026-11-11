@@ -1,6 +1,6 @@
 # 0.8 — race setup + šampionát *(současná produkce)*
 
-**Oproti 0.7:** Domů → Závod setup, šampionát (koupě → kvalifikace → liga/série), nesmrtelnost s 👻, cloud žebříček, světlejší Klecany, Volvo V70 dlaždice.
+**Oproti 0.7:** Domů → Závod setup, šampionát (koupě → kvalifikace → liga/série), nesmrtelnost s 👻, cloud žebříček, světlejší Klecany, Volvo V70 dlaždice. Update: FS polish, Do Klecánek default, raketové AI.
 
 ## Hrát
 - Netlify produkce: https://klecmania.netlify.app/
@@ -12,7 +12,9 @@
 - **Šampionát:** start 45k, nejhorší unlock 15k, 2 dlaždice / Jet split, kvalifikace 1 kolo (FS Plácek ~1 min), pak liga/série; Klecany moto = žlutá Babeta
 - **Nesmrtelnost** (Ovládání, jen SP) + badge 👻 na HUD a žebříčku
 - Žebříček **Moje / Svět** (cloud sync včetně immortal flag)
-- FS startup anim (~0.5 s crouch / kick); pauza nad mobilní tap vrstvou
+- **Do Klecánek** default + normální směr; omítkové domy; Námko mimo asfalt
+- Raketové FS AI; P = pauza; Q/E triky; wall-kill mid-trick; soutěže pryč
+- FS startup anim (~0.5 s); pauza nad mobilní tap vrstvou
 - Klecany světlejší; unikátní tile art; **Závod** = Volvo V70 1. gen tmavě modrá
 
 ## Tag

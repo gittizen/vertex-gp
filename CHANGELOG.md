@@ -4,7 +4,7 @@ Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nah
 
 ---
 
-## [0.8.0] — 2026-11-11 · *Race setup + šampionát*
+## [0.8.0] — 2026-11-11 · *Race setup + šampionát + FS polish*
 
 ### Domů & závod
 - Domů: **Závod** nahoře, pod ním **Žebříček | Nastavení**.
@@ -25,12 +25,23 @@ Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nah
 - Rekordy s immortal flag zůstávají na žebříčku s ghost badge.
 - Cloud sync (**Moje / Svět**) včetně immortal flagu.
 
-### Freestyle & mobil
+### Tratě & svět
+- **Do Klecánek** default mapa; směr jízdy default **normální** (ne reverse).
+- Omítkové domy na Do Klecánek po celé trati; Námko objekty mimo asfalt.
+- Monstertruck: kompaktní auto-karoserie, stejná velká kola.
+- Klecany celkově světlejší (slabší překryvy, jasnější entry).
+
+### Freestyle
 - FS startup animace ~0.5 s (crouch; skate + kick předku).
 - Pauza nad mobilní tap vrstvou; FS pád jen při nárazu mid-trick.
+- Raketové FS soupeře v AI (koloběžky ne); Shift boost raket +20 %.
+- Při triku: žádná brzda, řízení 20 %, pád o zeď i ve vzduchu.
+- **P** = pauza (ne trik); **Q/E** smí triky.
+- Sladěné animace nohou / bruslí / BMX; menší raketový oheň při Shift.
+- Soutěže pryč (pokročilé = jen AI učení).
 
-### Atmosféra
-- Klecany celkově světlejší (slabší překryvy, jasnější entry).
+### Audio / UI
+- Techno + rap jako dřív; zvuk 3 = tuc-tuc; finish karta bez medaile/jezdce.
 
 ### Release
 - GitHub tag `v0.8.0` + Pages `/0.8/` + **Netlify produkce** https://klecmania.netlify.app/

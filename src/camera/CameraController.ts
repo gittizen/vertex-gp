@@ -53,6 +53,16 @@ export class CameraController {
     const speed01 = Math.min(1, speed / 72)
     if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) return
 
+    // Juice: boost / drift → FOV + mikro-shake (CPU only)
+    const boost01 = Math.min(
+      1,
+      Math.max(vehicle.pushAmount, vehicle.tabBoostAmount, vehicle.turboAmount) * 1.05,
+    )
+    const slip = Math.abs(p.latVel) / Math.max(6, Math.abs(p.speed) || 1)
+    const drift01 = p.driftActive ? Math.min(1, slip * 1.8) : 0
+    if (boost01 > 0.55) this.addShake(0.012 * boost01 * dt * 60)
+    if (drift01 > 0.25) this.addShake(0.008 * drift01 * dt * 60)
+
     let baseFov: number
 
     if (this.mode === 'hood') {
@@ -82,7 +92,7 @@ export class CameraController {
     }
 
     const fovBoost = this.mode === 'hood' ? 10 : 14
-    const targetFov = baseFov + speed01 * fovBoost
+    const targetFov = baseFov + speed01 * fovBoost + boost01 * 7 + drift01 * 3.5
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 5)
     this.camera.updateProjectionMatrix()
 

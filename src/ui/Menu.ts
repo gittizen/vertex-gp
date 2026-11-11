@@ -5,9 +5,11 @@ import {
   getCareer,
   saveCareer,
   startNewSeason,
+  startSeason2FromSnapshot,
   loadChampMeta,
   championshipRoundMeta,
   championshipProgressLabel,
+  championshipRaceLaps,
   championshipTotalRounds,
   championshipTrackId,
   championshipReverse,
@@ -23,6 +25,11 @@ import {
   isChampFsQual,
   needsChampPostQualSetup,
   championshipQualTrackId,
+  markChampSetupComplete,
+  discardIncompleteCareer,
+  restartChampSeason,
+  restartChampCareer,
+  LEAGUE_LAPS,
   CHAMP_FS_QUAL_MS,
   type ChampCareer,
   type ChampLeague,
@@ -105,15 +112,9 @@ import {
 } from '../render/VisualSettings'
 import { lastSuggestedQuality, suggestVisualQuality } from '../render/DeviceQuality'
 import {
-  COMPETITIONS,
-  loadCompetitionSettings,
-  saveCompetitionSettings,
-  type CompetitionId,
-  type CompetitionSettingsValues,
-} from '../render/CompetitionSettings'
-import {
   DEFAULT_RACE,
-  RACE_LAP_CHOICES,
+  RACE_LAP_MAX,
+  RACE_LAP_MIN,
   clampOpponentsToCategory,
   clampRaceLaps,
   randomOpponents,
@@ -140,10 +141,11 @@ import {
   type TrickBindingsMap,
 } from '../input/TrickBindings'
 import { freestyleList } from '../freestyle/FreestyleTricks'
-import { allRecords, recordsFor } from '../freestyle/Records'
+import { allRecords, recordsFor, shareLocalRecordsWithWorld } from '../freestyle/Records'
 import { fetchCloudRecords, type CloudRecordRow } from '../freestyle/CloudRecords'
 import { formatTime } from '../race/RaceManager'
 import { SCOOTER_INSULT_MAX, scooterInsult } from './scooterInsults'
+import { isScooterTrapKind } from '../vehicle/FsKinds'
 import { loadOrCreatePlayerName, savePlayerName } from './PlayerName'
 
 import {
@@ -157,7 +159,7 @@ import {
   type VehicleBranch,
   type VehicleLook,
 } from '../vehicle/VehicleLook'
-import { sortKindsBySpeedDesc } from '../vehicle/VehicleProfiles'
+import { catalogCanDieFromSpeed, sortKindsBySpeedDesc } from '../vehicle/VehicleProfiles'
 import { statsBarsHtml } from '../vehicle/VehicleStats'
 
 const PLAYER_COLOR_CHOICES = PAINT_COLOR_CHOICES
@@ -231,7 +233,6 @@ type Screen =
   | 'audio'
   | 'atmosphere'
   | 'difficulty'
-  | 'competitions'
   | 'aiLearn'
   | 'controls'
   | 'records'
@@ -241,6 +242,7 @@ type Screen =
   | 'champPit'
   | 'champSeries'
   | 'champLeague'
+  | 'champPostQual'
   | 'champStarter'
   | 'champTrophy'
 
@@ -249,7 +251,6 @@ type SettingsDraftKind =
   | 'difficulty'
   | 'audio'
   | 'atmosphere'
-  | 'competitions'
   | 'aiLearn'
 
 const TUNE_KEYS: (keyof PlayerTuningValues)[] = [
@@ -323,8 +324,8 @@ export class Menu {
   private recordsBack: Screen = 'home'
   /** Zpět z podstránek nastavení (chip z Domova → home, hub → settings). */
   private settingsSubBack: Screen = 'settings'
-  /** Remap: skate vs bike triky. */
-  private ctrlTrickKind: 'skate' | 'bike' = 'skate'
+  /** Remap: skate / brusle / bike triky. */
+  private ctrlTrickKind: 'skate' | 'skates' | 'bike' = 'skate'
   /** Rozbalené podstyly kalendáře v atmosféře. */
   private calendarPackOpen = false
   /** Koloběžka: pokusy o odchod (9+ = force skate). */
@@ -332,10 +333,11 @@ export class Menu {
   private scooterPopup: string | null = null
   /** Po 30. narážce OK → vynutit skate. */
   private scooterForceSkate = false
-  private competition: CompetitionSettingsValues = loadCompetitionSettings()
+  /** Esc v popup: 1 = čeká, 2 = zpět (zavřít). */
+  private scooterModalEsc = 0
   private raceModePick: RaceModeId = 'classic'
   /** Draft při vstupu do Trať / Peklostroj / Tuning — Esc/Zpět vrátí. */
-  private draftTracks: { trackId: string; reverse: boolean } | null = null
+  private draftTracks: { trackId: string; reverse: boolean; laps: number } | null = null
   private draftVehicle: {
     vehicle: VehicleKind
     color: number
@@ -374,7 +376,6 @@ export class Menu {
   /** Accordion v Sérii / Pitu / solo Obtížnosti (stejný UX jako liga). */
   private seriesAccordionOpen: 'diff' | 'calendar' | 'rivals' | null = 'diff'
   private pitAccordionOpen: 'shop' | 'garage' | 'tune' | null = 'shop'
-  private difficultyAccordionOpen: 'level' | 'laps' | 'opponents' | null = 'level'
   private settingsDraft: {
     kind: SettingsDraftKind
     audio?: AudioSettingsValues
@@ -383,12 +384,11 @@ export class Menu {
     calendarPackOpen?: boolean
     difficulty?: DifficultyId
     race?: RaceSettingsValues
-    competition?: CompetitionSettingsValues
     learn?: ReturnType<typeof loadLearnSettings>
     bindings?: KeyBindingsMap
     tricks?: TrickBindingsMap
     controlFeel?: ControlFeelValues
-    ctrlTrickKind?: 'skate' | 'bike'
+    ctrlTrickKind?: 'skate' | 'skates' | 'bike'
   } | null = null
   private uiAbort: AbortController | null = null
   visible = false
@@ -466,6 +466,8 @@ export class Menu {
     localNetId: string | null = null,
   ): void {
     const wasCode = this.lobby?.code
+    const keepScroll = Boolean(this.visible && this.lobby && room && room.code === wasCode)
+    const scrollPos = keepScroll ? this.savePanelScroll() : null
     this.lobby = room
     this.lobbyLink = link
     this.isHost = isHost
@@ -479,7 +481,10 @@ export class Menu {
       this.clearLobbyWaitTimer()
     }
     if (room?.laps) this.hostLaps = room.laps
-    if (this.visible) this.render()
+    if (this.visible) {
+      this.render()
+      if (scrollPos) this.restorePanelScroll(scrollPos)
+    }
   }
 
   wantsLobbyFillAi(): boolean {
@@ -537,8 +542,9 @@ export class Menu {
     this.champCareer = getCareer(branch, season)
     const career = this.champCareer
     if (career && needsChampPostQualSetup(career)) {
-      this.screen = career.leagueChosen ? 'champSeries' : 'champLeague'
-      if (!career.leagueChosen) this.leagueAccordionOpen = career.league
+      this.screen = 'champPostQual'
+      this.leagueAccordionOpen = career.league
+      this.seriesAccordionOpen = 'diff'
     } else {
       this.screen = 'champBrief'
     }
@@ -743,6 +749,12 @@ export class Menu {
         if (kind === 'range' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return
 
         if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+          if (this.scooterPopup) {
+            e.preventDefault()
+            this.audioApi?.playClick?.()
+            this.confirmScooterModal()
+            return
+          }
           const el = document.activeElement
           if (!(el instanceof HTMLElement) || !this.root.contains(el)) return
           if (el.tagName === 'BUTTON' || el.tagName === 'SUMMARY' || el.tagName === 'A') {
@@ -798,7 +810,7 @@ export class Menu {
   }
 
   /**
-   * Domů: stejný DOM footprint jako backRow(flow) — neviditelné Zpět
+   * Domů: stejný DOM footprint jako backRow(flow) — neviditelné Zpět vlevo
    * drží výšku patičky, ať se hub/brief neposune dolů.
    */
   private homeChromeFooter(): string {
@@ -809,8 +821,8 @@ export class Menu {
   }
 
   /**
-   * Viditelné Zpět (hlavně telefon — Esc tam není).
-   * dock = fixed vpravo dole obrazovky (výjimky mimo panel)
+   * Viditelné Zpět vlevo (hlavně telefon — Esc tam není).
+   * dock = fixed vlevo dole obrazovky (výjimky mimo panel)
    * flow = v černém pásu panelu (menu-panel-dock) — scrolluje tělo, Zpět zůstává
    */
   private backRow(to: Screen | 'entry' = 'home', mode: 'dock' | 'flow' = 'dock'): string {
@@ -825,45 +837,55 @@ export class Menu {
     </div>`
   }
 
-  /** Peklostroj: OK + Tuning vlevo, Zpět vpravo. */
+  /** Peklostroj: Zpět vlevo, OK + Tuning vpravo. */
   private vehiclesNavRow(): string {
     const esc = this.kbdHintHtml()
     return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-      <div class="menu-nav-left">
+      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      <div class="menu-nav-right">
         <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
         <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-tuning>${t('menu.tuning')}</button>
       </div>
-      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
       ${esc}
     </div>`
   }
 
-  /** Tuning: OK vlevo, Zpět vpravo. */
+  /** Tuning: Zpět vlevo, OK vpravo. */
   private tuningNavRow(): string {
     const esc = this.kbdHintHtml()
     return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
       <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
       ${esc}
     </div>`
   }
 
-  /** Trať: OK vlevo, Zpět vpravo. */
+  /** Trať: Zpět vlevo, OK vpravo. */
   private tracksNavRow(): string {
     const esc = this.kbdHintHtml()
     return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
       <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
       ${esc}
     </div>`
   }
 
-  /** Nastavení: OK potvrdí, Zpět/Esc vrátí draft. */
+  /** Nastavení: Zpět/Esc vrátí draft, OK potvrdí. */
   private settingsOkNavRow(): string {
     const esc = this.kbdHintHtml()
     return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
       <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-ok>${t('menu.ok')}</button>
+      ${esc}
+    </div>`
+  }
+
+  /** Šamp / split patička: Zpět vlevo, OK vpravo (stejný slot layout). */
+  private champOkNavRow(okAttr: string): string {
+    const esc = this.kbdHintHtml()
+    return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
+      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" ${okAttr}>${t('menu.ok')}</button>
       ${esc}
     </div>`
   }
@@ -882,9 +904,6 @@ export class Menu {
     if (kind === 'difficulty') {
       draft.difficulty = this.selectedDifficulty
       draft.race = { ...(this.raceApi?.get() ?? DEFAULT_RACE) }
-    }
-    if (kind === 'competitions') {
-      draft.competition = { ...this.competition }
     }
     if (kind === 'aiLearn') {
       draft.learn = { ...loadLearnSettings() }
@@ -911,17 +930,15 @@ export class Menu {
     if (typeof d.calendarPackOpen === 'boolean') this.calendarPackOpen = d.calendarPackOpen
     if (d.difficulty) this.selectedDifficulty = d.difficulty
     if (d.race) this.raceApi?.set(d.race)
-    if (d.competition) {
-      this.competition = { ...d.competition }
-      saveCompetitionSettings(this.competition)
-    }
     if (d.learn) saveLearnSettings(d.learn)
     if (d.bindings) {
       saveKeyBindings(d.bindings)
       saveTrickBindings(d.tricks ?? defaultTrickBindings())
     }
     if (d.controlFeel) this.controlFeelApi?.set(d.controlFeel)
-    if (d.ctrlTrickKind) this.ctrlTrickKind = d.ctrlTrickKind
+    if (d.ctrlTrickKind === 'skate' || d.ctrlTrickKind === 'skates' || d.ctrlTrickKind === 'bike') {
+      this.ctrlTrickKind = d.ctrlTrickKind
+    }
     this.settingsDraft = null
   }
 
@@ -932,6 +949,9 @@ export class Menu {
   private bindSettingsOkEsc(to: Screen = 'settings'): void {
     this.root.querySelector('[data-ok]')?.addEventListener('click', () => {
       this.audioApi?.playClick?.()
+      // Dočti kola z inputu před commit (stejný problém jako Trať)
+      const lapsInput = this.root.querySelector<HTMLInputElement>('[data-race-laps-input]')
+      if (lapsInput) this.raceApi?.set({ laps: clampRaceLaps(lapsInput.value) })
       this.commitSettingsDraft()
       this.screen = to
       this.render()
@@ -1000,28 +1020,80 @@ export class Menu {
     this.scooterLeaveAttempts = 0
     this.scooterPopup = null
     this.scooterForceSkate = false
+    this.scooterModalEsc = 0
   }
 
-  /** false = zůstat u koloběžky (popup). true = smí odejít (už má jiné / force skate). */
-  private tryLeaveScooter(): boolean {
-    if (this.selectedVehicle !== 'scooter') {
-      this.clearScooterTrap()
-      return true
-    }
+  /** Další narážka — jen overlay (bez full render = bez mikrolagu). */
+  private bumpScooterTrap(): void {
     this.scooterLeaveAttempts += 1
     if (this.scooterLeaveAttempts > SCOOTER_INSULT_MAX) {
       this.selectedVehicle = 'skate'
       this.clearScooterTrap()
-      return true
+      this.render()
+      return
     }
-    this.scooterPopup = scooterInsult(this.scooterLeaveAttempts)
+    const rocket = this.selectedVehicle === 'rocketScooter'
+    this.scooterPopup = scooterInsult(this.scooterLeaveAttempts, rocket)
     this.scooterForceSkate = this.scooterLeaveAttempts >= SCOOTER_INSULT_MAX
-    this.render()
-    return false
+    this.scooterModalEsc = 0
+    this.mountScooterModal()
+  }
+
+  /** Jen hláška + OK — stejná velikost pro koloběžku i raketovou. */
+  private scooterModalHtml(): string {
+    if (!this.scooterPopup) return ''
+    return `<div class="scooter-modal" role="dialog" aria-modal="true">
+      <div class="scooter-modal-card">
+        <p>${this.escape(this.scooterPopup)}</p>
+        <button type="button" class="menu-start" data-scooter-ok>OK</button>
+      </div>
+    </div>`
+  }
+
+  private mountScooterModal(onDismiss?: () => void): void {
+    this.root.querySelector('.scooter-modal')?.remove()
+    if (!this.scooterPopup) return
+    this.root.insertAdjacentHTML('beforeend', this.scooterModalHtml())
+    this.bindScooterModal(onDismiss)
+  }
+
+  /** Enter / klik OK na buzna popup. */
+  private confirmScooterModal(onDismiss?: () => void): void {
+    if (!this.scooterPopup) return
+    const forceSkate = this.scooterForceSkate || this.scooterLeaveAttempts >= SCOOTER_INSULT_MAX
+    this.scooterPopup = null
+    this.scooterModalEsc = 0
+    this.root.querySelector('.scooter-modal')?.remove()
+    if (forceSkate) {
+      this.selectedVehicle = 'skate'
+      this.clearScooterTrap()
+      onDismiss?.()
+      this.render()
+      return
+    }
+    onDismiss?.()
+  }
+
+  /** 2× Esc = zpět (zavřít popup bez force skate). */
+  private dismissScooterModalBack(): void {
+    this.scooterPopup = null
+    this.scooterModalEsc = 0
+    this.root.querySelector('.scooter-modal')?.remove()
+  }
+
+  private bindScooterModal(onDismiss?: () => void): void {
+    this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
+      this.confirmScooterModal(onDismiss)
+    })
   }
 
   handleEscape(): 'stay' | 'to-entry' {
     if (!this.visible) return 'stay'
+    if (this.scooterPopup) {
+      this.scooterModalEsc += 1
+      if (this.scooterModalEsc >= 2) this.dismissScooterModalBack()
+      return 'stay'
+    }
     const letter = this.root.querySelector('.burnt-letter-backdrop')
     if (letter) {
       letter.remove()
@@ -1035,7 +1107,6 @@ export class Menu {
       this.screen === 'audio' ||
       this.screen === 'atmosphere' ||
       this.screen === 'difficulty' ||
-      this.screen === 'competitions' ||
       this.screen === 'aiLearn' ||
       this.screen === 'controls'
     ) {
@@ -1044,25 +1115,38 @@ export class Menu {
       this.render()
       return 'stay'
     }
-    if (this.screen === 'champPit' || this.screen === 'champSeries' || this.screen === 'champLeague') {
+    if (
+      this.screen === 'champPit' ||
+      this.screen === 'champSeries' ||
+      this.screen === 'champLeague' ||
+      this.screen === 'champPostQual'
+    ) {
       const career = this.champCareer ?? getCareer(this.champBranch, this.champSeason)
       if (this.screen === 'champPit') {
         this.champPitPreview = null
         if (career) this.resetPitCart(career)
         this.screen = 'champBrief'
+      } else if (this.screen === 'champPostQual') {
+        this.revertChampLeagueDraft(career)
+        this.revertChampSeriesDraft(career)
+        if (career && needsChampPostQualSetup(career)) {
+          discardIncompleteCareer(career.branch, career.season)
+          this.champCareer = null
+          this.screen = 'champHub'
+        } else {
+          this.screen = 'champBrief'
+        }
       } else if (this.screen === 'champLeague') {
         this.revertChampLeagueDraft(career)
-        // Po kvalifikaci bez OK → hub (úvod větví); jinak brief
         if (career && needsChampPostQualSetup(career) && !career.leagueChosen) {
-          this.screen = 'champHub'
+          this.screen = 'champPostQual'
         } else {
           this.screen = 'champBrief'
         }
       } else {
         this.revertChampSeriesDraft(career)
-        // Bez OK série → zpět na ligu (post-qual) nebo brief
         if (career && needsChampPostQualSetup(career) && !career.seriesChosen) {
-          this.screen = 'champLeague'
+          this.screen = 'champPostQual'
         } else {
           this.screen = 'champBrief'
         }
@@ -1094,7 +1178,6 @@ export class Menu {
       return 'stay'
     }
     if (this.screen === 'vehicles') {
-      if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return 'stay'
       this.revertVehicleDraft()
       this.clearScooterTrap()
       this.screen = 'raceSetup'
@@ -1402,13 +1485,24 @@ export class Menu {
       const scrollPos = this.savePanelScroll()
       const selected = TRACKS.find((tr) => tr.id === this.selectedTrackId) ?? TRACKS[0]
       const race = this.raceApi?.get() ?? { ...DEFAULT_RACE }
+      const lapsNow = clampRaceLaps(race.laps)
       const onPhone = isMobileClient()
+      const lapsBlock = (tr: TrackDef) =>
+        tr.sandbox || !tr.loop
+          ? `<p class="tune-rules">${t('menu.circuitLapsNA')}</p>`
+          : `<p class="tune-rules">${t('menu.circuitLaps')}</p>
+        <div class="lap-stepper" role="group" aria-label="${t('menu.circuitLaps')}">
+          <button type="button" class="btn-ghost lap-step" data-track-laps-delta="-1" aria-label="-">−</button>
+          <input type="number" class="lap-step-input" min="${RACE_LAP_MIN}" max="${RACE_LAP_MAX}" step="1" value="${lapsNow}" data-track-laps-input inputmode="numeric" />
+          <button type="button" class="btn-ghost lap-step" data-track-laps-delta="1" aria-label="+">+</button>
+        </div>`
       const previewBlock = (tr: TrackDef) => `
         <div class="track-inline-preview">
           ${trackPreviewHtml(tr, race.reverse)}
           <div class="track-preview-meta">
             <strong>${this.escape(this.trackName(tr))}</strong>
             <span>${tr.sandbox ? t('menu.sandboxMeta') : this.escape(this.trackBlurb(tr))}</span>
+            ${this.trackEstPaceHtml(tr)}
           </div>
           ${
             tr.sandbox
@@ -1421,7 +1515,8 @@ export class Menu {
             <button type="button" class="track-card ${race.reverse ? 'active' : ''}" data-reverse="1">
               <strong>${t('menu.raceDir.reverse')}</strong>
             </button>
-          </div>`
+          </div>
+          ${lapsBlock(tr)}`
           }
         </div>`
       const listHtml = onPhone
@@ -1449,6 +1544,7 @@ export class Menu {
                 <div class="track-preview-meta">
                   <strong>${this.escape(this.trackName(selected))}</strong>
                   <span>${selected.sandbox ? t('menu.sandboxMeta') : this.escape(this.trackBlurb(selected))}</span>
+                  ${this.trackEstPaceHtml(selected)}
                 </div>
                 ${
                   selected.sandbox
@@ -1461,7 +1557,8 @@ export class Menu {
                   <button type="button" class="track-card ${race.reverse ? 'active' : ''}" data-reverse="1">
                     <strong>${t('menu.raceDir.reverse')}</strong>
                   </button>
-                </div>`
+                </div>
+                ${lapsBlock(selected)}`
                 }
               </div>`
               }
@@ -1481,9 +1578,21 @@ export class Menu {
       this.root.querySelector('[data-ok]')?.addEventListener('click', () => commitTracks())
       this.root.querySelectorAll<HTMLButtonElement>('[data-reverse]').forEach((btn) => {
         btn.addEventListener('click', () => {
+          const scroll = this.savePanelScroll()
           this.raceApi?.set({ reverse: btn.dataset.reverse === '1' })
           this.render()
+          this.restorePanelScroll(scroll)
         })
+      })
+      this.bindLapStepper({
+        get: () => clampRaceLaps(this.raceApi?.get().laps ?? DEFAULT_RACE.laps),
+        set: (n) => {
+          this.raceApi?.set({ laps: n })
+          const input = this.root.querySelector<HTMLInputElement>('[data-track-laps-input]')
+          if (input && input.value !== String(n)) input.value = String(n)
+        },
+        deltaAttr: 'data-track-laps-delta',
+        inputAttr: 'data-track-laps-input',
       })
       window.addEventListener(
         'keydown',
@@ -1502,22 +1611,25 @@ export class Menu {
     if (this.screen === 'vehicles') {
       if (!this.draftVehicle) this.beginVehicleDraft()
       const scrollPos = this.savePanelScroll()
-      let kind = this.selectedVehicle
-      if (kind === 'scooter') {
-        kind = 'skate'
-        this.selectedVehicle = kind
-      }
+      const kind = this.selectedVehicle
       this.selectedBranch = vehicleBranch(kind)
-      const branchKinds = kindsInBranch(this.selectedBranch).filter((k) => k !== 'scooter')
+      const branchKinds = kindsInBranch(this.selectedBranch)
       const confirmVehicleOk = () => {
-        if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
+        // Past: hláška až při OK — výběr samotný nic nespouští, závod nezačne
+        if (isScooterTrapKind(this.selectedVehicle)) {
+          this.bumpScooterTrap()
+          return
+        }
         this.commitVehicleDraft()
         this.clearScooterTrap()
         this.screen = 'raceSetup'
         this.render()
       }
       const openTuning = () => {
-        if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
+        if (isScooterTrapKind(this.selectedVehicle)) {
+          this.bumpScooterTrap()
+          return
+        }
         this.beginTuningDraft()
         this.screen = 'tuning'
         this.render()
@@ -1558,48 +1670,35 @@ export class Menu {
                 ${this.paintRowHtml('color', t('menu.colorPick'), this.selectedColor, PLAYER_COLOR_CHOICES, true)}
                 <details class="vehicle-more" open>
                   <summary>${t('menu.vehicleMore')}</summary>
-                  <p class="tune-rules">${t(`vehicle.${kind}.max`)}</p>
+                  ${
+                    kind === 'scooter' || kind === 'rocketScooter'
+                      ? ''
+                      : `<p class="tune-rules">${t(`vehicle.${kind}.max`)}</p>
+                  ${this.vehicleCrashInfoHtml(kind)}
                   <div class="veh-stats">${statsBarsHtml(kind, (key) => t(`menu.stat.${key}`), this.tuning)}</div>
                   <p class="vehicle-lore">${t(`vehicle.${kind}.invented`)}</p>
                   <p class="vehicle-lore">${t(`vehicle.${kind}.first`)}</p>
                   <p class="tune-rules">${t('menu.vehicleControls')}</p>
-                  <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>
+                  <p class="vehicle-lore vehicle-controls">${this.vehicleHelp(kind)}</p>`
+                  }
                 </details>
               </div>
             </div>
           </div>
           ${this.vehiclesNavRow()}
         </div>
-        ${
-          this.scooterPopup
-            ? `<div class="scooter-modal" role="dialog" aria-modal="true">
-          <div class="scooter-modal-card">
-            <p>${this.escape(this.scooterPopup)}</p>
-            <button type="button" class="menu-start" data-scooter-ok>OK</button>
-          </div>
-        </div>`
-            : ''
-        }
       `
       this.bindMuteBar()
       this.bindBack('raceSetup')
       this.root.querySelector('[data-ok]')?.addEventListener('click', () => confirmVehicleOk())
       this.root.querySelector('[data-tuning]')?.addEventListener('click', () => openTuning())
-      this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
-        this.scooterPopup = null
-        if (this.scooterForceSkate || this.scooterLeaveAttempts >= SCOOTER_INSULT_MAX) {
-          this.selectedVehicle = 'skate'
-          this.clearScooterTrap()
-        }
-        this.render()
-      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-branch]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const b = (btn.dataset.branch || 'auto') as VehicleBranch
           this.selectedBranch = b
           const pool = kindsInBranch(b)
           if (!pool.includes(this.selectedVehicle)) {
-            this.selectedVehicle = pool.find((k) => k !== 'scooter') ?? pool[0]!
+            this.selectedVehicle = pool.find((k) => !isScooterTrapKind(k)) ?? pool[0]!
             this.clearScooterTrap()
           }
           this.render()
@@ -1607,13 +1706,15 @@ export class Menu {
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-vehicle]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          this.selectedVehicle = (btn.dataset.vehicle as VehicleKind) || 'street'
-          this.selectedBranch = vehicleBranch(this.selectedVehicle)
-          if (this.selectedVehicle !== 'scooter') this.clearScooterTrap()
+          const next = (btn.dataset.vehicle as VehicleKind) || 'street'
+          this.selectedVehicle = next
+          this.selectedBranch = vehicleBranch(next)
+          // Jen výběr — past až při potvrzení OK / Enter
+          if (!isScooterTrapKind(next)) this.clearScooterTrap()
           const race = this.raceApi?.get()
-          if (race && this.selectedVehicle !== 'scooter') {
+          if (race && !isScooterTrapKind(next)) {
             this.raceApi?.set({
-              opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, false),
+              opponents: clampOpponentsToCategory(race.opponents, next, false),
             })
           }
           this.render()
@@ -1670,7 +1771,7 @@ export class Menu {
                 </div>
                 <div class="veh-stats" id="tune-stats">${statsBarsHtml(kind, (key) => t(`menu.stat.${key}`), this.tuning)}</div>
                 ${
-                  kind === 'scooter'
+                  isScooterTrapKind(kind)
                     ? `<p class="tune-rules scooter-warn">${t('menu.scooterTrap')}</p>`
                     : ''
                 }
@@ -1736,7 +1837,6 @@ export class Menu {
               <details class="settings-advanced">
                 <summary>${t('menu.settingsAdvanced')}</summary>
                 <div class="settings-advanced-list">
-                  <button type="button" class="btn-ghost home-panel" data-go="competitions">${t('menu.settingsCompetitions')}</button>
                   <button type="button" class="btn-ghost home-panel" data-go="aiLearn">${t('menu.settingsAiLearn')}</button>
                 </div>
               </details>
@@ -1758,62 +1858,11 @@ export class Menu {
             go === 'difficulty' ||
             go === 'audio' ||
             go === 'atmosphere' ||
-            go === 'competitions' ||
             go === 'aiLearn'
           ) {
             this.beginSettingsDraft(go)
           }
           this.screen = go
-          this.render()
-        })
-      })
-      return
-    }
-
-    if (this.screen === 'competitions') {
-      const cur = this.competition.id
-      const pick = COMPETITIONS.find((c) => c.id === cur) ?? COMPETITIONS[0]!
-      const art = menuArtForTone(
-        this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone,
-        this.atmosphereApi?.get().calendarPack ?? DEFAULT_ATMOSPHERE.calendarPack,
-      )
-      this.root.innerHTML = `
-        ${wm}
-        ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock">
-          <div class="menu-panel-body">
-            <p class="tune-rules menu-scroll-hint">${t('menu.compBlurb')}</p>
-            <div class="tracks-layout">
-              <div class="tracks-list">
-                ${COMPETITIONS.map((c) => {
-                  const active = c.id === cur ? 'active' : ''
-                  return `<button type="button" class="track-card ${active}" data-comp="${c.id}">
-                    <strong>${t(`comp.${c.id}`)}</strong>
-                    <span>${t(`comp.${c.id}.blurb`)}</span>
-                  </button>`
-                }).join('')}
-              </div>
-              <div class="tracks-preview-pane comp-preview-pane" style="--comp-photo:url('${art.race}')">
-                <div class="comp-preview-hero"></div>
-                <div class="track-preview-meta">
-                  <strong>${t(`comp.${pick.id}`)}</strong>
-                  <span>${t(`comp.${pick.id}.blurb`)}</span>
-                </div>
-                <p class="tune-help">${t(`comp.${pick.id}.help`)}</p>
-              </div>
-            </div>
-          </div>
-          ${this.settingsOkNavRow()}
-        </div>
-      `
-      this.bindMuteBar()
-      this.bindSettingsOkEsc(this.settingsSubBack)
-      this.root.querySelectorAll<HTMLButtonElement>('[data-comp]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          this.audioApi?.playClick?.()
-          const id = (btn.dataset.comp || 'none') as CompetitionId
-          this.competition = { id }
-          saveCompetitionSettings(this.competition)
           this.render()
         })
       })
@@ -2087,6 +2136,9 @@ export class Menu {
                   <button type="button" class="track-card ${trickKind === 'skate' ? 'active' : ''}" data-trick-kind="skate">
                     <strong>${t('vehicle.skate')}</strong>
                   </button>
+                  <button type="button" class="track-card ${trickKind === 'skates' ? 'active' : ''}" data-trick-kind="skates">
+                    <strong>${t('vehicle.skates')}</strong>
+                  </button>
                   <button type="button" class="track-card ${trickKind === 'bike' ? 'active' : ''}" data-trick-kind="bike">
                     <strong>${t('vehicle.bike')}</strong>
                   </button>
@@ -2157,7 +2209,9 @@ export class Menu {
       wireTrickKeys()
       this.root.querySelectorAll<HTMLButtonElement>('[data-trick-kind]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          const next = btn.dataset.trickKind === 'bike' ? 'bike' : 'skate'
+          const raw = btn.dataset.trickKind
+          const next: 'skate' | 'skates' | 'bike' =
+            raw === 'bike' ? 'bike' : raw === 'skates' ? 'skates' : 'skate'
           if (next === this.ctrlTrickKind) return
           this.ctrlTrickKind = next
           this.root.querySelectorAll<HTMLButtonElement>('[data-trick-kind]').forEach((b) => {
@@ -2198,7 +2252,15 @@ export class Menu {
       const worldList = this.worldRecords
         .filter((e) => {
           if (filter && e.trackId !== filter) return false
-          const fs = e.vehicle === 'skate' || e.vehicle === 'bike' || e.vehicle === 'scooter'
+          const fs =
+            e.vehicle === 'skate' ||
+            e.vehicle === 'skates' ||
+            e.vehicle === 'bike' ||
+            e.vehicle === 'scooter' ||
+            e.vehicle === 'rocketScooter' ||
+            e.vehicle === 'rocketSkate' ||
+            e.vehicle === 'rocketSkates' ||
+            e.vehicle === 'rocketBike'
           return board === 'freestyle' ? fs : !fs
         })
         .slice(0, 30)
@@ -2229,19 +2291,26 @@ export class Menu {
         .map((e, i) => {
           const tr = TRACKS.find((x) => x.id === e.trackId)
           const trackLabel = tr ? this.trackName(tr) : e.trackId
-          const time = e.bestTimeMs > 0 ? formatTime(e.bestTimeMs) : '—'
-          const score =
+          const laps = Math.max(1, Math.round(Number((e as { laps?: number }).laps) || 1))
+          const time =
             board === 'freestyle'
               ? `FS ${e.bestFsScore || 0}${e.bestTrickPts > 0 ? ` · ${e.bestTrickPts.toFixed(1)}` : ''}`
-              : '—'
+              : e.bestTimeMs > 0
+                ? formatTime(e.bestTimeMs)
+                : '—'
           const ghost = e.immortal
             ? `<span class="lb-ghost" title="${t('menu.immortalBadge')}" aria-label="${t('menu.immortalBadge')}">👻</span>`
-            : ''
+            : `<span class="lb-ghost lb-ghost--off" aria-hidden="true"></span>`
           return `<li class="lb-row ${e.immortal ? 'lb-row-immortal' : ''}">
             <span class="lb-rank">${i + 1}.</span>
             <span class="lb-player">${ghost}${this.escape(e.player)}</span>
-            <span class="lb-meta">${this.escape(trackLabel)} · ${this.vehicleLabel(e.vehicle as VehicleKind)}</span>
-            <span class="lb-score">${score}</span>
+            <span class="lb-meta">
+              <span class="lb-track">${this.escape(trackLabel)}</span>
+              <span class="lb-sep">·</span>
+              <span class="lb-vehicle">${this.vehicleLabel(e.vehicle as VehicleKind)}</span>
+              <span class="lb-sep">·</span>
+              <span class="lb-laps">${laps} ${t('menu.onlineLaps').toLowerCase()}</span>
+            </span>
             <span class="lb-time">${time}</span>
           </li>`
         })
@@ -2306,113 +2375,60 @@ export class Menu {
       ) {
         this.raceApi?.set({ opponents: opp })
       }
-      const pick = DIFFICULTIES.find((d) => d.id === this.selectedDifficulty) ?? DIFFICULTIES[2]!
-      const pickArt = difficultyArt(pick.id)
-      if (this.difficultyAccordionOpen == null) this.difficultyAccordionOpen = 'level'
-      const levelBody = `
-        <div class="tracks-layout diff-layout">
-          <div class="tracks-list diff-list">
-            ${DIFFICULTIES.map((d) => {
-              const active = d.id === this.selectedDifficulty ? 'active' : ''
-              return `<button type="button" class="track-card track-card-photo diff-card ${active}" data-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
-                <strong>${t(`diff.${d.id}`)}</strong>
-                <span>${t(`diff.${d.id}Blurb`)}</span>
-              </button>`
-            }).join('')}
-          </div>
-          <div class="tracks-preview-pane diff-preview-pane" style="--menu-photo:url('${pickArt}')">
-            <div class="track-preview-meta">
-              <strong>${t(`diff.${pick.id}`)}</strong>
-              <span>${t(`diff.${pick.id}Help`)}</span>
-            </div>
-          </div>
-        </div>`
-      const lapsBody = `
-        <p class="tune-help">${t('menu.circuitLapsBlurb')}</p>
-        <div class="dir-grid" style="margin:12px 0">
-          ${RACE_LAP_CHOICES.map((n) => {
-            const active = n === clampRaceLaps(race.laps) ? 'active' : ''
-            return `<button type="button" class="track-card ${active}" data-race-laps="${n}"><strong>${n}</strong></button>`
-          }).join('')}
-        </div>`
-      const oppBody = `
-        <p class="tune-help">${t('menu.opponentsBlurb')}</p>
-        <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
-          <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} style="margin-top:4px" />
-          <span>
-            <strong>${t('menu.opponentsRandomEach')}</strong>
-            <span class="tune-help" style="display:block;margin-top:4px">${t('menu.opponentsRandomEachBlurb')}</span>
-          </span>
-        </label>
-        <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
-        ${[0, 1, 2]
-          .map((slot) => {
-            const cur = opp[slot]!
-            return `<div class="opp-row">
-              <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
-              <div class="opp-picks">
-                ${pool
-                  .map((k) => {
-                    const active = k === cur ? 'active' : ''
-                    const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
-                    return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
-                    <strong>${this.vehicleLabel(k)}</strong>
-                  </button>`
-                  })
-                  .join('')}
-              </div>
-            </div>`
-          })
-          .join('')}
-        <button type="button" class="menu-start" data-opp-random style="margin-top:14px" ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
-        </div>`
-      const diffAcc = [
-        this.menuAccordionBlock({
-          id: 'level',
-          open: this.difficultyAccordionOpen,
-          title: t('menu.difficulty'),
-          meta: t(`diff.${pick.id}`),
-          active: true,
-          body: levelBody,
-        }),
-        this.menuAccordionBlock({
-          id: 'laps',
-          open: this.difficultyAccordionOpen,
-          title: t('menu.circuitLaps'),
-          meta: String(clampRaceLaps(race.laps)),
-          body: lapsBody,
-        }),
-        this.menuAccordionBlock({
-          id: 'opponents',
-          open: this.difficultyAccordionOpen,
-          title: t('menu.opponents'),
-          meta: race.randomOpponentsEachRace ? t('menu.opponentsRandomEach') : opp.map((k) => this.vehicleLabel(k)).join(' · '),
-          body: oppBody,
-        }),
-      ].join('')
+      // Flat track-grid jako Audio / Atmosphere (jen názvy, bez blurbu / help)
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock">
+        <div class="menu-shell menu-panel menu-panel-dock menu-difficulty">
           <div class="menu-panel-body">
-            <div class="menu-accordion">${diffAcc}</div>
+            <p class="tune-rules">${t('menu.difficulty')}</p>
+            <div class="track-grid">
+              ${DIFFICULTIES.map((d) => {
+                const active = d.id === this.selectedDifficulty ? 'active' : ''
+                return `<button type="button" class="track-card track-card-photo ${active}" data-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
+                  <strong>${t(`diff.${d.id}`)}</strong>
+                </button>`
+              }).join('')}
+            </div>
+            <div class="atm-scene-panel">
+              <p class="atm-scene-title">${t('menu.opponents')}</p>
+              <p class="tune-help">${t('menu.opponentsBlurb')}</p>
+              <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+                <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} style="margin-top:4px" />
+                <span>
+                  <strong>${t('menu.opponentsRandomEach')}</strong>
+                  <span class="tune-help" style="display:block;margin-top:4px">${t('menu.opponentsRandomEachBlurb')}</span>
+                </span>
+              </label>
+              <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
+              ${[0, 1, 2]
+                .map((slot) => {
+                  const cur = opp[slot]!
+                  return `<div class="opp-row">
+                    <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
+                    <div class="opp-picks">
+                      ${pool
+                        .map((k) => {
+                          const active = k === cur ? 'active' : ''
+                          const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
+                          return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
+                          <strong>${this.vehicleLabel(k)}</strong>
+                        </button>`
+                        })
+                        .join('')}
+                    </div>
+                  </div>`
+                })
+                .join('')}
+              <button type="button" class="menu-start" data-opp-random style="margin-top:14px" ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
+              </div>
+            </div>
           </div>
           ${this.settingsOkNavRow()}
         </div>
       `
       this.bindMuteBar()
       this.bindSettingsOkEsc(this.settingsSubBack)
-      this.bindMenuAccordionToggle((id) => {
-        const next = id as 'level' | 'laps' | 'opponents'
-        this.difficultyAccordionOpen = this.difficultyAccordionOpen === next ? null : next
-      })
-      this.root.querySelectorAll<HTMLButtonElement>('[data-race-laps]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          this.audioApi?.playClick?.()
-          this.raceApi?.set({ laps: clampRaceLaps(Number(btn.dataset.raceLaps)) })
-          this.render()
-        })
-      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-diff]').forEach((btn) => {
         btn.addEventListener('click', () => {
           this.audioApi?.playClick?.()
@@ -2625,6 +2641,9 @@ export class Menu {
 
       const openBranch = (b: VehicleBranch) => {
         this.champBranch = b
+        // Nedokončený draft (bez ligy/obtížnosti) → zruš a začni znovu.
+        discardIncompleteCareer(b, 1)
+        discardIncompleteCareer(b, 2)
         const s2 = getCareer(b, 2)
         const s1 = getCareer(b, 1)
         if (s2 && !s2.done) {
@@ -2635,9 +2654,25 @@ export class Menu {
           goBrief(s1)
           return
         }
-        // Nová sezóna → povinný výběr ze 2 nejpomalejších (všechny větve)
-        const season: 1 | 2 = meta.season2Unlocked[b] && s1?.done ? 2 : 1
-        this.champSeason = season
+        // S2: bez výběru auta — snapshot po S1 → výběr ligy + obtížnosti.
+        if (meta.season2Unlocked[b] && s1?.done && meta.season1End?.[b]) {
+          this.champSeason = 2
+          try {
+            const career = startSeason2FromSnapshot(b, this.selectedDifficulty)
+            this.champCareer = career
+            this.screen = needsChampPostQualSetup(career) ? 'champPostQual' : 'champLeague'
+            this.leagueAccordionOpen = career.league
+            this.seriesAccordionOpen = 'diff'
+            this.render()
+          } catch {
+            this.champSeason = 1
+            this.screen = 'champStarter'
+            this.render()
+          }
+          return
+        }
+        // S1 → výběr ze 2 nejpomalejších + kvalifikace
+        this.champSeason = 1
         this.screen = 'champStarter'
         this.render()
       }
@@ -2706,28 +2741,50 @@ export class Menu {
     if (this.screen === 'champStarter') {
       const order = listUnlockOrder(this.champBranch)
       const budget = CHAMP_START_CASH
-      // Levnější vlevo, dražší vpravo (Jet půlka na půlku)
-      const starters = [...starterVehicles(this.champBranch)]
-        .map((k) => {
-          const idx = order.indexOf(k)
-          const price =
-            vehicleBuyPrice(this.champBranch, Math.max(0, idx), this.selectedDifficulty) ?? 15_000
-          return { k, price, idx }
-        })
-        .sort((a, b) => a.price - b.price || a.idx - b.idx)
-      const halves = starters
+      const starters = [...starterVehicles(this.champBranch)].map((k, tileIdx) => {
+        const idx = order.indexOf(k)
+        const price =
+          vehicleBuyPrice(this.champBranch, Math.max(0, idx < 0 ? 0 : idx), this.selectedDifficulty) ??
+          15_000
+        return { k, price, tileIdx }
+      })
+      // FS: pevné pořadí dlaždic (ne podle ceny) — skate, BMX, brusle, koloběžka
+      if (this.champBranch !== 'freestyle') {
+        starters.sort((a, b) => a.price - b.price || a.tileIdx - b.tileIdx)
+      }
+      const fsFour = this.champBranch === 'freestyle' && starters.length >= 4
+      const tileHtml = starters
         .map(({ k, price }, i) => {
           const art = champStarterVehicleArt(k, this.champBranch)
-          const info = `${t(`vehicle.${k}.max`)} · ${t(`vehicle.${k}.invented`)}`
+          // Koloběžka / raketová: jen název vozidla, žádný popis (prázdný sub drží výšku)
+          const isScooter = k === 'scooter' || k === 'rocketScooter'
+          const sub = isScooter
+            ? `<span class="gta-tile-sub" aria-hidden="true"></span>`
+            : `<span class="gta-tile-sub">${this.escape(`${t(`vehicle.${k}.max`)} · ${t(`vehicle.${k}.invented`)}`)}</span>`
+          if (fsFour) {
+            return `<div class="gta-tile" style="--tile:url('${art}')">
+            <span class="gta-tile-kicker">${t('menu.jet')} · ${this.formatKc(price)}</span>
+            <strong class="gta-tile-label">${this.vehicleLabel(k)}</strong>
+            ${sub}
+            <button type="button" class="menu-start gta-tile-start-btn" data-champ-start-buy="${k}">${t('menu.jet')}</button>
+          </div>`
+          }
           const side = i === 0 ? 'cheap' : 'pricey'
           return `<div class="gta-tile gta-tile-starter gta-tile-starter--${side}" style="--tile:url('${art}')">
             <span class="gta-tile-kicker">${t('menu.jet')} · ${this.formatKc(price)}</span>
             <strong class="gta-tile-label">${this.vehicleLabel(k)}</strong>
-            <span class="gta-tile-sub">${this.escape(info)}</span>
+            ${sub}
             <button type="button" class="menu-start gta-tile-start-btn" data-champ-start-buy="${k}">${t('menu.jet')}</button>
           </div>`
         })
         .join('')
+      const tilesBlock = fsFour
+        ? `<div class="gta-tiles gta-tiles-champ-hub" aria-label="${t('champ.starterTitle')}">${tileHtml}</div>`
+        : `<div class="gta-tiles gta-tiles-home3 gta-tiles-setup gta-tiles-champ-starter" aria-label="${t('champ.starterTitle')}">
+            <div class="gta-tile-hero gta-tile-jet-split" role="group" aria-label="${t('menu.jet')}">
+              ${tileHtml}
+            </div>
+          </div>`
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -2737,11 +2794,7 @@ export class Menu {
             <p class="gta-tagline champ-starter-budget">${t('champ.cash')} · ${this.formatChampCash(budget)}</p>
             <p class="gta-tagline gta-tagline--soft">${t(`menu.branch.${this.champBranch}`)} · S${this.champSeason} · ${t('champ.starterTitle')}</p>
           </header>
-          <div class="gta-tiles gta-tiles-home3 gta-tiles-setup gta-tiles-champ-starter" aria-label="${t('champ.starterTitle')}">
-            <div class="gta-tile-hero gta-tile-jet-split" role="group" aria-label="${t('menu.jet')}">
-              ${halves}
-            </div>
-          </div>
+          ${tilesBlock}
           ${this.backRow('champHub', 'flow')}
         </div>
       `
@@ -2749,6 +2802,11 @@ export class Menu {
       this.bindBack('champHub')
       const buyStarter = (k: VehicleKind) => {
         if (!starters.some((s) => s.k === k)) return
+        if (isScooterTrapKind(k)) {
+          this.selectedVehicle = k
+          this.bumpScooterTrap()
+          return
+        }
         try {
           const career = startNewSeason(
             this.champBranch,
@@ -2789,7 +2847,9 @@ export class Menu {
         return
       }
       if (needsChampPostQualSetup(career)) {
-        this.screen = career.leagueChosen ? 'champSeries' : 'champLeague'
+        this.screen = 'champPostQual'
+        this.leagueAccordionOpen = career.league
+        this.seriesAccordionOpen = 'diff'
         this.render()
         return
       }
@@ -2875,6 +2935,96 @@ export class Menu {
       return
     }
 
+    if (this.screen === 'champPostQual') {
+      const stored = getCareer(this.champBranch, this.champSeason)
+      const career =
+        (this.champLeagueDraft || this.champSeriesDraft) && this.champCareer
+          ? this.champCareer
+          : (stored ?? this.champCareer)
+      this.champCareer = career
+      if (!career || !needsChampPostQualSetup(career)) {
+        this.screen = career ? 'champBrief' : 'champHub'
+        this.render()
+        return
+      }
+      this.ensureChampLeagueDefaults(career)
+      this.beginChampLeagueDraft(career)
+      this.beginChampSeriesDraft(career)
+      if (this.leagueAccordionOpen == null) this.leagueAccordionOpen = career.league
+      const diffBody = `
+        <div class="tracks-list diff-list champ-postqual-diff">
+          ${DIFFICULTIES.map((d) => {
+            const active = d.id === career.difficulty ? 'active' : ''
+            return `<button type="button" class="track-card track-card-photo diff-card ${active}" data-champ-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
+              <strong>${t(`diff.${d.id}`)}</strong>
+            </button>`
+          }).join('')}
+        </div>`
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline">${t('champ.postQualTitle')} · ${t(`menu.branch.${career.branch}`)} · S${career.season}</p>
+          </header>
+          <div class="gta-home-scroll champ-pit-body menu-panel-body">
+            <p class="tune-help">${t('champ.postQualHint')}</p>
+            <div class="champ-postqual-grid">
+              <section class="champ-postqual-col">
+                <p class="atm-scene-title">${t('champ.leagueTitle')}</p>
+                <div class="champ-league-list">${this.leagueAccordionHtml(career)}</div>
+                <p class="tune-help">${t(`champ.league.${career.league}`)} · ${t(`champ.pool.${career.trackPool}`)} · ${LEAGUE_LAPS[career.league]} ${t('champ.lapUnit')}</p>
+              </section>
+              <section class="champ-postqual-col">
+                <p class="atm-scene-title">${t('champ.seriesTile')}</p>
+                ${diffBody}
+              </section>
+            </div>
+          </div>
+          ${this.champOkNavRow('data-champ-postqual-ok')}
+        </div>
+      `
+      this.bindMuteBar()
+      this.root.querySelector('[data-champ-postqual-ok]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        if (!this.champCareer) return
+        this.champCareer.leagueChosen = true
+        this.champCareer.seriesChosen = true
+        this.champLeaguePref = this.champCareer.league
+        this.champPoolPref = this.champCareer.trackPool
+        this.selectedDifficulty = this.champCareer.difficulty
+        this.commitChampLeagueDraft()
+        this.commitChampSeriesDraft()
+        markChampSetupComplete(this.champCareer)
+        this.screen = 'champBrief'
+        this.render()
+      })
+      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.revertChampLeagueDraft(this.champCareer)
+        this.revertChampSeriesDraft(this.champCareer)
+        if (this.champCareer) {
+          discardIncompleteCareer(this.champCareer.branch, this.champCareer.season)
+          this.champCareer = null
+        }
+        this.screen = 'champHub'
+        this.render()
+      })
+      this.bindLeagueAccordion(career)
+      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-diff]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (!this.champCareer) return
+          const id = btn.dataset.champDiff as DifficultyId
+          if (!DIFFICULTIES.some((d) => d.id === id)) return
+          this.champCareer.difficulty = id
+          this.selectedDifficulty = id
+          this.render()
+        })
+      })
+      return
+    }
+
     if (this.screen === 'champLeague') {
       // Při aktivním draftu držet paměť (getCareer by přepsal neuložené volby).
       const stored = getCareer(this.champBranch, this.champSeason)
@@ -2909,13 +3059,17 @@ export class Menu {
                 : `<p class="tune-help">${t('champ.leagueHint')}</p>`
             }
             <div class="champ-league-list">${this.leagueAccordionHtml(career)}</div>
-            <p class="tune-help" style="margin-top:12px">${t(`champ.league.${career.league}`)} · ${t(`champ.pool.${career.trackPool}`)}</p>
+            <p class="tune-help" style="margin-top:12px">${t(`champ.league.${career.league}`)} · ${t(`champ.pool.${career.trackPool}`)} · ${LEAGUE_LAPS[career.league]} ${t('champ.lapUnit')}</p>
+            ${
+              career.setupComplete
+                ? `<div class="champ-restart-row">
+              <button type="button" class="btn-ghost" data-champ-restart-season>${t('champ.restartSeason')}</button>
+              <button type="button" class="btn-ghost" data-champ-restart-career>${t('champ.restartCareer')}</button>
+            </div>`
+                : ''
+            }
           </div>
-          <div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-            <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-champ-league-ok>${t('menu.ok')}</button>
-            <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
-            ${this.kbdHintHtml()}
-          </div>
+          ${this.champOkNavRow('data-champ-league-ok')}
         </div>
       `
       this.bindMuteBar()
@@ -2933,7 +3087,44 @@ export class Menu {
       this.root.querySelector('[data-back]')?.addEventListener('click', () => {
         this.audioApi?.playClick?.()
         this.revertChampLeagueDraft(this.champCareer)
-        this.screen = postQual ? 'champHub' : 'champBrief'
+        if (postQual) {
+          discardIncompleteCareer(career.branch, career.season)
+          this.champCareer = null
+          this.screen = 'champHub'
+        } else {
+          this.screen = 'champBrief'
+        }
+        this.render()
+      })
+      this.root.querySelector('[data-champ-restart-season]')?.addEventListener('click', () => {
+        if (!window.confirm(t('champ.restartSeasonConfirm'))) return
+        const season = career.season
+        const branch = career.branch
+        restartChampSeason(branch, season)
+        this.champCareer = null
+        this.champBranch = branch
+        this.champSeason = season
+        if (season === 2) {
+          try {
+            this.champCareer = startSeason2FromSnapshot(branch, this.selectedDifficulty)
+            this.screen = 'champLeague'
+            this.leagueAccordionOpen = this.champCareer.league
+          } catch {
+            this.screen = 'champHub'
+          }
+        } else {
+          this.screen = 'champStarter'
+        }
+        this.render()
+      })
+      this.root.querySelector('[data-champ-restart-career]')?.addEventListener('click', () => {
+        if (!window.confirm(t('champ.restartCareerConfirm'))) return
+        const branch = career.branch
+        restartChampCareer(branch)
+        this.champCareer = null
+        this.champBranch = branch
+        this.champSeason = 1
+        this.screen = 'champStarter'
         this.render()
       })
       this.bindLeagueAccordion(career)
@@ -2977,7 +3168,6 @@ export class Menu {
         const active = d.id === career.difficulty ? 'active' : ''
         return `<button type="button" class="track-card track-card-photo ${active}" data-champ-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
           <strong>${t(`diff.${d.id}`)}</strong>
-          <span>${t(`diff.${d.id}Blurb`)}</span>
         </button>`
       }).join('')
       const rivalsLine = career.rivals.map((k) => this.vehicleLabel(k)).join(' · ')
@@ -3017,11 +3207,7 @@ export class Menu {
           <div class="gta-home-scroll champ-pit-body menu-panel-body">
             <div class="menu-accordion">${seriesAcc}</div>
           </div>
-          <div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-            <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-champ-series-ok>${t('menu.ok')}</button>
-            <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
-            ${this.kbdHintHtml()}
-          </div>
+          ${this.champOkNavRow('data-champ-series-ok')}
         </div>
       `
       const postQualSeries = needsChampPostQualSetup(career) && !career.seriesChosen
@@ -3032,7 +3218,7 @@ export class Menu {
         this.champCareer.seriesChosen = true
         this.selectedDifficulty = this.champCareer.difficulty
         this.commitChampSeriesDraft()
-        saveCareer(this.champCareer)
+        markChampSetupComplete(this.champCareer)
         this.screen = 'champBrief'
         this.render()
       })
@@ -3073,41 +3259,59 @@ export class Menu {
       const order = listUnlockOrder(career.branch)
       const shopDisplay = sortKindsBySpeedDesc(order)
       const nextLocked = order.find((k) => !career.unlocked.includes(k))
-      if (!this.champPitPreview || !order.includes(this.champPitPreview)) {
+      const trapShop: VehicleKind[] =
+        career.branch === 'freestyle' ? ['scooter', 'rocketScooter'] : []
+      if (
+        !this.champPitPreview ||
+        (!order.includes(this.champPitPreview) && !isScooterTrapKind(this.champPitPreview))
+      ) {
         this.champPitPreview = career.vehicle
       }
       const previewKind = this.champPitPreview
       const cart = this.pitCartSummary(career, draftTune, this.pitCartBuy)
-      const catalog = `<div class="champ-shop-list">${shopDisplay
-              .map((k) => {
-                const i = order.indexOf(k)
-                const owned = career.unlocked.includes(k)
-                const price = vehicleBuyPrice(career.branch, i, career.difficulty)
-                const isNext = nextLocked === k
-                const check = isNext ? canBuy(career, k) : null
-                const previewOn = previewKind === k ? 'is-preview' : ''
-                const inCart = this.pitCartBuy === k
-                const priceLabel = owned
-                  ? t('champ.shopOwned')
-                  : price != null
-                    ? this.formatKc(price)
-                    : '—'
-                const state = owned ? 'is-owned' : isNext ? 'is-next' : 'is-locked'
-                const buyBtn =
-                  isNext && check?.ok
-                    ? `<button type="button" class="btn-ghost ${inCart ? 'active' : ''}" data-champ-cart-buy>${inCart ? t('champ.cartQueued') : t('champ.addToCart')}</button>`
-                    : isNext && check?.reason === 'insufficient_cash'
-                      ? `<span class="tune-help">${t('champ.cantAfford')}</span>`
-                      : ''
-                return `<div class="champ-shop-row ${state} ${previewOn}" data-champ-preview="${k}" role="button" tabindex="0">
+      const shopRows = shopDisplay
+        .map((k) => {
+          const i = order.indexOf(k)
+          const owned = career.unlocked.includes(k)
+          const price = vehicleBuyPrice(career.branch, i, career.difficulty)
+          const isNext = nextLocked === k
+          const check = isNext ? canBuy(career, k) : null
+          const previewOn = previewKind === k ? 'is-preview' : ''
+          const inCart = this.pitCartBuy === k
+          const priceLabel = owned
+            ? t('champ.shopOwned')
+            : price != null
+              ? this.formatKc(price)
+              : '—'
+          const state = owned ? 'is-owned' : isNext ? 'is-next' : 'is-locked'
+          const buyBtn =
+            isNext && check?.ok
+              ? `<button type="button" class="btn-ghost ${inCart ? 'active' : ''}" data-champ-cart-buy="${k}">${inCart ? t('champ.cartQueued') : t('champ.addToCart')}</button>`
+              : isNext && check?.reason === 'insufficient_cash'
+                ? `<span class="tune-help">${t('champ.cantAfford')}</span>`
+                : ''
+          return `<div class="champ-shop-row ${state} ${previewOn}" data-champ-preview="${k}" role="button" tabindex="0">
                   <div>
                     <strong>${this.vehicleLabel(k)}</strong>
                     <span>${priceLabel}${isNext && !owned ? ` · ${t('champ.shopNext')}` : ''}${!owned ? ` · ${t('champ.shopPreview')}` : ''}</span>
                   </div>
                   ${buyBtn}
                 </div>`
-              })
-              .join('')}</div>`
+        })
+        .join('')
+      const trapRows = trapShop
+        .map((k) => {
+          const previewOn = previewKind === k ? 'is-preview' : ''
+          const inCart = this.pitCartBuy === k
+          return `<div class="champ-shop-row is-next ${previewOn}" data-champ-preview="${k}" role="button" tabindex="0">
+                  <div>
+                    <strong>${this.vehicleLabel(k)}</strong>
+                  </div>
+                  <button type="button" class="btn-ghost ${inCart ? 'active' : ''}" data-champ-cart-buy="${k}">${inCart ? t('champ.cartQueued') : t('champ.addToCart')}</button>
+                </div>`
+        })
+        .join('')
+      const catalog = `<div class="champ-shop-list">${shopRows}${trapRows}</div>`
       const vehiclePick = sortKindsBySpeedDesc(career.unlocked)
         .map((k) => {
           const active = k === career.vehicle ? 'active' : ''
@@ -3194,11 +3398,7 @@ export class Menu {
               </div>
             </div>
           </div>
-          <div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-            <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" data-champ-pit-ok>${t('menu.ok')}</button>
-            <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
-            ${this.kbdHintHtml()}
-          </div>
+          ${this.champOkNavRow('data-champ-pit-ok')}
         </div>
       `
       this.bindMuteBar()
@@ -3222,11 +3422,14 @@ export class Menu {
         this.vehiclePreview = new VehiclePreview(canvas)
         this.vehiclePreview.setVehicle(previewKind, this.currentLook())
       }
-      this.root.querySelector('[data-champ-cart-buy]')?.addEventListener('click', (e) => {
-        e.stopPropagation()
-        if (!nextLocked) return
-        this.pitCartBuy = this.pitCartBuy === nextLocked ? null : nextLocked
-        this.render()
+      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cart-buy]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const k = btn.dataset.champCartBuy as VehicleKind
+          if (!k) return
+          this.pitCartBuy = this.pitCartBuy === k ? null : k
+          this.render()
+        })
       })
       this.root.querySelector('[data-champ-cart-confirm]')?.addEventListener('click', () => {
         this.commitPitCart()
@@ -3537,14 +3740,11 @@ export class Menu {
                   })
                   .join('')}
               </div>
-              <p class="tune-rules" style="margin-top:10px">${t('menu.onlineLaps')}: <strong>${this.hostLaps}</strong></p>
-              <div class="dir-grid">
-                ${[1, 2, 3, 4, 5]
-                  .map(
-                    (n) =>
-                      `<button type="button" class="track-card ${n === this.hostLaps ? 'active' : ''}" data-host-laps="${n}"><strong>${n}</strong></button>`,
-                  )
-                  .join('')}
+              <p class="tune-rules" style="margin-top:10px">${t('menu.onlineLaps')}</p>
+              <div class="lap-stepper" role="group" aria-label="${t('menu.onlineLaps')}">
+                <button type="button" class="btn-ghost lap-step" data-host-laps-delta="-1" aria-label="-">−</button>
+                <input type="number" class="lap-step-input" min="${RACE_LAP_MIN}" max="${RACE_LAP_MAX}" step="1" value="${this.hostLaps}" data-host-laps-input inputmode="numeric" />
+                <button type="button" class="btn-ghost lap-step" data-host-laps-delta="1" aria-label="+">+</button>
               </div>
               <button type="button" class="menu-start" id="btn-host" style="margin-top:12px">${t('menu.onlineCreate')}</button>
             </section>
@@ -3566,15 +3766,24 @@ export class Menu {
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-host-track]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          this.selectedTrackId = btn.dataset.hostTrack || this.selectedTrackId
-          this.render()
+          const next = btn.dataset.hostTrack || this.selectedTrackId
+          if (next === this.selectedTrackId) return
+          this.selectedTrackId = next
+          // Jen přepnout active třídu — bez full re-render (scroll by skákal).
+          this.root.querySelectorAll<HTMLButtonElement>('[data-host-track]').forEach((b) => {
+            b.classList.toggle('active', b.dataset.hostTrack === this.selectedTrackId)
+          })
         })
       })
-      this.root.querySelectorAll<HTMLButtonElement>('[data-host-laps]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          this.hostLaps = clampRaceLaps(Number(btn.dataset.hostLaps) || 3)
-          this.render()
-        })
+      this.bindLapStepper({
+        get: () => this.hostLaps,
+        set: (n) => {
+          this.hostLaps = n
+          const input = this.root.querySelector<HTMLInputElement>('[data-host-laps-input]')
+          if (input && input.value !== String(n)) input.value = String(n)
+        },
+        deltaAttr: 'data-host-laps-delta',
+        inputAttr: 'data-host-laps-input',
       })
       this.root.querySelectorAll<HTMLButtonElement>('[data-join-code]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -3755,7 +3964,7 @@ export class Menu {
       if (this.screen === 'tracks') this.revertTracksDraft()
       if (this.screen === 'tuning') this.revertTuningDraft()
       if (this.screen === 'vehicles' && (to === 'home' || to === 'raceSetup')) {
-        if (this.selectedVehicle === 'scooter' && !this.tryLeaveScooter()) return
+        // Zpět = zrušit výběr (past jen při OK)
         this.revertVehicleDraft()
         this.clearScooterTrap()
       }
@@ -3768,21 +3977,29 @@ export class Menu {
   }
 
   private beginTracksDraft(): void {
+    if (this.draftTracks) return
     const race = this.raceApi?.get() ?? DEFAULT_RACE
     this.draftTracks = {
       trackId: this.selectedTrackId,
       reverse: !!race.reverse,
+      laps: clampRaceLaps(race.laps),
     }
   }
 
   private revertTracksDraft(): void {
     if (!this.draftTracks) return
     this.selectedTrackId = this.draftTracks.trackId
-    this.raceApi?.set({ reverse: this.draftTracks.reverse })
+    this.raceApi?.set({
+      reverse: this.draftTracks.reverse,
+      laps: clampRaceLaps(this.draftTracks.laps),
+    })
     this.draftTracks = null
   }
 
   private commitTracksDraft(): void {
+    // Dočti rozepsaná kola z inputu (OK bez blur by jinak neuložil change)
+    const input = this.root.querySelector<HTMLInputElement>('[data-track-laps-input]')
+    if (input) this.raceApi?.set({ laps: clampRaceLaps(input.value) })
     this.draftTracks = null
   }
 
@@ -3809,7 +4026,7 @@ export class Menu {
     this.selectedHelm = d.helm
     this.selectedBranch = d.branch
     const race = this.raceApi?.get()
-    if (race && d.vehicle !== 'scooter') {
+    if (race && !isScooterTrapKind(d.vehicle)) {
       this.raceApi?.set({
         opponents: clampOpponentsToCategory(race.opponents, d.vehicle, false),
       })
@@ -3886,12 +4103,17 @@ export class Menu {
       }
     }
     if (buy) {
-      const order = listUnlockOrder(career.branch)
-      const idx = order.indexOf(buy)
-      const price = idx >= 0 ? vehicleBuyPrice(career.branch, idx, career.difficulty) : null
-      if (price != null) {
-        total += price
-        lines.push(`${this.vehicleLabel(buy)} · ${this.formatKc(price)}`)
+      if (isScooterTrapKind(buy)) {
+        total += 15_000
+        lines.push(`${this.vehicleLabel(buy)} · ${this.formatKc(15_000)}`)
+      } else {
+        const order = listUnlockOrder(career.branch)
+        const idx = order.indexOf(buy)
+        const price = idx >= 0 ? vehicleBuyPrice(career.branch, idx, career.difficulty) : null
+        if (price != null) {
+          total += price
+          lines.push(`${this.vehicleLabel(buy)} · ${this.formatKc(price)}`)
+        }
       }
     }
     return { lines, total }
@@ -3899,6 +4121,12 @@ export class Menu {
 
   private commitPitCart(): void {
     if (!this.champCareer || !this.pitCartTune) return
+    // Koloběžka / raketová koloběžka v košíku = žádná platba, jen hláška
+    if (this.pitCartBuy && isScooterTrapKind(this.pitCartBuy)) {
+      this.selectedVehicle = this.pitCartBuy
+      this.bumpScooterTrap()
+      return
+    }
     let career = this.champCareer
     // Nejdřív downgrady (zdarma), pak upgrady — šamp bez solo rozpočtu
     for (const key of TUNE_KEYS) {
@@ -3929,7 +4157,9 @@ export class Menu {
     const career = this.champCareer
     if (!career || career.done) return
     if (needsChampPostQualSetup(career)) {
-      this.screen = career.leagueChosen ? 'champSeries' : 'champLeague'
+      this.screen = 'champPostQual'
+      this.leagueAccordionOpen = career.league
+      this.seriesAccordionOpen = 'diff'
       this.render()
       return
     }
@@ -3948,6 +4178,8 @@ export class Menu {
     this.raceApi?.set({ reverse: championshipReverse(career) })
     const look = this.currentLook()
     const fsQual = isChampFsQual(career)
+    const qual = isChampQualifying(career)
+    const laps = qual || fsQual ? 1 : championshipRaceLaps(career.league, trackId)
     this.onStart?.({
       mode: 'solo',
       trackId,
@@ -3960,16 +4192,16 @@ export class Menu {
       tuning: champTuningToSolo(career.tuning),
       name: this.playerName,
       difficulty: career.difficulty,
-      laps: isChampQualifying(career) && !fsQual ? 1 : undefined,
+      laps,
       timeLimitMs: fsQual ? CHAMP_FS_QUAL_MS : undefined,
       championship: { branch: career.branch, season: career.season },
     })
   }
 
   private startSolo(): void {
-    if (this.selectedVehicle === 'scooter') {
+    if (isScooterTrapKind(this.selectedVehicle)) {
       this.screen = 'vehicles'
-      this.tryLeaveScooter()
+      this.bumpScooterTrap()
       return
     }
     const look = this.currentLook()
@@ -3991,6 +4223,8 @@ export class Menu {
   private async loadWorldRecords(): Promise<void> {
     this.worldRecordsLoading = true
     this.render()
+    // Lokální lidské skóre → svět (boti už filtrovaní v Records)
+    shareLocalRecordsWithWorld()
     const trackId = this.lbTrackId || undefined
     const board = this.recordsMode
     try {
@@ -4085,13 +4319,10 @@ export class Menu {
                 <span><strong>${t('menu.lobbyFillAi')}</strong></span>
               </label>
               <h2>${t('menu.onlineLaps')}</h2>
-              <div class="dir-grid">
-                ${[1, 2, 3, 4, 5]
-                  .map(
-                    (n) =>
-                      `<button type="button" class="track-card ${n === room.laps ? 'active' : ''}" data-lobby-laps="${n}"><strong>${n}</strong></button>`,
-                  )
-                  .join('')}
+              <div class="lap-stepper" role="group" aria-label="${t('menu.onlineLaps')}">
+                <button type="button" class="btn-ghost lap-step" data-lobby-laps-delta="-1" aria-label="-">−</button>
+                <input type="number" class="lap-step-input" min="${RACE_LAP_MIN}" max="${RACE_LAP_MAX}" step="1" value="${room.laps}" data-lobby-laps-input inputmode="numeric" />
+                <button type="button" class="btn-ghost lap-step" data-lobby-laps-delta="1" aria-label="+">+</button>
               </div>
               <p class="tune-rules" style="margin-top:10px">${t('menu.track')}</p>
               <div class="dir-grid online-track-pick">
@@ -4141,15 +4372,32 @@ export class Menu {
     this.root.querySelector('#btn-ready')?.addEventListener('click', () => {
       this.onReadyToggle?.(!amReady)
     })
-    this.root.querySelectorAll<HTMLButtonElement>('[data-lobby-laps]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        this.onLobbyLaps?.(Number(btn.dataset.lobbyLaps) || 2)
-      })
+    this.bindLapStepper({
+      get: () => clampRaceLaps(this.lobby?.laps ?? this.hostLaps),
+      set: (n) => {
+        const input = this.root.querySelector<HTMLInputElement>('[data-lobby-laps-input]')
+        if (input && input.value !== String(n)) input.value = String(n)
+        // Subtitle v lobby — update bez skoku scrollu (setLobby přijde ze sítě).
+        const sub = this.root.querySelector('.menu-sub')
+        if (sub && this.lobby) {
+          const track = TRACKS.find((tr) => tr.id === this.lobby!.trackId)
+          const trackLabel = track ? this.trackName(track) : this.lobby.trackId
+          sub.textContent = `${t('menu.room')} ${this.lobby.code} · ${this.lobby.players.length}/${this.lobby.maxPlayers || 4} ${t('menu.playersOf')} · ${trackLabel} · ${n} ${t('menu.onlineLaps').toLowerCase()}`
+        }
+        this.onLobbyLaps?.(n)
+      },
+      deltaAttr: 'data-lobby-laps-delta',
+      inputAttr: 'data-lobby-laps-input',
     })
     this.root.querySelectorAll<HTMLButtonElement>('[data-lobby-track]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.lobbyTrack
-        if (id) this.onLobbyTrack?.(id)
+        if (!id || id === this.lobby?.trackId) return
+        // Okamžitě vizuálně — scroll zůstane; síťová odpověď dorovná přes setLobby.
+        this.root.querySelectorAll<HTMLButtonElement>('[data-lobby-track]').forEach((b) => {
+          b.classList.toggle('active', b.dataset.lobbyTrack === id)
+        })
+        this.onLobbyTrack?.(id)
       })
     })
     this.root.querySelector('#btn-race')?.addEventListener('click', () => {
@@ -4176,7 +4424,11 @@ export class Menu {
         this.onHostStart?.()
         return
       }
-      if (this.visible && this.lobby) this.render()
+      if (this.visible && this.lobby) {
+        const scrollPos = this.savePanelScroll()
+        this.render()
+        this.restorePanelScroll(scrollPos)
+      }
     }, 1000)
   }
 
@@ -4191,8 +4443,12 @@ export class Menu {
   private bindTracks(): void {
     this.root.querySelectorAll<HTMLButtonElement>('[data-track]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        this.selectedTrackId = btn.dataset.track || TRACKS[0].id
+        const next = btn.dataset.track || TRACKS[0].id
+        if (next === this.selectedTrackId) return
+        const scroll = this.savePanelScroll()
+        this.selectedTrackId = next
         this.render()
+        this.restorePanelScroll(scroll)
       })
     })
   }
@@ -4246,13 +4502,23 @@ export class Menu {
         <span class="track-card-est">${t('menu.sandboxTag')}</span>
       </button>`
     }
-    const attr = tr.estTime ? `${t('menu.estTimeShort')} ${tr.estTime}` : ''
     return `
       <button type="button" class="track-card track-card-lite ${active}" data-track="${tr.id}">
         <strong>${this.escape(this.trackName(tr))}</strong>
-        ${attr ? `<span>${attr}</span>` : ''}
       </button>
     `
+  }
+
+  /** Orientační čas do náhledu — kalibrace = ZávoďáQ / střední (ne formule). */
+  private trackEstPaceHtml(tr: TrackDef): string {
+    if (tr.sandbox || !tr.estTime) return ''
+    const line = t('menu.estTimePace', {
+      time: tr.estTime,
+      vehicle: t('vehicle.street'),
+      diff: t('diff.normal'),
+    })
+    return `<p class="tune-rules track-est-pace" title="${t('menu.estTimePaceHint')}">${line}</p>
+      <p class="tune-help track-est-pace-hint">${t('menu.estTimePaceHint')}</p>`
   }
 
   private trackName(tr: TrackDef): string {
@@ -4271,6 +4537,23 @@ export class Menu {
     const key = `hud.help.${kind}`
     const text = t(key)
     return (text === key ? t('hud.help') : text).replaceAll('\n', '<br/>')
+  }
+
+  /** Info o pádu — jen pokud peklostroj umí umřít (monster / pomalé vozy vynechat). */
+  private vehicleCrashInfoHtml(kind: VehicleKind): string {
+    if (vehicleBranch(kind) === 'monster') return ''
+    if (
+      kind === 'skate' ||
+      kind === 'skates' ||
+      kind === 'bike' ||
+      kind === 'rocketSkate' ||
+      kind === 'rocketSkates' ||
+      kind === 'rocketBike'
+    ) {
+      return `<p class="tune-rules vehicle-crash-info">${t('vehicle.crash.fs')}</p>`
+    }
+    if (!catalogCanDieFromSpeed(kind)) return ''
+    return `<p class="tune-rules vehicle-crash-info">${t('vehicle.crash.speed')}</p>`
   }
 
   private slider(key: keyof PlayerTuningValues, label: string, value: number): string {
@@ -4572,6 +4855,8 @@ export class Menu {
         trackId: e.trackId,
         vehicle: e.vehicle,
         bestTimeMs: e.bestTimeMs,
+        laps: e.laps,
+        immortal: !!e.immortal,
         player: e.player,
         at: e.at,
       })),
@@ -4697,7 +4982,7 @@ export class Menu {
     })
   }
 
-  /** Accordion lig: rozklik → uvnitř pool (polovina / všechny). */
+  /** Accordion lig: rozklik → poloviční / plný (směry). Meta = kola na okruhu. */
   private leagueAccordionHtml(career: ChampCareer): string {
     const scheduleLocked = career.round > 0
     return (['baby', 'small', 'grand'] as ChampLeague[])
@@ -4716,7 +5001,7 @@ export class Menu {
           <button type="button" class="track-card ${active ? 'active' : ''}" data-champ-league="${L}" aria-expanded="${isOpen ? 'true' : 'false'}">
             <span class="champ-league-head">
               <strong>${t(`champ.league.${L}`)}</strong>
-              <span class="champ-league-meta">${championshipTotalRounds(L)} ${t('champ.cupRounds')}</span>
+              <span class="champ-league-meta">${LEAGUE_LAPS[L]} ${t('champ.lapUnit')}</span>
             </span>
             <span class="champ-league-chevron" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
           </button>
@@ -4727,6 +5012,35 @@ export class Menu {
         </div>`
       })
       .join('')
+  }
+
+  /** Číselník kol 1–69 (quick race / host / lobby). */
+  private bindLapStepper(opts: {
+    get: () => number
+    set: (n: number) => void
+    deltaAttr?: string
+    inputAttr?: string
+  }): void {
+    const deltaAttr = opts.deltaAttr ?? 'data-race-laps-delta'
+    const inputAttr = opts.inputAttr ?? 'data-race-laps-input'
+    this.root.querySelectorAll<HTMLButtonElement>(`[${deltaAttr}]`).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        const d = Number(btn.getAttribute(deltaAttr)) || 0
+        opts.set(clampRaceLaps(opts.get() + d))
+      })
+    })
+    const input = this.root.querySelector<HTMLInputElement>(`[${inputAttr}]`)
+    if (!input) return
+    const commit = () => opts.set(clampRaceLaps(input.value))
+    input.addEventListener('change', commit)
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        commit()
+        input.blur()
+      }
+    })
   }
 
   private beginChampLeagueDraft(career: ChampCareer): void {

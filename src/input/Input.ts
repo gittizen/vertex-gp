@@ -296,9 +296,9 @@ export class Input {
     return this.keys.has('Escape') || this.actionHeld('menu')
   }
 
-  /** Esc / Backspace / remap Menu — pauza ↔ nápověda ↔ menu. */
+  /** Esc / Backspace / P / remap Menu — pauza ↔ nápověda ↔ menu. */
   get menuNavHeld(): boolean {
-    return this.escapeHeld || this.keys.has('Backspace')
+    return this.escapeHeld || this.keys.has('Backspace') || this.keys.has('KeyP')
   }
 
   private tapSteer(): number {

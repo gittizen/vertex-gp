@@ -8,6 +8,15 @@ export type Standing = {
   place: number
 }
 
+/** Flash při průjezdu checkpointem — čas + gap (zelená = náskok / 1.). */
+export type SplitToast = {
+  untilMs: number
+  timeMs: number
+  gapMs: number
+  ahead: boolean
+  name: string
+}
+
 /** Solo: hned po dojetí hráče. Multi: 15 s od prvního člověka, nebo všichni lidé. */
 export type FinishPolicy = 'solo' | 'multi'
 
@@ -18,12 +27,16 @@ export class RaceManager {
   private countdownAcc = 0
   raceTimeMs = 0
   standings: Standing[] = []
+  /** Checkpoint flash pro HUD (null = nic). */
+  splitToast: SplitToast | null = null
   private readonly track: Track
   private readonly vehicles: Vehicle[]
   private readonly lastT = new Map<Vehicle, number>()
   /** Etapa: cíl platí až po projetí části tratě (prevence okamžitého konce po Znovu). */
   private readonly stageArmed = new Map<Vehicle, boolean>()
   private finishGraceStartedAt = -1
+  private lastPlayerCheckpoint = -1
+  private lastPlayerLap = -1
   finishPolicy: FinishPolicy = 'solo'
   readonly isStage: boolean
   /** Volná plocha (Plácek) — bez kol / cíle, skóre = triky. */
@@ -45,6 +58,9 @@ export class RaceManager {
     this.countdownAcc = 0
     this.raceTimeMs = 0
     this.standings = []
+    this.splitToast = null
+    this.lastPlayerCheckpoint = -1
+    this.lastPlayerLap = -1
     this.finishGraceStartedAt = -1
     this.timeLimitMs =
       typeof opts?.timeLimitMs === 'number' && Number.isFinite(opts.timeLimitMs)
@@ -55,7 +71,7 @@ export class RaceManager {
     if (this.isStage) {
       this.totalLaps = 1
     } else if (typeof opts?.laps === 'number' && Number.isFinite(opts.laps)) {
-      this.totalLaps = Math.max(1, Math.min(5, Math.round(opts.laps)))
+      this.totalLaps = Math.max(1, Math.min(69, Math.round(opts.laps)))
     } else {
       this.totalLaps = 3
     }
@@ -63,11 +79,13 @@ export class RaceManager {
     this.vehicles.forEach((v, i) => {
       const pose = this.track.getStartPose(i)
       v.reset(pose.x, pose.z, pose.heading, 0)
-      v.groundY = pose.y
       const t0 = this.track.progressAt(pose.x, pose.z)
       this.lastT.set(v, t0)
       this.stageArmed.set(v, false)
       v.trackT = t0
+      // Bankovaný ovál: Y + roll hned na povrch (ne lerp z 0 pod asfalt)
+      v.snapToSurface(this.track, t0)
+      v.syncMesh(1)
       v.finished = false
       v.finishTime = 0
     })
@@ -169,7 +187,44 @@ export class RaceManager {
     }
 
     this.standings = this.computeStandings()
+    this.refreshPlayerSplitToast()
+    if (this.splitToast && this.raceTimeMs >= this.splitToast.untilMs) {
+      this.splitToast = null
+    }
     this.tryEndRace()
+  }
+
+  /** Po updateProgress + standings: flash při novém CP / kole. */
+  private refreshPlayerSplitToast(): void {
+    if (this.isSandbox || this.phase !== 'racing') return
+    const player = this.vehicles.find((v) => v.info.isPlayer)
+    if (!player || player.finished) return
+    const cp = player.checkpoint
+    const lap = player.lap
+    const crossed =
+      (this.lastPlayerCheckpoint >= 0 && cp > this.lastPlayerCheckpoint) ||
+      (this.lastPlayerLap >= 0 && lap > this.lastPlayerLap)
+    this.lastPlayerCheckpoint = cp
+    this.lastPlayerLap = lap
+    if (!crossed) return
+    const gap = this.playerGap()
+    if (!gap) {
+      this.splitToast = {
+        untilMs: this.raceTimeMs + 2200,
+        timeMs: this.raceTimeMs,
+        gapMs: 0,
+        ahead: true,
+        name: '',
+      }
+      return
+    }
+    this.splitToast = {
+      untilMs: this.raceTimeMs + 2200,
+      timeMs: this.raceTimeMs,
+      gapMs: gap.ms,
+      ahead: gap.ahead,
+      name: gap.name,
+    }
   }
 
   private tryEndRace(): void {
@@ -292,6 +347,11 @@ export class RaceManager {
   playerPlace(): number {
     const s = this.standings.find((x) => x.vehicle.info.isPlayer)
     return s?.place ?? 1
+  }
+
+  placeOf(vehicle: Vehicle): number {
+    const s = this.standings.find((x) => x.vehicle === vehicle)
+    return s?.place ?? 4
   }
 
   /**

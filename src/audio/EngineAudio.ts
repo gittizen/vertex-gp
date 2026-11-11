@@ -258,8 +258,68 @@ const KIND_SAMPLE: Record<VehicleKind, KindSample> = {
     bassMul: 0,
     silent: true,
   },
+  skates: {
+    id: 'skates',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
   bike: {
     id: 'bike',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
+  rocketSkate: {
+    id: 'rocketSkate',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
+  rocketSkates: {
+    id: 'rocketSkates',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
+  rocketBike: {
+    id: 'rocketBike',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1,
+    noise: 0,
+    cutoff: 1000,
+    amp: 0,
+    bassMul: 0,
+    silent: true,
+  },
+  rocketScooter: {
+    id: 'rocketScooter',
     low: 'idle',
     mid: 'mid',
     high: 'high',
@@ -816,6 +876,8 @@ export class EngineAudio {
     let step = 0
     let nextTime = 0
     let timer: number | null = null
+    /** techno/rap = 8; classic (tuc-tuc z dřívějšího rapu) = 16 */
+    let loopLen = 8
 
     const hitKick = (when: number, amp: number, deep = false) => {
       const osc = ctx.createOscillator()
@@ -885,10 +947,29 @@ export class EngineAudio {
       if (!playing) return
       const now = ctx.currentTime
       while (nextTime < now + 0.2) {
-        const slot = step % 8
+        const slot = step % loopLen
         const k = style.kickGain
         const s = style.snareGain
-        if (slot === 0) hitKick(nextTime, k, true)
+        if (loopLen === 16) {
+          // Classic = tuc-tuc (původní hustší rap pattern)
+          if (slot === 0 || slot === 8) hitKick(nextTime, k, true)
+          else if (slot === 2 || slot === 10) {
+            hitKick(nextTime, k * 0.72)
+            hitHat(nextTime + style.stepSec * 0.5, s * 0.28)
+          } else if (slot === 4 || slot === 12) {
+            hitSnare(nextTime, s)
+            hitKick(nextTime, k * 0.35, true)
+            hitHat(nextTime, s * 0.22)
+          } else if (slot === 6 || slot === 14) {
+            hitSnare(nextTime, s * 0.85)
+            hitHat(nextTime + style.stepSec * 0.45, s * 0.32)
+          } else if (slot % 2 === 1) {
+            hitHat(nextTime, s * (slot % 4 === 1 ? 0.55 : 0.38), slot % 8 === 5)
+          } else {
+            hitKick(nextTime, k * 0.4, true)
+            hitHat(nextTime, s * 0.3)
+          }
+        } else if (slot === 0) hitKick(nextTime, k, true)
         else if (slot === 1) {
           hitKick(nextTime, k * 0.85)
           hitHat(nextTime + style.stepSec * 0.5, s * 0.25)
@@ -924,6 +1005,7 @@ export class EngineAudio {
     const setStyle = (id: MusicId) => {
       const t = ctx.currentTime
       if (id === 'techno') {
+        loopLen = 8
         style = { stepSec: 0.14, kickGain: 0.9, snareGain: 0.48, padMul: 1 }
         a.frequency.setTargetAtTime(55, t, 0.15)
         b.frequency.setTargetAtTime(110, t, 0.15)
@@ -931,6 +1013,7 @@ export class EngineAudio {
         bG.gain.setTargetAtTime(0.12 * style.padMul, t, 0.15)
         filter.frequency.setTargetAtTime(900, t, 0.2)
       } else if (id === 'rap') {
+        loopLen = 8
         style = { stepSec: 0.17, kickGain: 1.0, snareGain: 0.68, padMul: 0.85 }
         a.frequency.setTargetAtTime(41, t, 0.15)
         b.frequency.setTargetAtTime(82, t, 0.15)
@@ -938,12 +1021,14 @@ export class EngineAudio {
         bG.gain.setTargetAtTime(0.08 * style.padMul, t, 0.15)
         filter.frequency.setTargetAtTime(420, t, 0.2)
       } else {
-        style = { stepSec: 0.22, kickGain: 0.32, snareGain: 0.2, padMul: 1.3 }
-        a.frequency.setTargetAtTime(130.8, t, 0.25)
-        b.frequency.setTargetAtTime(196, t, 0.25)
-        aG.gain.setTargetAtTime(0.2 * style.padMul, t, 0.2)
-        bG.gain.setTargetAtTime(0.16 * style.padMul, t, 0.2)
-        filter.frequency.setTargetAtTime(1800, t, 0.25)
+        // Zvuk 3 = tuc-tuc (dřívější hustší rap)
+        loopLen = 16
+        style = { stepSec: 0.15, kickGain: 1.15, snareGain: 0.72, padMul: 0.55 }
+        a.frequency.setTargetAtTime(38, t, 0.15)
+        b.frequency.setTargetAtTime(76, t, 0.15)
+        aG.gain.setTargetAtTime(0.2 * style.padMul, t, 0.15)
+        bG.gain.setTargetAtTime(0.07 * style.padMul, t, 0.15)
+        filter.frequency.setTargetAtTime(380, t, 0.2)
       }
     }
 

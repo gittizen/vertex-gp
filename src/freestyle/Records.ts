@@ -1,6 +1,6 @@
 import { FREESTYLE_VEHICLE_KINDS, type VehicleKind } from '../track/TrackDefs'
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
-import { pushCloudRecord } from './CloudRecords'
+import { pushCloudRecord, syncLocalRecordsToCloud } from './CloudRecords'
 
 export type RecordsBoard = 'race' | 'freestyle'
 
@@ -9,6 +9,14 @@ function isFsVehicle(kind: VehicleKind): boolean {
 }
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.records`
+
+/** Jména AI botů — nikdy nejdou do žebříčku / cloudu. */
+const BOT_NAMES = new Set(['Nikola Beran', 'Petra Holá', 'Marek Diviš'])
+
+export function isBotPlayerName(name: string): boolean {
+  const n = (name || '').trim()
+  return !n || BOT_NAMES.has(n)
+}
 
 export type RecordEntry = {
   player: string
@@ -20,6 +28,8 @@ export type RecordEntry = {
   bestFsScore: number
   /** Nejvíc bodů jen z triků */
   bestTrickPts: number
+  /** Počet kol při závodě (1 = stage / sandbox) */
+  laps: number
   at: number
   /** Solo nesmrtelnost — ve žebříčku s duchem */
   immortal?: boolean
@@ -34,7 +44,13 @@ function loadStore(): RecordsStore {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { entries: [] }
     const parsed = JSON.parse(raw) as RecordsStore
-    return { entries: Array.isArray(parsed.entries) ? parsed.entries : [] }
+    const entries = Array.isArray(parsed.entries) ? parsed.entries : []
+    return {
+      entries: entries.map((e) => ({
+        ...e,
+        laps: Math.max(1, Math.min(69, Math.round(Number(e.laps) || 1))),
+      })),
+    }
   } catch {
     return { entries: [] }
   }
@@ -44,6 +60,22 @@ function saveStore(store: RecordsStore): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
 }
 
+function sameSlot(a: RecordEntry, b: {
+  player: string
+  trackId: string
+  vehicle: VehicleKind
+  laps: number
+  immortal: boolean
+}): boolean {
+  return (
+    a.player === b.player &&
+    a.trackId === b.trackId &&
+    a.vehicle === b.vehicle &&
+    a.laps === b.laps &&
+    !!a.immortal === b.immortal
+  )
+}
+
 export function submitRaceRecord(input: {
   player: string
   trackId: string
@@ -51,17 +83,18 @@ export function submitRaceRecord(input: {
   timeMs: number
   fsScore: number
   trickPts: number
+  laps?: number
   immortal?: boolean
-}): RecordEntry {
-  const store = loadStore()
+}): RecordEntry | null {
   const player = (input.player || 'Hráč').trim().slice(0, 24)
+  // Boti / prázdné jméno — neukládat ani nesdílet
+  if (isBotPlayerName(player)) return null
+
   const immortal = !!input.immortal
-  const existing = store.entries.find(
-    (e) =>
-      e.player === player &&
-      e.trackId === input.trackId &&
-      e.vehicle === input.vehicle &&
-      !!e.immortal === immortal,
+  const laps = Math.max(1, Math.min(69, Math.round(input.laps ?? 1)))
+  const store = loadStore()
+  const existing = store.entries.find((e) =>
+    sameSlot(e, { player, trackId: input.trackId, vehicle: input.vehicle, laps, immortal }),
   )
   if (existing) {
     if (input.timeMs > 0 && (existing.bestTimeMs <= 0 || input.timeMs < existing.bestTimeMs)) {
@@ -69,6 +102,7 @@ export function submitRaceRecord(input: {
     }
     if (input.fsScore > existing.bestFsScore) existing.bestFsScore = input.fsScore
     if (input.trickPts > existing.bestTrickPts) existing.bestTrickPts = input.trickPts
+    existing.laps = laps
     existing.at = Date.now()
     existing.immortal = immortal
     saveStore(store)
@@ -82,6 +116,7 @@ export function submitRaceRecord(input: {
     bestTimeMs: input.timeMs > 0 ? input.timeMs : 0,
     bestFsScore: input.fsScore,
     bestTrickPts: input.trickPts,
+    laps,
     at: Date.now(),
     immortal,
   }
@@ -96,7 +131,7 @@ export function recordsFor(
   vehicle?: VehicleKind,
   board: RecordsBoard = 'race',
 ): RecordEntry[] {
-  let list = loadStore().entries
+  let list = loadStore().entries.filter((e) => !isBotPlayerName(e.player))
   if (board === 'freestyle') list = list.filter((e) => isFsVehicle(e.vehicle))
   else list = list.filter((e) => !isFsVehicle(e.vehicle))
   if (trackId) list = list.filter((e) => e.trackId === trackId)
@@ -116,7 +151,12 @@ export function topRecords(limit = 20, board: RecordsBoard = 'race'): RecordEntr
   return recordsFor(undefined, undefined, board).slice(0, limit)
 }
 
-/** Všechny záznamy (pro export kalibrace). */
+/** Všechny záznamy (pro export kalibrace / sync). */
 export function allRecords(): RecordEntry[] {
-  return loadStore().entries.slice()
+  return loadStore().entries.filter((e) => !isBotPlayerName(e.player)).slice()
+}
+
+/** Pošli lokální rekordy do světa (bez botů). */
+export function shareLocalRecordsWithWorld(): void {
+  void syncLocalRecordsToCloud(allRecords())
 }

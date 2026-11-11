@@ -5,7 +5,7 @@ import type { VehicleKind } from '../track/TrackDefs'
 import type { VehicleBranch } from '../vehicle/VehicleLook'
 
 /** Cache-bust po výměně menu fotek (jinak prohlížeč drží starý JPG). */
-const ART_V = 'v9'
+const ART_V = 'v11'
 
 /**
  * Rezervace (ať se nepřekrývá quick race × šamp):
@@ -72,6 +72,8 @@ const STARTER_VEHICLE_ART: Partial<Record<VehicleKind, string>> = {
   truck: 'menu/champ-starter-truck.jpg',
   skate: 'menu/champ-starter-skate.jpg',
   bike: 'menu/champ-starter-bike.jpg',
+  skates: 'menu/champ-starter-skates.jpg',
+  scooter: 'menu/champ-starter-scooter.jpg',
 }
 
 export function champStarterVehicleArt(kind: VehicleKind, branch: VehicleBranch): string {

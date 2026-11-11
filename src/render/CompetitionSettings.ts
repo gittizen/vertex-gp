@@ -30,22 +30,11 @@ export const DEFAULT_COMPETITION: CompetitionSettingsValues = {
   id: 'none',
 }
 
+/** Soutěže zrušeny — vždy klasický závod. */
 export function loadCompetitionSettings(): CompetitionSettingsValues {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_COMPETITION }
-    const parsed = JSON.parse(raw) as { id?: string }
-    const legacyId = String(parsed.id ?? '')
-    const rawId = (legacyId === 'championship' ? 'none' : legacyId) as CompetitionId
-    const id = COMPETITIONS.some((c) => c.id === rawId)
-      ? (rawId as CompetitionId)
-      : 'none'
-    return { id }
-  } catch {
-    return { ...DEFAULT_COMPETITION }
-  }
+  return { ...DEFAULT_COMPETITION }
 }
 
-export function saveCompetitionSettings(vals: CompetitionSettingsValues): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(vals))
+export function saveCompetitionSettings(_vals?: CompetitionSettingsValues): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_COMPETITION))
 }

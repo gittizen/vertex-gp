@@ -37,12 +37,16 @@ export const DEFAULT_RACE: RaceSettingsValues = {
   opponents: ['street', 'moto', 'formula'],
 }
 
+/** Rychlý závod / MP — číselník 1–69. */
+export const RACE_LAP_MIN = 1
+export const RACE_LAP_MAX = 69
+/** @deprecated dřív pevné chipy; UI teď používá číselník. */
 export const RACE_LAP_CHOICES = [1, 2, 3, 4, 5] as const
 
 export function clampRaceLaps(n: unknown): number {
   const v = typeof n === 'number' ? n : Number(n)
   if (!Number.isFinite(v)) return DEFAULT_RACE.laps
-  return Math.max(1, Math.min(5, Math.round(v)))
+  return Math.max(RACE_LAP_MIN, Math.min(RACE_LAP_MAX, Math.round(v)))
 }
 
 const TX_MODES: TransmissionMode[] = ['auto', 'manual', 'clutch']
@@ -93,14 +97,22 @@ export function clampOpponentsToCategory(
   return [fix(opponents[0]), fix(opponents[1]), fix(opponents[2])]
 }
 
+const REVERSE_NORMAL_FIX = `${STORAGE_KEY}.dirNormal.v1`
+
 export function loadRaceSettings(): RaceSettingsValues {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('klec-gp-race')
     if (!raw) return { ...DEFAULT_RACE, opponents: [...DEFAULT_RACE.opponents] }
     const parsed = JSON.parse(raw) as Partial<RaceSettingsValues> & { manualShift?: boolean }
     const op = Array.isArray(parsed.opponents) ? parsed.opponents : DEFAULT_RACE.opponents
+    // Jednorázově: default směr = normální (ne obráceně)
+    let reverse = Boolean(parsed.reverse)
+    if (!localStorage.getItem(REVERSE_NORMAL_FIX)) {
+      reverse = false
+      localStorage.setItem(REVERSE_NORMAL_FIX, '1')
+    }
     return {
-      reverse: Boolean(parsed.reverse),
+      reverse,
       transmission: normTransmission(parsed.transmission, parsed.manualShift),
       freestyle: false, // freestyle závod zrušen — skate/kolo mají triky v klasice
       skipCountdown: Boolean(parsed.skipCountdown),
@@ -124,14 +136,29 @@ export function loadRaceSettings(): RaceSettingsValues {
 
 export function saveRaceSettings(vals: RaceSettingsValues): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(vals))
+  try {
+    localStorage.setItem(REVERSE_NORMAL_FIX, '1')
+  } catch {
+    /* ignore */
+  }
 }
 
-/** Náhodní soupeři — v solo vždy stejná kategorie jako hráč. */
+/** Náhodní soupeři — v solo vždy stejná kategorie jako hráč (FS vč. raket, bez koloběžek). */
 export function randomOpponents(
   playerKind: VehicleKind = 'street',
   freestyleMode = false,
 ): [VehicleKind, VehicleKind, VehicleKind] {
   const pool = soloCategoryPool(playerKind, freestyleMode)
   const pick = () => pool[Math.floor(Math.random() * pool.length)] ?? 'street'
-  return [pick(), pick(), pick()]
+  const out: [VehicleKind, VehicleKind, VehicleKind] = [pick(), pick(), pick()]
+  // FS: zvyš šanci na raketového AI soupeře
+  if (freestyleMode || isFreestyleKind(playerKind)) {
+    const rockets = pool.filter(
+      (k) => k === 'rocketSkate' || k === 'rocketSkates' || k === 'rocketBike',
+    )
+    if (rockets.length > 0 && !out.some((k) => rockets.includes(k))) {
+      out[Math.floor(Math.random() * 3)] = rockets[Math.floor(Math.random() * rockets.length)]!
+    }
+  }
+  return out
 }

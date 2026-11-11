@@ -52,11 +52,26 @@ export function createVehicleMesh(kind: VehicleKind, color: number, neon = 0x7a8
     case 'skate':
       g = createSkateboard(paint, -1)
       break
+    case 'skates':
+      g = createRollerSkates(paint, -1)
+      break
     case 'bike':
       g = createBicycle(paint, -1)
       break
+    case 'rocketSkate':
+      g = createRocketSkateboard(paint, -1)
+      break
+    case 'rocketSkates':
+      g = createRocketRollerSkates(paint, -1)
+      break
+    case 'rocketBike':
+      g = createRocketBicycle(paint, -1)
+      break
     case 'scooter':
       g = createScooter(paint, -1)
+      break
+    case 'rocketScooter':
+      g = createRocketScooter(paint, -1)
       break
     default:
       g = createStreetCar(paint, neon)
@@ -674,7 +689,7 @@ function createFormula(color: number, neon = 0x7a8fa8): THREE.Group {
   return g
 }
 
-/** Monster truck — vysoký podvozek, klec, šikmá kapota, obří kola. */
+/** Monster truck — kompaktní auto-karoserie na obřích kolech (ne traktorová korba). */
 function createMonsterTruck(color: number, neon = 0x7a8fa8): THREE.Group {
   const g = new THREE.Group()
   const body = matPaint(color)
@@ -683,50 +698,46 @@ function createMonsterTruck(color: number, neon = 0x7a8fa8): THREE.Group {
   const chrome = matLambert(0xc8c8c8)
   const iron = matLambert(0x2a2e32)
 
-  // Rám / žebřina
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.22, 3.5), iron)
-  frame.position.set(0, 1.05, 0)
+  // Úzký rám pod autem
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.18, 2.9), iron)
+  frame.position.set(0, 1.05, 0.05)
   g.add(frame)
 
-  // Spodní korba + šikmá kapota
-  const tub = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.7, 2.4), body)
-  tub.position.set(0, 1.7, -0.15)
+  // Karoserie jako krátké auto (menší „korba“)
+  const tub = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.55, 1.65), body)
+  tub.position.set(0, 1.72, -0.05)
   paint(tub)
   g.add(tub)
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.22, 1.45), body.clone())
-  hood.position.set(0, 1.95, 1.45)
-  hood.rotation.x = 0.22
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.2, 1.15), body.clone())
+  hood.position.set(0, 1.92, 1.15)
+  hood.rotation.x = 0.18
   paint(hood)
   g.add(hood)
-  const snout = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.45, 0.7), body.clone())
-  snout.position.set(0, 1.55, 2.05)
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.38, 0.55), body.clone())
+  snout.position.set(0, 1.58, 1.72)
   paint(snout)
   g.add(snout)
 
-  // Kabina
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.85, 1.15), glass)
-  cabin.position.set(0, 2.45, 0.15)
+  // Kabina víc dopředu, nižší
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.72, 0.95), glass)
+  cabin.position.set(0, 2.28, 0.28)
   g.add(cabin)
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.1, 1.0), body.clone())
-  roof.position.set(0, 2.95, 0.1)
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.09, 0.85), body.clone())
+  roof.position.set(0, 2.68, 0.22)
   paint(roof)
   g.add(roof)
 
-  // Roll cage
+  // Roll cage nad kabinou
   for (const sx of [-1, 1] as const) {
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.15, 6), chrome)
-    bar.position.set(0.78 * sx, 2.55, -0.55)
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.95, 6), chrome)
+    bar.position.set(0.68 * sx, 2.35, -0.35)
     g.add(bar)
   }
-  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.045, 6, 12, Math.PI), chrome)
+  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.04, 6, 12, Math.PI), chrome)
   hoop.rotation.x = Math.PI / 2
   hoop.rotation.z = Math.PI / 2
-  hoop.position.set(0, 2.85, -0.55)
+  hoop.position.set(0, 2.62, -0.35)
   g.add(hoop)
-  const cross = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.55, 6), chrome)
-  cross.rotation.z = Math.PI / 2
-  cross.position.set(0, 2.95, -0.55)
-  g.add(cross)
 
   // Blatníky nad koly
   for (const [sx, sz] of [
@@ -735,60 +746,63 @@ function createMonsterTruck(color: number, neon = 0x7a8fa8): THREE.Group {
     [-1, -1.45],
     [1, -1.45],
   ] as const) {
-    const fender = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 1.1), body.clone())
-    fender.position.set(1.35 * sx, 1.85, sz)
+    const fender = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.16, 0.95), body.clone())
+    fender.position.set(1.28 * sx, 1.78, sz)
     paint(fender)
     g.add(fender)
   }
 
-  // Nárazník + světla
-  const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.35, 0.45), chrome)
-  bumper.position.set(0, 1.15, 2.45)
+  const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.28, 0.38), chrome)
+  bumper.position.set(0, 1.18, 2.15)
   g.add(bumper)
   const lightMat = matLambert(0xffe8c0, { emissive: 0xffcc88, emissiveIntensity: 0.45 })
   for (const sx of [-1, 1] as const) {
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 0.08), lightMat)
-    hl.position.set(0.7 * sx, 1.55, 2.4)
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.15, 0.07), lightMat)
+    hl.position.set(0.58 * sx, 1.52, 2.05)
     g.add(hl)
   }
 
-  // Korba vzadu
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.45, 1.2), dark)
-  bed.position.set(0, 1.85, -1.55)
+  // Krátký bed / spoiler vzadu (ne velká traktorová korba)
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.28, 0.7), dark)
+  bed.position.set(0, 1.78, -1.15)
   g.add(bed)
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 0.18), body.clone())
+  paint(lip)
+  lip.position.set(0, 1.98, -1.45)
+  g.add(lip)
 
-  // Stojanové výfuky + turbo kužely
   for (const sx of [-1, 1] as const) {
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.1, 6), chrome)
-    stack.position.set(0.95 * sx, 2.2, -0.95)
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.85, 6), chrome)
+    stack.position.set(0.82 * sx, 2.05, -0.72)
     g.add(stack)
-    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.55, 6), chrome)
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.42, 6), chrome)
     pipe.rotation.x = Math.PI / 2
-    pipe.position.set(0.95 * sx, 1.35, -2.15)
+    pipe.position.set(0.82 * sx, 1.32, -1.85)
     g.add(pipe)
     const outer = new THREE.Mesh(
-      new THREE.ConeGeometry(0.32, 1.1, 7),
+      new THREE.ConeGeometry(0.28, 0.95, 7),
       matLambert(0xff6a18, { emissive: 0xff3a00, emissiveIntensity: 0.25 }),
     )
     outer.rotation.x = Math.PI
-    outer.position.set(0.95 * sx, 1.35, -2.8)
+    outer.position.set(0.82 * sx, 1.32, -2.4)
     outer.scale.setScalar(0.05)
     outer.userData.turboFlame = true
     outer.visible = false
     g.add(outer)
     const core = new THREE.Mesh(
-      new THREE.ConeGeometry(0.16, 0.75, 6),
+      new THREE.ConeGeometry(0.14, 0.65, 6),
       matLambert(0xffee88, { emissive: 0xffcc33, emissiveIntensity: 0.4 }),
     )
     core.rotation.x = Math.PI
-    core.position.set(0.95 * sx, 1.35, -2.6)
+    core.position.set(0.82 * sx, 1.32, -2.2)
     core.scale.setScalar(0.05)
     core.userData.turboFlame = true
     core.visible = false
     g.add(core)
   }
 
-  addNeon(g, neon, 2.0, 3.0, 0.35)
+  addNeon(g, neon, 1.7, 2.6, 0.35)
+  // Kola stejná jako dřív
   addWheels(g, dark, chrome, 1.35, 1.35, -1.45, 0.92, 0.62)
   return g
 }
@@ -1269,6 +1283,22 @@ function createScooter(color: number, neon = 0x7a8fa8): THREE.Group {
   return g
 }
 
+/** Raketová koloběžka — jen vizuální past (žádné triky / jízda). */
+function createRocketScooter(color: number, neon = 0x7a8fa8): THREE.Group {
+  const g = createScooter(color < 0 ? 0xc62828 : color, neon)
+  g.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.userData.bodyPaint) {
+      const m = obj.material
+      if (m instanceof THREE.MeshLambertMaterial) {
+        m.emissive.setHex(0x4a1008)
+        m.emissiveIntensity = 0.22
+      }
+    }
+  })
+  addFlatRocketFlames(g, 0.4, -0.7, 0.12)
+  return g
+}
+
 /**
  * Skateboard — prohlý nose/tail; deska −20 % (panáček moto-velikost beze změny).
  */
@@ -1648,6 +1678,236 @@ function createBicycle(color: number, neon = 0x7a8fa8): THREE.Group {
   }
   g.add(rider)
 
+  return g
+}
+
+/** Vodorovné turbo plameny (podél asfaltu, −Z) — raketové FS. */
+function addFlatRocketFlames(parent: THREE.Object3D, y: number, z: number, spread = 0.2): void {
+  // Střední kužel + dvě boční — víc „plamenný“ raketový zadek
+  const slots: { x: number; zOff: number; outerR: number; outerH: number; coreR: number; coreH: number }[] = [
+    { x: 0, zOff: 0, outerR: 0.16, outerH: 0.72, coreR: 0.08, coreH: 0.48 },
+    { x: -spread, zOff: 0.04, outerR: 0.11, outerH: 0.55, coreR: 0.055, coreH: 0.38 },
+    { x: spread, zOff: 0.04, outerR: 0.11, outerH: 0.55, coreR: 0.055, coreH: 0.38 },
+  ]
+  for (const s of slots) {
+    const outer = new THREE.Mesh(
+      new THREE.ConeGeometry(s.outerR, s.outerH, 8),
+      matLambert(0xff3a08, { emissive: 0xff1a00, emissiveIntensity: 0.55 }),
+    )
+    outer.rotation.x = Math.PI / 2
+    outer.position.set(s.x, y, z + s.zOff)
+    outer.scale.setScalar(0.05)
+    outer.userData.turboFlame = true
+    outer.userData.turboFlameFlat = true
+    outer.visible = false
+    parent.add(outer)
+    const core = new THREE.Mesh(
+      new THREE.ConeGeometry(s.coreR, s.coreH, 7),
+      matLambert(0xfff3a0, { emissive: 0xffcc33, emissiveIntensity: 0.7 }),
+    )
+    core.rotation.x = Math.PI / 2
+    core.position.set(s.x, y, z + s.zOff + 0.14)
+    core.scale.setScalar(0.05)
+    core.userData.turboFlame = true
+    core.userData.turboFlameFlat = true
+    core.visible = false
+    parent.add(core)
+  }
+}
+
+/**
+ * Freestyle kolečkové brusle — 2 kola vpředu + 2 vzadu (quad), panáček moto-velikost.
+ */
+function createRollerSkates(color: number, neon = 0x7a8fa8, rocket = false): THREE.Group {
+  const g = new THREE.Group()
+  const bootMat = matPaint(color)
+  const dark = matLambert(0x1a1a1a)
+  const suit = matLambert(rocket ? 0x2a1820 : 0x1c2430)
+  const skin = matLambert(0xc4a882)
+  const accent = matLambert(rocket ? 0xff6a20 : 0x4a5560, {
+    emissive: rocket ? 0xff3a00 : 0x000000,
+    emissiveIntensity: rocket ? 0.35 : 0,
+  })
+
+  const boardPivot = new THREE.Group()
+  boardPivot.userData.skateBoard = true
+
+  const makeSkate = (side: 1 | -1) => {
+    const sk = new THREE.Group()
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.38), bootMat)
+    paint(boot)
+    boot.position.set(0, 0.14, 0)
+    sk.add(boot)
+    const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.18), accent)
+    cuff.position.set(0, 0.28, -0.04)
+    sk.add(cuff)
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.34), dark)
+    plate.position.set(0, 0.04, 0)
+    sk.add(plate)
+    // 2 vpředu + 2 vzadu (ne uprostřed vedle sebe)
+    const wheelGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.07, 8)
+    wheelGeo.rotateZ(Math.PI / 2)
+    for (const wz of [-0.11, 0.11] as const) {
+      const truck = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.035, 0.06), dark)
+      truck.position.set(0, 0.02, wz)
+      sk.add(truck)
+      for (const wx of [-0.075, 0.075] as const) {
+        const w = new THREE.Mesh(wheelGeo, dark)
+        w.position.set(wx, -0.01, wz)
+        w.userData.spinWheel = true
+        w.userData.spinAxis = 'x'
+        w.userData.spinRadius = 0.065
+        paintWheel(w)
+        sk.add(w)
+      }
+    }
+    const baseY = 0.42
+    const baseZ = side > 0 ? 0.08 : -0.1
+    sk.position.set(0.14 * side, baseY, baseZ)
+    sk.rotation.y = side > 0 ? 0.12 : -0.12
+    sk.userData.skateBoot = true
+    sk.userData.skateBootSide = side
+    sk.userData.skateBootBaseY = baseY
+    sk.userData.skateBootBaseZ = baseZ
+    return sk
+  }
+  boardPivot.add(makeSkate(-1))
+  boardPivot.add(makeSkate(1))
+  if (rocket) {
+    const nozzle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.09, 0.14, 7),
+      matLambert(0x2a2a32, { emissive: 0xff4400, emissiveIntensity: 0.28 }),
+    )
+    nozzle.rotation.x = Math.PI / 2
+    nozzle.position.set(0, 0.32, -0.38)
+    boardPivot.add(nozzle)
+    addFlatRocketFlames(boardPivot, 0.35, -0.52, 0.14)
+  }
+  g.add(boardPivot)
+  addNeon(g, neon, 0.4, 1.35, 0.14)
+
+  const rider = new THREE.Group()
+  rider.userData.skateRider = true
+  rider.position.set(0, 0.42, 0)
+  rider.rotation.y = Math.PI / 5
+
+  const backLeg = new THREE.Group()
+  backLeg.userData.ollieBackLeg = true
+  backLeg.position.set(-0.12, 0.92, -0.1)
+  const backThigh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.42, 0.14), suit)
+  paintRider(backThigh)
+  backThigh.position.set(0, -0.14, 0)
+  backLeg.add(backThigh)
+  const backShin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), suit)
+  paintRider(backShin)
+  backShin.position.set(0, -0.56, 0.02)
+  backShin.userData.ollieBackShin = true
+  backLeg.add(backShin)
+  rider.add(backLeg)
+
+  const pushLeg = new THREE.Group()
+  pushLeg.userData.pushLeg = true
+  pushLeg.userData.ollieFrontLeg = true
+  pushLeg.position.set(0.12, 0.92, 0.1)
+  const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.42, 0.14), suit)
+  paintRider(thigh)
+  thigh.position.set(0, -0.14, 0)
+  pushLeg.add(thigh)
+  const shin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), suit)
+  paintRider(shin)
+  shin.position.set(0, -0.56, 0.02)
+  shin.userData.pushShin = true
+  pushLeg.add(shin)
+  rider.add(pushLeg)
+
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.26), suit)
+  paintRider(hips)
+  hips.position.set(0, 0.98, 0)
+  rider.add(hips)
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.48, 0.28), suit)
+  paintRider(torso)
+  torso.position.set(0, 1.28, 0)
+  torso.userData.ollieTorso = true
+  rider.add(torso)
+  const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.28), suit)
+  paintRider(shoulders)
+  shoulders.position.set(0, 1.48, 0.02)
+  rider.add(shoulders)
+  addJerseyText(rider, rocket ? 'RX' : 'BLD', 0, 1.3, 0.16)
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.12, 6), skin)
+  neck.position.set(0, 1.58, 0.02)
+  rider.add(neck)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), skin)
+  head.position.set(0, 1.72, 0.02)
+  rider.add(head)
+  addCap(rider, 1.72, 0.02, true, rocket ? 0xc62828 : 0x2a2a32)
+
+  for (const sx of [-1, 1] as const) {
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.32, 0.1), suit)
+    paintRider(upper)
+    upper.position.set(0.3 * sx, 1.35, 0.04)
+    upper.rotation.z = 0.18 * sx
+    upper.userData.ollieArm = true
+    rider.add(upper)
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.09), suit)
+    paintRider(lower)
+    lower.position.set(0.34 * sx, 1.08, 0.05)
+    lower.userData.ollieArm = true
+    rider.add(lower)
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.12), skin)
+    hand.position.set(0.36 * sx, 0.9, 0.06)
+    rider.add(hand)
+  }
+  g.add(rider)
+  return g
+}
+
+function createRocketSkateboard(color: number, _neon = 0x7a8fa8): THREE.Group {
+  const g = createSkateboard(color < 0 ? 0xc62828 : color, -1)
+  // Teplejší „raketový“ deck accent + chromovaný zadek
+  g.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.userData.bodyPaint) {
+      const m = obj.material
+      if (m instanceof THREE.MeshLambertMaterial) {
+        m.emissive.setHex(0x4a1208)
+        m.emissiveIntensity = 0.28
+      }
+    }
+  })
+  const nozzle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.12, 0.18, 8),
+    matLambert(0x2a2a32, { emissive: 0xff4400, emissiveIntensity: 0.25 }),
+  )
+  nozzle.rotation.x = Math.PI / 2
+  nozzle.position.set(0, 0.32, -0.72)
+  g.add(nozzle)
+  addFlatRocketFlames(g, 0.38, -0.92, 0.2)
+  return g
+}
+
+function createRocketRollerSkates(color: number, neon = 0x7a8fa8): THREE.Group {
+  return createRollerSkates(color < 0 ? 0xff6a20 : color, neon, true)
+}
+
+function createRocketBicycle(color: number, _neon = 0x7a8fa8): THREE.Group {
+  const g = createBicycle(color < 0 ? 0xc62828 : color, -1)
+  g.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.userData.bodyPaint) {
+      const m = obj.material
+      if (m instanceof THREE.MeshLambertMaterial) {
+        m.emissive.setHex(0x551808)
+        m.emissiveIntensity = 0.32
+      }
+    }
+  })
+  const nozzle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.11, 0.16, 8),
+    matLambert(0x2a2a32, { emissive: 0xff4400, emissiveIntensity: 0.28 }),
+  )
+  nozzle.rotation.x = Math.PI / 2
+  nozzle.position.set(0, 0.5, -0.62)
+  g.add(nozzle)
+  addFlatRocketFlames(g, 0.55, -0.82, 0.16)
   return g
 }
 

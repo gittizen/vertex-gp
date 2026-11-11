@@ -104,8 +104,8 @@ export class RenderPipeline {
     this.bloomPass = new UnrealBloomPass(
       size.clone(),
       bloomStrengthFor(settings.quality),
-      0.48,
-      0.88,
+      settings.quality === 'cinematic' ? 0.55 : 0.36,
+      settings.quality === 'cinematic' ? 0.48 : 0.62,
     )
     this.bloomPass.enabled = settings.bloom
     this.composer.addPass(this.bloomPass)
@@ -169,6 +169,9 @@ export class RenderPipeline {
       settings.quality === 'cinematic' ? 1.08 : settings.quality === 'balanced' ? 1.04 : 1.0
     this.bloomPass.enabled = settings.bloom
     this.bloomPass.strength = bloomStrengthFor(settings.quality)
+    // Selective bloom: vyšší threshold = jen emissive (plameny, neon, city), méně full-frame blur
+    this.bloomPass.threshold = settings.quality === 'cinematic' ? 0.48 : 0.62
+    this.bloomPass.radius = settings.quality === 'cinematic' ? 0.55 : 0.36
     this.gradePass.enabled = settings.quality !== 'perf'
     if (this.gradePass.uniforms.uVignette) {
       this.gradePass.uniforms.uVignette.value =

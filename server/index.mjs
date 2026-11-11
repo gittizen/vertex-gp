@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 const PORT = Number(process.env.PORT || 8787)
 const MAX_PLAYERS = 4
 const MIN_LAPS = 1
-const MAX_LAPS = 5
+const MAX_LAPS = 69
 
 /**
  * @typedef {{ id: string, name: string, color: number, ready: boolean }} Player

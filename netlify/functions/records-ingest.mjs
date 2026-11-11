@@ -5,6 +5,8 @@ const KEY = 'board-v1'
 const RATE_MS = 8_000
 const MAX_ENTRIES = 4000
 
+const BOT_NAMES = new Set(['Nikola Beran', 'Petra Holá', 'Marek Diviš'])
+
 const lastHit = new Map()
 
 function cors(body, status = 200) {
@@ -53,11 +55,15 @@ export default async (req) => {
   const bestTimeMs = Number(body.bestTimeMs) || 0
   const bestFsScore = Number(body.bestFsScore) || 0
   const bestTrickPts = Number(body.bestTrickPts) || 0
+  const laps = Math.max(1, Math.min(69, Math.round(Number(body.laps) || 1)))
   const immortal = !!body.immortal
   const at = Number(body.at) || Date.now()
 
   if (!player || !trackId || !vehicle) {
     return cors(JSON.stringify({ error: 'fields' }), 400)
+  }
+  if (BOT_NAMES.has(player)) {
+    return cors(JSON.stringify({ error: 'bot' }), 400)
   }
   if (bestTimeMs < 0 || bestTimeMs > 3_600_000) {
     return cors(JSON.stringify({ error: 'time' }), 400)
@@ -77,6 +83,7 @@ export default async (req) => {
       e.player === player &&
       e.trackId === trackId &&
       e.vehicle === vehicle &&
+      (Math.max(1, Math.round(Number(e.laps) || 1)) === laps) &&
       !!e.immortal === immortal,
   )
   const row = {
@@ -86,6 +93,7 @@ export default async (req) => {
     bestTimeMs,
     bestFsScore,
     bestTrickPts,
+    laps,
     at,
     immortal,
   }
@@ -96,6 +104,7 @@ export default async (req) => {
     }
     if (bestFsScore > cur.bestFsScore) cur.bestFsScore = bestFsScore
     if (bestTrickPts > cur.bestTrickPts) cur.bestTrickPts = bestTrickPts
+    cur.laps = laps
     cur.at = at
     cur.immortal = immortal
   } else {

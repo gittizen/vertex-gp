@@ -1,9 +1,11 @@
 import type { DifficultyDef } from './Difficulty'
 import { learnedTargetPaceMs } from './CommunityLearning'
+import { freestyleList } from '../freestyle/FreestyleTricks'
 import type { Track } from '../track/Track'
 import type { VehicleKind } from '../track/TrackDefs'
 import type { Vehicle } from '../vehicle/Vehicle'
 import { catalogMaxKmh, speedCapMultFor } from '../vehicle/VehicleProfiles'
+import { isFsBoardKind } from '../vehicle/FsKinds'
 
 /**
  * Rychlostní násobiče slotů (slot 0 = hráč).
@@ -66,10 +68,16 @@ function launchFeelFor(kind: VehicleKind): LaunchFeel {
     case 'tank':
       return { durationSec: 3.4, startFrac: 0.05, accelBlend: 1.2 }
     case 'bike':
+    case 'rocketBike':
       return { durationSec: 1.9, startFrac: 0.12, accelBlend: 1.7 }
+    case 'skates':
+    case 'rocketSkates':
+      return { durationSec: 2.1, startFrac: 0.1, accelBlend: 1.6 }
     case 'skate':
+    case 'rocketSkate':
       return { durationSec: 2.35, startFrac: 0.08, accelBlend: 1.5 }
     case 'scooter':
+    case 'rocketScooter':
       return { durationSec: 4.0, startFrac: 0.02, accelBlend: 0.9 }
     default:
       return { durationSec: 2.0, startFrac: 0.14, accelBlend: 1.8 }
@@ -91,6 +99,10 @@ export class AiDriver {
   private paceDebt = 0
   /** Vyhlazený náklon (zatáčka + výjezd) — nešpičkuje hned a nesrovná se okamžitě. */
   private leanSmooth = 0
+  /** FS: kolik triků už v aktuálním kole / etapě. */
+  private fsTricksThisLap = 0
+  private fsLapIndex = -1
+  private fsTrickCd = 0
 
   constructor(slot: number, difficulty: DifficultyDef) {
     this.slot = slot
@@ -113,6 +125,9 @@ export class AiDriver {
     this.pace = 0
     this.paceDebt = 0
     this.leanSmooth = 0
+    this.fsTricksThisLap = 0
+    this.fsLapIndex = -1
+    this.fsTrickCd = 0
     this.ready = true
     if (this.slot > 0) this.place(vehicle, track)
   }
@@ -171,11 +186,12 @@ export class AiDriver {
     const feel = launchFeelFor(vehicle.kind)
     const prevLaunch = this.launch
     this.launch = Math.min(1, this.launch + dt / Math.max(0.35, feel.durationSec))
-    // Ease-out náběh: pomalu ze startu, plný cruise až ke konci launch okna
+    // Ease-out náběh: pomalu ze startu, plný cruise až ke konci launch okna.
+    // startFrac jen v rámci hardCap — AI nestartuje nad maxem vozidla.
     const launchEase = 1 - Math.pow(1 - this.launch, 2.15)
     const cornerSlow = 1 - corner * 0.4
-    let target =
-      cruise * (feel.startFrac + (1 - feel.startFrac) * launchEase) * Math.max(0.38, cornerSlow)
+    const launchFrac = Math.min(1, feel.startFrac + (1 - feel.startFrac) * launchEase)
+    let target = Math.min(hardCap, cruise * launchFrac) * Math.max(0.38, cornerSlow)
 
     // Ideální tempo (okamžitý cruise) vs reálný target → dluh vzdálenosti
     const ideal = cruise * Math.max(0.38, cornerSlow)
@@ -236,11 +252,76 @@ export class AiDriver {
     } else {
       vehicle.setTurboInput(0, dt)
     }
-    if (vehicle.kind === 'skate' || vehicle.kind === 'bike') {
+    if (vehicle.isBoardKind()) {
       // AI pořád odráží / šlape (vizuál); tempo řeší rail + Shift burst
       vehicle.setPushVisual(shiftHold ? 1 : 0.85, dt)
     }
+    this.tickFreestyleTricks(dt, vehicle, track)
     this.place(vehicle, track, dt)
+  }
+
+  /**
+   * FS soupeři: ≥4 triky / kolo (etapa = 1 „kolo“);
+   * slot 1 (nejrychlejší) ≥6 za vyšší body.
+   */
+  private tickFreestyleTricks(dt: number, vehicle: Vehicle, track: Track): void {
+    if (this.slot <= 0 || !isFsBoardKind(vehicle.kind)) return
+    vehicle.freestyleOn = true
+    this.fsTrickCd = Math.max(0, this.fsTrickCd - dt)
+
+    const loop = track.def.loop
+    const len = Math.max(1, track.length)
+    let progress = this.railDist / len
+    if (loop) progress = ((progress % 1) + 1) % 1
+    else progress = Math.max(0, Math.min(1, progress))
+
+    const lapIdx = loop ? Math.floor(Math.max(0, this.railDist) / len) : 0
+    if (lapIdx !== this.fsLapIndex) {
+      this.fsLapIndex = lapIdx
+      this.fsTricksThisLap = 0
+    }
+
+    // Slot 1 = nejlepší AI (≥6), 2–3 ≥4
+    const targetCount = this.slot === 1 ? 6 : 4
+    const list = freestyleList(vehicle.kind)
+    if (!list.length) {
+      vehicle.tickAiFreestyle(dt, null)
+      return
+    }
+
+    let wantLetter: string | null = null
+    if (
+      !vehicle.trickLocked &&
+      this.fsTrickCd <= 0 &&
+      this.fsTricksThisLap < targetCount &&
+      this.launch >= 0.35
+    ) {
+      // Kolik triků „má být hotovo“ podle postupu (dohání zpoždění)
+      const due = Math.min(
+        targetCount,
+        Math.floor(progress * targetCount + (loop ? 0.02 : 0.05)),
+      )
+      if (this.fsTricksThisLap < due || progress > 0.92 + this.slot * 0.01) {
+        const sorted = [...list].sort((a, b) => a.difficulty - b.difficulty)
+        // Slot 1 = nejvyšší body; 2 střed+; 3 střed−
+        const pick =
+          this.slot === 1
+            ? sorted[Math.min(sorted.length - 1, sorted.length - 1 - (this.fsTricksThisLap % 3))]!
+            : this.slot === 2
+              ? sorted[
+                  Math.min(
+                    sorted.length - 1,
+                    Math.floor(sorted.length * 0.55) + (this.fsTricksThisLap % 3),
+                  )
+                ]!
+              : sorted[Math.min(sorted.length - 1, 2 + (this.fsTricksThisLap % 4))]!
+        wantLetter = pick.letter
+        this.fsTricksThisLap += 1
+        this.fsTrickCd = Math.max(1.15, pick.dur + 0.3)
+      }
+    }
+
+    vehicle.tickAiFreestyle(dt, wantLetter)
   }
 
   private place(vehicle: Vehicle, track: Track, dt = 1 / 60): void {

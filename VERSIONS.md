@@ -15,7 +15,7 @@ Staré tagy a archivy se nemažou / nepřepisují.
 | **0.8** *(teď)* | **0.7** | **0.6** | **0.5** | **0.4** | **0.3** | **0.2** | **0.1** |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Netlify](https://klecmania.netlify.app/) · [Pages](https://gittizen.github.io/vertex-gp/0.8/) | [Pages](https://gittizen.github.io/vertex-gp/0.7/) | [Hrát](https://gittizen.github.io/vertex-gp/0.6/) | [Hrát](https://gittizen.github.io/vertex-gp/0.5/) | [Hrát](https://gittizen.github.io/vertex-gp/0.4/) | [Hrát](https://gittizen.github.io/vertex-gp/0.3/) | [Hrát](https://gittizen.github.io/vertex-gp/0.2/) | [Hrát](https://gittizen.github.io/vertex-gp/0.1/) |
-| setup · šampionát · 👻 | **KlecMania** · drift Space | UX + zvuk | AI tempo + demo | reálnější svět | mobil + hosting | Klec GP · identita | Vertex GP · základ |
+| setup · šampionát · FS polish | **KlecMania** · drift Space | UX + zvuk | AI tempo + demo | reálnější svět | mobil + hosting | Klec GP · identita | Vertex GP · základ |
 
 ---
 
@@ -178,10 +178,10 @@ Hráč má poznat, že jde o *Mania* produkt (název, entry, atmosféra), ne jen
 
 ## 0.8 — race setup + šampionát *(současná produkce)*
 
-**Oproti 0.7:** cesta do závodu je dvouúrovňová (Domů → setup), žebříček umí svět + ghost běhy, šampionát má novou ekonomiku a flow (koupě → kvalifikace → liga/série), Klecany jsou světlejší a Závod má vlastní Volvo art.
+**Oproti 0.7:** cesta do závodu je dvouúrovňová (Domů → setup), žebříček umí svět + ghost běhy, šampionát má novou ekonomiku a flow (koupě → kvalifikace → liga/série), Klecany jsou světlejší a Závod má vlastní Volvo art. Pozdější update: FS polish, Do Klecánek default, raketové AI.
 
 **Proč tahle verze**
-Hráč má nejdřív vybrat trať a peklostroj, pak Jet / Multi / Join — bez ztraceného flat menu. Šampionát začíná nákupem startovního stroje z rozpočtu, ne „darem“. Nesmrtelnost je čitelný SP cheat s badge, ne tiché filtrování z boardu.
+Hráč má nejdřív vybrat trať a peklostroj, pak Jet / Multi / Join — bez ztraceného flat menu. Šampionát začíná nákupem startovního stroje z rozpočtu, ne „darem“. Nesmrtelnost je čitelný SP cheat s badge, ne tiché filtrování z boardu. Default mapa je Do Klecánek směrem nahoru; FS triky mají jasná pravidla (P = pauza, Q/E = triky).
 
 **Co přibylo / se změnilo**
 - Domů: Závod nahoře → Žebříček | Nastavení
@@ -189,6 +189,9 @@ Hráč má nejdřív vybrat trať a peklostroj, pak Jet / Multi / Join — bez z
 - Šampionát: 45k start, 15k nejhorší unlock, 2 dlaždice / Jet split, kvalifikace 1 kolo (FS Plácek ~1 min), pak liga/série; OK/Esc; Babeta na Klecany moto
 - Nesmrtelnost (Ovládání, SP) + 👻 HUD / žebříček; cloud Moje/Svět
 - FS startup anim ~0.5 s; pauza nad mobilní tap vrstvou
+- Do Klecánek default + normální směr; omítkové domy; Námko objekty mimo asfalt
+- Raketové FS AI; trik: brzda off / steer 20 % / wall-kill; P pauza; Q/E triky
+- Soutěže pryč; finish bez jezdce; techno/rap + tuc-tuc klasika; monstertruck méně traktor
 - Klecany světlejší; unikátní tile fotky; Závod = Volvo V70 1. gen tmavě modrá
 - Tag `v0.8.0`; Pages `/0.8/` + **Netlify** klecmania.netlify.app
 
@@ -196,9 +199,10 @@ Hráč má nejdřív vybrat trať a peklostroj, pak Jet / Multi / Join — bez z
 - Layout menu 1/2 jako dvě mřížky (ne jedna řada)
 - Immortal rekordy synchronizovat, ale vizuálně označit
 - Champ: wipe staré kariéry, koupě místo starter picku, cash floor jen do první nákupu
+- FS vs zeď / řízení / rakety; default mapa a omítka na Klecánek
 - Release včetně Netlify produkce (nejen GitHub)
 
-**Shrnutí:** setup je přehlednější, šampionát má ekonomiku a kvalifikaci, žebříček umí svět a ghosty — 0.8 žije na Netlify i Pages.
+**Shrnutí:** setup je přehlednější, šampionát má ekonomiku a kvalifikaci, FS a tratě jsou dotažené — 0.8 žije na Netlify i Pages.
 
 ---
 

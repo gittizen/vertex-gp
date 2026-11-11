@@ -1,6 +1,6 @@
 import type { DifficultyId } from '../ai/Difficulty'
 import { getDifficulty } from '../ai/Difficulty'
-import { placePoints } from '../freestyle/FreestyleTricks'
+import { freestyleRaceScore, placePoints } from '../freestyle/FreestyleTricks'
 import type { PlayerTuningValues } from '../tuning/PlayerTuning'
 import { CHAMP_TUNING_MAX, TUNING_MAX } from '../tuning/PlayerTuning'
 import type { VehicleBranch } from '../vehicle/VehicleLook'
@@ -66,7 +66,8 @@ export function roundPoints(
 ): number {
   if (isDnfPlace(place)) return 0
   if (branch === 'freestyle') {
-    return Math.round(trickPts + placePoints(place) * 0.35)
+    // Stejný vzorec jako freestyleRaceScore — triky > umístění
+    return freestyleRaceScore(trickPts, place, 0.35)
   }
   return placePoints(place)
 }
@@ -82,7 +83,12 @@ export function vehicleBuyPrice(
 ): number | null {
   if (unlockIndex === 0) return 15_000
   if (branch === 'freestyle') {
-    if (unlockIndex === 1) return 45_000
+    // 0–2 neraketové startéry 15k; 3–5 raketové (tier 5 ceník)
+    if (unlockIndex === 1) return 15_000 // skates
+    if (unlockIndex === 2) return 15_000 // bike
+    if (unlockIndex === 3) return 95_000 // rocketSkate
+    if (unlockIndex === 4) return 125_000 // rocketSkates
+    if (unlockIndex === 5) return 180_000 // rocketBike
     return null
   }
   if (unlockIndex === 1) return 45_000
@@ -98,6 +104,11 @@ export function vehicleBuyPrice(
  */
 export function champVehicleTier(branch: VehicleBranch, kind: VehicleKind): number {
   if (kind === 'scooter') return 1
+  // FS: neraketové = tier 2, raketové = tier 5 (ceny upgrade / vůz)
+  if (branch === 'freestyle') {
+    if (kind === 'rocketSkate' || kind === 'rocketSkates' || kind === 'rocketBike') return 5
+    return 2
+  }
   const order = kindsInBranch(branch)
     .filter((k): k is Exclude<VehicleKind, 'scooter'> => k !== 'scooter')
     .sort((a, b) => catalogMaxKmh(a) - catalogMaxKmh(b))

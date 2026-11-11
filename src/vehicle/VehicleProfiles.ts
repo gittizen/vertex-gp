@@ -26,8 +26,24 @@ export const CATALOG_MAX_KMH: Record<VehicleKind, number> = {
   tank: 175,
   limo: 288, // −10 % vs street
   skate: 77,
+  skates: 90,
   bike: 102,
+  rocketSkate: 100,
+  rocketSkates: 117,
+  rocketBike: 133,
   scooter: 2,
+  rocketScooter: 2,
+}
+
+/**
+ * Náraz smrtící jen nad touto rychlostí — a jen pokud cruise max (bez boostu)
+ * je ≥ stejná hodnota. Boost pod stropem smrti nikdy nepádí.
+ */
+export const FATAL_SPEED_KMH = 350
+
+/** true = katalogové cruise max stačí k pádu při nárazu nad FATAL_SPEED_KMH. */
+export function catalogCanDieFromSpeed(kind: VehicleKind): boolean {
+  return (CATALOG_MAX_KMH[kind] ?? 0) >= FATAL_SPEED_KMH
 }
 
 /** speedCapMult tak, aby (118 + df*5)*1.3*cap*3.6 ≈ targetKmh */
@@ -60,12 +76,20 @@ const TRUCK_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.truck)
 const TANK_CAP = capForTarget(TANK_DF, CATALOG_MAX_KMH.tank)
 const LIMO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.limo)
 const SKATE_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.skate)
+const SKATES_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.skates)
 const BIKE_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.bike)
+const ROCKET_SKATE_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.rocketSkate)
+const ROCKET_SKATES_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.rocketSkates)
+const ROCKET_BIKE_CAP = capForTarget(SKATE_DF, CATALOG_MAX_KMH.rocketBike)
 
 /** Relativní strop rychlosti vozidla (pro přepočet AI tempa). */
 export function speedCapMultFor(kind: VehicleKind): number {
   if (kind === 'skate') return SKATE_CAP
+  if (kind === 'skates') return SKATES_CAP
   if (kind === 'bike') return BIKE_CAP
+  if (kind === 'rocketSkate') return ROCKET_SKATE_CAP
+  if (kind === 'rocketSkates') return ROCKET_SKATES_CAP
+  if (kind === 'rocketBike') return ROCKET_BIKE_CAP
   if (kind === 'moto') return MOTO_CAP
   if (kind === 'harley') return HARLEY_CAP
   if (kind === 'naked') return NAKED_CAP
@@ -80,7 +104,8 @@ export function speedCapMultFor(kind: VehicleKind): number {
   if (kind === 'limo') return LIMO_CAP
   if (kind === 'cabrio') return CABRIO_CAP
   if (kind === 'muscle') return MUSCLE_CAP
-  if (kind === 'scooter') return capForTarget(0.1, CATALOG_MAX_KMH.scooter)
+  if (kind === 'scooter' || kind === 'rocketScooter')
+    return capForTarget(0.1, CATALOG_MAX_KMH.scooter)
   return STREET_CAP
 }
 
@@ -120,7 +145,7 @@ export function profileForKind(
   kind: VehicleKind,
   playerTuning?: PlayerTuningValues,
 ): Partial<VehicleTuning> {
-  if (kind === 'scooter') {
+  if (kind === 'scooter' || kind === 'rocketScooter') {
     return {
       power: 2,
       brakeForce: 40,
@@ -133,18 +158,45 @@ export function profileForKind(
     }
   }
 
-  if (kind === 'skate' || kind === 'bike') {
+  if (
+    kind === 'skate' ||
+    kind === 'skates' ||
+    kind === 'bike' ||
+    kind === 'rocketSkate' ||
+    kind === 'rocketSkates' ||
+    kind === 'rocketBike'
+  ) {
     const base = tuningToPhysics(playerTuning ?? DEFAULT_PLAYER_TUNING)
-    const tempo = kind === 'bike' ? 1.3 * 1.2 : 1.3
+    const rocket = kind.startsWith('rocket')
+    const core =
+      kind === 'bike' || kind === 'rocketBike'
+        ? 'bike'
+        : kind === 'skates' || kind === 'rocketSkates'
+          ? 'skates'
+          : 'skate'
+    const tempo = core === 'bike' ? 1.3 * 1.2 : core === 'skates' ? 1.3 * 1.1 : 1.3
+    const rocketMul = rocket ? 1.3 : 1
+    const cap =
+      kind === 'rocketBike'
+        ? ROCKET_BIKE_CAP
+        : kind === 'rocketSkates'
+          ? ROCKET_SKATES_CAP
+          : kind === 'rocketSkate'
+            ? ROCKET_SKATE_CAP
+            : core === 'bike'
+              ? BIKE_CAP
+              : core === 'skates'
+                ? SKATES_CAP
+                : SKATE_CAP
     return {
       ...base,
-      power: base.power * 0.45 * tempo,
-      downforce: base.downforce * 0.25,
-      grip: base.grip * 0.95,
+      power: base.power * 0.45 * tempo * rocketMul,
+      downforce: base.downforce * 0.25 * rocketMul,
+      grip: base.grip * 0.95 * (rocket ? 1.05 : 1),
       drag: 0.2,
-      mass: kind === 'bike' ? 0.72 : 0.65,
-      speedCapMult: kind === 'bike' ? BIKE_CAP : SKATE_CAP,
-      steerResp: kind === 'bike' ? 1.15 : 1.3,
+      mass: core === 'bike' ? 0.72 : core === 'skates' ? 0.68 : 0.65,
+      speedCapMult: cap,
+      steerResp: core === 'bike' ? 1.15 : core === 'skates' ? 1.22 : 1.3,
     }
   }
 
@@ -372,7 +424,7 @@ export function profileForKind(
 }
 
 export function aiProfileForKind(kind: VehicleKind, index: number): Partial<VehicleTuning> {
-  if (kind === 'scooter') {
+  if (kind === 'scooter' || kind === 'rocketScooter') {
     return {
       power: 2,
       brakeForce: 40,
@@ -384,27 +436,42 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       steerResp: 0.3,
     }
   }
-  if (kind === 'skate') {
+  if (kind === 'skate' || kind === 'rocketSkate') {
+    const mul = kind === 'rocketSkate' ? 1.3 : 1
     return {
-      power: (22 + index * 0.8) * 1.3,
+      power: (22 + index * 0.8) * 1.3 * mul,
       brakeForce: 70,
-      downforce: 0.3,
+      downforce: 0.3 * mul,
       grip: 1.05 + index * 0.02,
       drag: 0.2,
       mass: 0.66,
-      speedCapMult: SKATE_CAP,
+      speedCapMult: kind === 'rocketSkate' ? ROCKET_SKATE_CAP : SKATE_CAP,
       steerResp: 1.28,
     }
   }
-  if (kind === 'bike') {
+  if (kind === 'skates' || kind === 'rocketSkates') {
+    const mul = kind === 'rocketSkates' ? 1.3 : 1
     return {
-      power: (22 + index * 0.8) * 1.3 * 1.2,
+      power: (22 + index * 0.8) * 1.3 * 1.1 * mul,
+      brakeForce: 71,
+      downforce: 0.31 * mul,
+      grip: 1.055 + index * 0.02,
+      drag: 0.2,
+      mass: 0.69,
+      speedCapMult: kind === 'rocketSkates' ? ROCKET_SKATES_CAP : SKATES_CAP,
+      steerResp: 1.2,
+    }
+  }
+  if (kind === 'bike' || kind === 'rocketBike') {
+    const mul = kind === 'rocketBike' ? 1.3 : 1
+    return {
+      power: (22 + index * 0.8) * 1.3 * 1.2 * mul,
       brakeForce: 72,
-      downforce: 0.32,
+      downforce: 0.32 * mul,
       grip: 1.06 + index * 0.02,
       drag: 0.2,
       mass: 0.73,
-      speedCapMult: BIKE_CAP,
+      speedCapMult: kind === 'rocketBike' ? ROCKET_BIKE_CAP : BIKE_CAP,
       steerResp: 1.12,
     }
   }
