@@ -3,6 +3,7 @@ import {
   RACE_VEHICLE_KINDS,
   type VehicleKind,
 } from '../track/TrackDefs'
+import { isRocketFsKind } from '../vehicle/FsKinds'
 import { sortKindsBySpeedDesc } from '../vehicle/VehicleProfiles'
 
 const STORAGE_KEY = 'klecgp.race'
@@ -153,10 +154,8 @@ export function randomOpponents(
   const out: [VehicleKind, VehicleKind, VehicleKind] = [pick(), pick(), pick()]
   // FS: zvyš šanci na raketového AI soupeře
   if (freestyleMode || isFreestyleKind(playerKind)) {
-    const rockets = pool.filter(
-      (k) => k === 'rocketSkate' || k === 'rocketSkates' || k === 'rocketBike',
-    )
-    if (rockets.length > 0 && !out.some((k) => rockets.includes(k))) {
+    const rockets = pool.filter(isRocketFsKind)
+    if (rockets.length > 0 && !out.some(isRocketFsKind)) {
       out[Math.floor(Math.random() * 3)] = rockets[Math.floor(Math.random() * rockets.length)]!
     }
   }

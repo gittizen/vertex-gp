@@ -841,17 +841,10 @@ export class Game {
       v.finished = false
     }
     this.hud.setCompetition(this.activeCompetition)
-    // Solo soutěže = bez AI. Normální závod (comp.none) = AI vždy jede.
-    const soloChallenge =
-      this.activeCompetition === 'timeAttack' ||
-      this.activeCompetition === 'trickHunt' ||
-      this.activeCompetition === 'cleanRun' ||
-      this.activeCompetition === 'paceGhost' ||
-      this.activeCompetition === 'sprintDash' ||
-      this.activeCompetition === 'driftScore'
+    // Soutěže zrušeny — AI vždy jede (sandbox bez AI).
     for (let i = 0; i < this.vehicles.length; i++) {
       if (i === this.localSlot) continue
-      if (this.track.def.sandbox || soloChallenge) {
+      if (this.track.def.sandbox) {
         this.vehicles[i].mesh.visible = false
         this.vehicles[i].finished = true
       } else {
