@@ -8,8 +8,8 @@ Studentský produkt s vlastní značkou, tratěmi podle reálných míst, pečli
 
 | | |
 |--|--|
+| **Hrát (Netlify 0.8)** | https://klecmania.netlify.app/ |
 | **Hrát (Pages 0.8)** | https://gittizen.github.io/vertex-gp/0.8/ |
-| **Hrát (Netlify 0.7)** | https://klecmania.netlify.app/ *(zatím bez 0.8)* |
 | **Historie verzí** | https://gittizen.github.io/vertex-gp/ *(0.8 → 0.1)* |
 | **Archivy** | [0.8](https://gittizen.github.io/vertex-gp/0.8/) · [0.7](https://gittizen.github.io/vertex-gp/0.7/) · [0.6](https://gittizen.github.io/vertex-gp/0.6/) · [0.5](https://gittizen.github.io/vertex-gp/0.5/) · [0.4](https://gittizen.github.io/vertex-gp/0.4/) · [0.3](https://gittizen.github.io/vertex-gp/0.3/) · [0.2](https://gittizen.github.io/vertex-gp/0.2/) · [0.1](https://gittizen.github.io/vertex-gp/0.1/) |
 | **Příběh verzí** | [VERSIONS.md](./VERSIONS.md) — hub od nejnovější; text od 0.1 nahoru |
@@ -24,8 +24,8 @@ Autor: **Filip Khunt** · ve hře věkové omezení **16+** · repozitář histo
 
 | Oblast | Konkrétně |
 |--------|-----------|
-| **Produkt** | Entry → home → race setup → Jet/Multi/Join; atmosféry menu; hratelné archivy verzí |
-| **UI / UX** | Dvoustupňové menu závodu, mobilní navigace zpět, schémata řízení, CS + EN |
+| **Produkt** | Entry → home → race setup → Jet/Multi/Join; šampionát kariéra; atmosféry menu; archivy verzí |
+| **UI / UX** | Dvoustupňové menu závodu, champ dlaždice, mobilní navigace zpět, schémata řízení, CS + EN |
 | **3D / engine** | Tratě z dat (křivka → silnice + terén), stíny, výkonnostní režimy |
 | **AI** | Soupeři ve stejné kategorii vozidla; live kalibrace cílových časů z dat závodů |
 | **Síť** | Vlastní WebSocket lobby (max 4 hráčů) |
@@ -40,9 +40,10 @@ Autor: **Filip Khunt** · ve hře věkové omezení **16+** · repozitář histo
 - **AI** — Lehká / Střední / Těžká; default *každý solo závod jiní soupeři*  
 - **Online** — Multi založí místnost, Join prohlíží / připojuje  
 - **Menu** — Závod setup (Trať · Peklostroj · Jet/Multi/Join), hráčské vs pokročilé nastavení  
+- **Šampionát** — koupě startovního stroje → kvalifikace → liga/série (45k / 15k ekonomika)  
 - **Žebříček** — Moje / Svět; nesmrtelné běhy s 👻
 
-**Drobnosti pro hráče:** koloběžka v garáži (easter egg), soutěže, watermark tratí, CS + EN.
+**Drobnosti pro hráče:** koloběžka v garáži (easter egg), watermark tratí, CS + EN.
 
 ---
 

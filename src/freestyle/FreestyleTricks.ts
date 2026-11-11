@@ -1,6 +1,6 @@
 /**
- * Freestyle (skate + kolo): triky na písmena A–Z bez diakritiky.
- * Složitost → body + délka 1–6 s (nepřerušitelné) + animace.
+ * Freestyle (skate + kolo): triky na písmena bez konfliktu se speciálními bindy.
+ * Rezervováno (ne triky): W/A/S/D řízení, Q/E řazení, R restart, C kamera.
  */
 
 import type { SpinStyle } from './TrickAnim'
@@ -19,6 +19,9 @@ export type FreestyleTrickDef = {
   spin: SpinStyle
 }
 
+/** Klávesy závodu / menu — nesmí spouštět FS trik. */
+export const RESERVED_TRICK_LETTERS = new Set(['W', 'A', 'S', 'D', 'Q', 'E', 'R', 'C'])
+
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 function trick(
@@ -30,20 +33,15 @@ function trick(
   spin: SpinStyle,
 ): FreestyleTrickDef {
   const d = Math.max(1, Math.min(10, difficulty))
-  // 1–6 s podle obtížnosti; body = délka triku (1 desetina)
   const dur = Math.round((1 + ((d - 1) / 9) * 5) * 10) / 10
   const peak = 1.6 + d * 0.28
   const points = Math.round(dur * 10) / 10
   return { id, letter, nameCs, nameEn, difficulty: d, dur, peak, points, spin }
 }
 
-/** 26 skate triků A–Z */
+/** Skate triky — jen volná písmena (bez W/A/S/D/Q/E/R/C). */
 export const SKATE_FREESTYLE: FreestyleTrickDef[] = [
-  trick('A', 'ollie', 'Ollie', 'Ollie', 1, 'none'),
   trick('B', 'nollie', 'Nollie', 'Nollie', 2, 'none'),
-  trick('C', 'shoveit', 'Shove-it', 'Shove-it', 2, 'shove'),
-  trick('D', 'fs180', 'FS 180', 'FS 180', 3, 'yaw'),
-  trick('E', 'bs180', 'BS 180', 'BS 180', 3, 'yaw'),
   trick('F', 'kickflip', 'Kickflip', 'Kickflip', 4, 'kick'),
   trick('G', 'heelflip', 'Heelflip', 'Heelflip', 4, 'heel'),
   trick('H', 'varialflip', 'Varial flip', 'Varial flip', 5, 'tre'),
@@ -55,25 +53,17 @@ export const SKATE_FREESTYLE: FreestyleTrickDef[] = [
   trick('N', 'bigspin', 'Bigspin', 'Bigspin', 6, 'yaw'),
   trick('O', 'fs360', 'FS 360', 'FS 360', 6, 'yaw'),
   trick('P', 'bs360', 'BS 360', 'BS 360', 6, 'yaw'),
-  trick('Q', 'doubleflip', 'Double kickflip', 'Double kickflip', 8, 'doublekick'),
-  trick('R', 'hospital', 'Hospital flip', 'Hospital flip', 7, 'heel'),
-  trick('S', 'pressure', 'Pressure flip', 'Pressure flip', 7, 'kick'),
   trick('T', 'gazelle', 'Gazelle', 'Gazelle flip', 9, 'flipyaw'),
   trick('U', 'underflip', 'Underflip', 'Underflip', 8, 'kick'),
   trick('V', 'dolphin', 'Dolphin flip', 'Dolphin flip', 7, 'imp'),
-  trick('W', 'lateflip', 'Late flip', 'Late flip', 8, 'doublekick'),
   trick('X', 'nightmare', 'Nightmare flip', 'Nightmare flip', 9, 'laser'),
   trick('Y', 'quadflip', 'Quad flip', 'Quad flip', 10, 'quadkick'),
   trick('Z', 'emiral', 'Emiral flip', 'Emiral flip', 10, 'flipyaw'),
 ]
 
-/** 26 bike / BMX triků A–Z */
+/** Bike / BMX — stejná rezervovaná písmena. */
 export const BIKE_FREESTYLE: FreestyleTrickDef[] = [
-  trick('A', 'bunnyhop', 'Bunny hop', 'Bunny hop', 1, 'none'),
   trick('B', 'manual', 'Manual', 'Manual', 2, 'none'),
-  trick('C', 'endo', 'Endo', 'Endo', 2, 'none'),
-  trick('D', 'barspin', 'Barspin', 'Barspin', 3, 'yaw'),
-  trick('E', 'xup', 'X-up', 'X-up', 3, 'yaw'),
   trick('F', 'tabletop', 'Tabletop', 'Tabletop', 4, 'roll'),
   trick('G', 'cancan', 'Can-can', 'Can-can', 4, 'roll'),
   trick('H', 'tailwhip', 'Tailwhip', 'Tailwhip', 5, 'yaw'),
@@ -85,20 +75,17 @@ export const BIKE_FREESTYLE: FreestyleTrickDef[] = [
   trick('N', 'decade', 'Decade', 'Decade', 7, 'yaw'),
   trick('O', 'backflip', 'Backflip', 'Backflip', 8, 'imp'),
   trick('P', 'frontflip', 'Frontflip', 'Frontflip', 8, 'imp'),
-  trick('Q', 'flair', 'Flair', 'Flair', 9, 'imp'),
-  trick('R', 'truckdriver', 'Truck driver', 'Truck driver', 7, 'yaw'),
-  trick('S', 'pegbar', 'Peg barspin', 'Peg barspin', 6, 'yaw'),
   trick('T', 'nohander', 'No-hander', 'No-hander', 5, 'none'),
   trick('U', 'onehander', 'One-hander', 'One-hander', 4, 'none'),
   trick('V', 'invert', 'Invert', 'Invert', 8, 'roll'),
-  trick('W', 'turndown', 'Turndown', 'Turndown', 6, 'roll'),
   trick('X', 'doublewhip', 'Double tailwhip', 'Double tailwhip', 9, 'yaw'),
   trick('Y', 'triplewhip', 'Triple whip', 'Triple whip', 10, 'yaw'),
   trick('Z', 'backflipwhip', 'Backflip whip', 'Backflip whip', 10, 'imp'),
 ]
 
 export function freestyleList(kind: FreestyleKind): FreestyleTrickDef[] {
-  return kind === 'bike' ? BIKE_FREESTYLE : SKATE_FREESTYLE
+  const all = kind === 'bike' ? BIKE_FREESTYLE : SKATE_FREESTYLE
+  return all.filter((tr) => !RESERVED_TRICK_LETTERS.has(tr.letter))
 }
 
 export function letterToCode(letter: string): string {
@@ -108,7 +95,8 @@ export function letterToCode(letter: string): string {
 export function codeToLetter(code: string): string | null {
   if (code.startsWith('Key') && code.length === 4) {
     const ch = code.slice(3).toUpperCase()
-    return LETTERS.includes(ch) ? ch : null
+    if (!LETTERS.includes(ch) || RESERVED_TRICK_LETTERS.has(ch)) return null
+    return ch
   }
   return null
 }

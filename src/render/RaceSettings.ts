@@ -3,6 +3,7 @@ import {
   RACE_VEHICLE_KINDS,
   type VehicleKind,
 } from '../track/TrackDefs'
+import { sortKindsBySpeedDesc } from '../vehicle/VehicleProfiles'
 
 const STORAGE_KEY = 'klecgp.race'
 
@@ -78,7 +79,7 @@ export function soloCategoryPool(playerKind: VehicleKind, freestyleMode: boolean
   if (freestyleMode || isFreestyleKind(playerKind)) {
     return [...FREESTYLE_VEHICLE_KINDS]
   }
-  return RACE_VEHICLE_KINDS.filter((k) => !isFreestyleKind(k))
+  return sortKindsBySpeedDesc(RACE_VEHICLE_KINDS.filter((k) => !isFreestyleKind(k)))
 }
 
 export function clampOpponentsToCategory(

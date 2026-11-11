@@ -3,7 +3,6 @@ import { GAME_STORAGE_NS } from '../input/KeyBindings'
 /** Solo soutěže (ne multiplayer). */
 export type CompetitionId =
   | 'none'
-  | 'championship'
   | 'timeAttack'
   | 'trickHunt'
   | 'cleanRun'
@@ -19,7 +18,6 @@ const STORAGE_KEY = `${GAME_STORAGE_NS}.competition`
 
 export const COMPETITIONS: { id: CompetitionId }[] = [
   { id: 'none' },
-  { id: 'championship' },
   { id: 'timeAttack' },
   { id: 'trickHunt' },
   { id: 'cleanRun' },
@@ -36,9 +34,11 @@ export function loadCompetitionSettings(): CompetitionSettingsValues {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULT_COMPETITION }
-    const parsed = JSON.parse(raw) as Partial<CompetitionSettingsValues>
-    const id = COMPETITIONS.some((c) => c.id === parsed.id)
-      ? (parsed.id as CompetitionId)
+    const parsed = JSON.parse(raw) as { id?: string }
+    const legacyId = String(parsed.id ?? '')
+    const rawId = (legacyId === 'championship' ? 'none' : legacyId) as CompetitionId
+    const id = COMPETITIONS.some((c) => c.id === rawId)
+      ? (rawId as CompetitionId)
       : 'none'
     return { id }
   } catch {

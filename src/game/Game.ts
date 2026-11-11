@@ -37,12 +37,21 @@ import {
   type RaceSettingsValues,
 } from '../render/RaceSettings'
 import {
+  championshipAiSpeedFactor,
   championshipProgressLabel,
+  championshipTotalRounds,
   championshipTrackId,
-  loadChampionship,
-  recordChampionshipPlace,
-  resetChampionship,
+  championshipReverse,
+  abandonRound,
+  getCareer,
+  recordRoundFinish,
+  wipeChampionshipSaves,
+  isChampFsQual,
+  CHAMP_FS_QUAL_MS,
 } from '../race/Championship'
+import { roundPoints } from '../race/ChampEconomy'
+import { champTuningToSolo } from '../tuning/PlayerTuning'
+import type { VehicleBranch } from '../vehicle/VehicleLook'
 import {
   loadCompetitionSettings,
   type CompetitionId,
@@ -147,6 +156,7 @@ export class Game {
   private controlFeel: ControlFeelValues = loadControlFeel()
   private visual: VisualSettingsValues = loadVisualSettings()
   private activeCompetition: CompetitionId = 'none'
+  private activeChampionship: { branch: VehicleBranch; season: 1 | 2 } | null = null
   private recordsSaved = false
   /** Pauza na mapě (Esc). */
   private paused = false
@@ -197,6 +207,7 @@ export class Game {
     this.menu.setOnBrowseOnline(() => void this.ensureHubBrowse())
     this.menu.setOnBackToEntry(() => this.showEntry())
     this.entry.setOnEnter(() => this.openMenu())
+    // Zrušit závod = ven bez postupu (šamp kolo se neposune)
     this.hud.setOnMenuRequest(() => {
       if (this.multiplayer) this.leaveLobby()
       else this.openMenu()
@@ -213,7 +224,45 @@ export class Game {
       if (this.paused) this.resumeFromPause()
     })
     this.hud.setOnRestartRequest(() => this.restartSoloSameRace({ sameTrack: true }))
-    this.hud.setOnChampionshipNext(() => this.restartSoloSameRace({ sameTrack: false }))
+    this.hud.setOnChampionshipNext(() => {
+      if (this.activeChampionship) {
+        const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+        if (career?.done || (career?.qualified && (!career.leagueChosen || !career.seriesChosen))) {
+          this.openMenu()
+          return
+        }
+      }
+      this.restartSoloSameRace({ sameTrack: false })
+    })
+    this.hud.setOnImmortalToggle(() => {
+      if (this.multiplayer || !this.paused) return
+      const next = !this.controlFeel.immortality
+      this.controlFeel = { ...this.controlFeel, immortality: next }
+      saveControlFeel(this.controlFeel)
+      if (this.player) this.player.immortal = next
+      this.syncPauseHud()
+    })
+    this.hud.setOnRetireRequest(() => {
+      if (this.mode !== 'race' || this.multiplayer) return
+      if (this.race.phase === 'finished') return
+      this.clearPause()
+      // Šamp: DNF / postup kola jako poslední → brief
+      if (this.activeChampionship) {
+        const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+        if (career && !career.done) abandonRound(career)
+        this.openMenu()
+        return
+      }
+      // Sandbox / Plácek: ulož skóre a ven
+      if (this.track.def.sandbox) {
+        this.saveSandboxRecord()
+        this.openMenu()
+        return
+      }
+      // Ostatní módy: dojeď jako poslední → finish overlay + záznamy
+      this.race.retirePlayerLast()
+      this.recordsSaved = false
+    })
     this.input.attachMobileUi(mobileEl)
     const unlock = () => {
       this.audio.unlock()
@@ -385,6 +434,9 @@ export class Game {
     if (this.mode === 'race' && this.track?.def.sandbox) {
       this.saveSandboxRecord()
     }
+    const fromRace = this.mode === 'race'
+    const wasMp = this.multiplayer
+    const champ = this.activeChampionship
     this.clearPause()
     this.input.setTabBoostHeld(false)
     this.input.setEbrakeHeld(false)
@@ -402,7 +454,22 @@ export class Game {
     }
     this.entry.hide()
     this.input.setMobileHud(false)
-    this.menu.show()
+    if (wasMp) {
+      this.activeChampionship = null
+      this.menu.showOnline()
+    } else if (champ) {
+      const career = getCareer(champ.branch, champ.season)
+      if (career?.done) this.menu.showChampionshipTrophy(career)
+      else if (career) this.menu.showChampionshipBrief(champ.branch, champ.season)
+      else {
+        this.activeChampionship = null
+        this.menu.showHome()
+      }
+    } else if (fromRace) {
+      this.menu.showRaceSetup()
+    } else {
+      this.menu.show()
+    }
     this.hud.update(this.player, this.race, this.cams, false)
     this.hud.setMirrorFrame(false)
     this.audio.setActive(false)
@@ -431,7 +498,11 @@ export class Game {
   }
 
   private syncPauseHud(): void {
-    this.hud.setPaused(true, { kind: this.player.kind })
+    this.hud.setPaused(true, {
+      kind: this.player.kind,
+      immortal: !!this.player.immortal,
+      allowImmortal: !this.multiplayer,
+    })
   }
 
   /** Plácek: uložit max freestyle skóre při odchodu (bez cíle závodu). */
@@ -509,6 +580,7 @@ export class Game {
     if (payload.laps) this.lastMpLaps = payload.laps
 
     if (payload.mode === 'solo') {
+      this.activeChampionship = payload.championship ?? null
       this.beginSoloRace(
         payload.trackId,
         payload.vehicle,
@@ -516,6 +588,7 @@ export class Game {
         payload.tuning,
         payload.name,
         payload.difficulty,
+        { laps: payload.laps, timeLimitMs: payload.timeLimitMs },
       )
       return
     }
@@ -619,11 +692,26 @@ export class Game {
     if (this.multiplayer) return
     this.escWasDown = false
     this.hud.clearResultsOverlay()
+    let vehicle = this.lastVehicle
+    let tuning = this.lastTuning
+    if (this.activeChampionship) {
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      if (career?.done) {
+        this.openMenu()
+        return
+      }
+      if (career) {
+        vehicle = career.vehicle
+        tuning = champTuningToSolo(career.tuning)
+        this.lastVehicle = vehicle
+        this.lastTuning = { ...tuning }
+      }
+    }
     this.beginSoloRace(
       this.lastTrackId,
-      this.lastVehicle,
+      vehicle,
       this.lastLook,
-      this.lastTuning,
+      tuning,
       this.player.info.name,
       this.lastDifficulty.id,
       { keepTrack: opts?.sameTrack === true },
@@ -637,7 +725,7 @@ export class Game {
     tuning: PlayerTuningValues,
     name = t('player.you'),
     difficulty: DifficultyId = 'normal',
-    opts?: { keepTrack?: boolean },
+    opts?: { keepTrack?: boolean; laps?: number; timeLimitMs?: number },
   ): void {
     this.multiplayer = false
     this.mpRaceEnded = false
@@ -661,11 +749,14 @@ export class Game {
       vehicle = 'skate'
       this.lastVehicle = vehicle
     }
-    if (!opts?.keepTrack && this.activeCompetition === 'championship') {
-      let champ = loadChampionship()
-      if (champ.done) champ = resetChampionship()
-      const champTrack = championshipTrackId(champ)
+    if (!opts?.keepTrack && this.activeChampionship) {
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      const champTrack = career ? championshipTrackId(career) : null
       if (champTrack) trackId = champTrack
+      if (career) {
+        this.raceSettings.reverse = championshipReverse(career)
+        saveRaceSettings(this.raceSettings)
+      }
     }
     this.lastTrackId = trackId
     this.menu.hide()
@@ -676,9 +767,26 @@ export class Game {
     this.applyAiDifficulty()
     this.race = new RaceManager(this.track, this.vehicles)
     this.race.finishPolicy = 'solo'
+    let laps = this.track.def.loop ? this.raceSettings.laps : 1
+    let timeLimitMs =
+      typeof opts?.timeLimitMs === 'number' && Number.isFinite(opts.timeLimitMs)
+        ? Math.max(0, Math.round(opts.timeLimitMs))
+        : 0
+    if (this.activeChampionship) {
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      if (career && isChampFsQual(career)) {
+        timeLimitMs = CHAMP_FS_QUAL_MS
+      } else if (career && !career.qualified && !(typeof opts?.laps === 'number')) {
+        laps = 1
+      }
+    }
+    if (typeof opts?.laps === 'number' && Number.isFinite(opts.laps)) {
+      laps = Math.max(1, Math.min(5, Math.round(opts.laps)))
+    }
     this.race.start({
       skipCountdown: this.raceSettings.skipCountdown,
-      laps: this.track.def.loop ? this.raceSettings.laps : 1,
+      laps,
+      timeLimitMs: timeLimitMs > 0 ? timeLimitMs : undefined,
     })
     this.resetAiRails()
     for (const v of this.vehicles) {
@@ -818,6 +926,7 @@ export class Game {
     // Nesmrtelnost jen solo; online vždy vypnuto
     if (this.player) {
       this.player.immortal = !this.multiplayer && !!this.controlFeel.immortality
+      this.player.applySkateStance(this.controlFeel.skateStance)
     }
   }
 
@@ -834,9 +943,24 @@ export class Game {
   }
 
   private applyAiDifficulty(): void {
+    let diff = this.lastDifficulty
+    if (this.activeChampionship) {
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      if (career && !career.done) {
+        const ramp = championshipAiSpeedFactor(
+          career.round,
+          career.season,
+          championshipTotalRounds(career.league, career.trackPool),
+        )
+        diff = {
+          ...this.lastDifficulty,
+          speedScale: Math.max(0.2, this.lastDifficulty.speedScale * ramp),
+        }
+      }
+    }
     for (let i = 0; i < this.vehicles.length; i++) {
       const brain = this.ai.get(this.vehicles[i])
-      brain?.setDifficulty(this.lastDifficulty)
+      brain?.setDifficulty(diff)
     }
   }
 
@@ -934,12 +1058,18 @@ export class Game {
       !this.input.mobile && transmissionAllowedFor(vehicle)
         ? this.raceSettings.transmission
         : 'auto'
+    // Šampionát: pevný roster z career (nemění se s hráčovým autem).
     // Solo: default každý závod noví soupeři; jinak pevní z nastavení. Multi: lobby.
-    const opponents =
-      this.multiplayer || !this.raceSettings.randomOpponentsEachRace
-        ? this.raceSettings.opponents
-        : randomOpponents(vehicle, false)
-    if (!this.multiplayer && this.raceSettings.randomOpponentsEachRace) {
+    const champCareer = this.activeChampionship
+      ? getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      : null
+    let opponents: [VehicleKind, VehicleKind, VehicleKind]
+    if (champCareer && !champCareer.done) {
+      opponents = champCareer.rivals
+    } else if (this.multiplayer || !this.raceSettings.randomOpponentsEachRace) {
+      opponents = this.raceSettings.opponents
+    } else {
+      opponents = randomOpponents(vehicle, false)
       this.raceSettings.opponents = opponents
       saveRaceSettings(this.raceSettings)
     }
@@ -1401,14 +1531,30 @@ export class Game {
           immortal: this.player.immortal,
         })
         this.recordPaceCalibration(finishTimeMs)
-        if (this.activeCompetition === 'championship') {
-          const champ = recordChampionshipPlace(place)
-          this.hud.setChampionshipResult({
-            points: champ.points,
-            progress: championshipProgressLabel(champ),
-            done: champ.done,
-            lastPts: placePoints(place),
-          })
+        if (this.activeChampionship) {
+          const career = getCareer(
+            this.activeChampionship.branch,
+            this.activeChampionship.season,
+          )
+          if (career && !career.done) {
+            const wasQual = !career.qualified
+            const wasFsQual = isChampFsQual(career)
+            const updated = recordRoundFinish(career, {
+              place,
+              trickPts: this.player.trickPoints,
+            })
+            this.hud.setChampionshipResult({
+              points: updated.points,
+              progress: championshipProgressLabel(updated),
+              done: updated.done,
+              lastPts: wasQual
+                ? 0
+                : roundPoints(updated.branch, place, this.player.trickPoints),
+              qual: wasQual,
+              fsQual: wasFsQual,
+              place,
+            })
+          }
         } else {
           this.hud.setChampionshipResult(null)
         }
@@ -1451,6 +1597,17 @@ export class Game {
   private installQaApi(): void {
     if (typeof window === 'undefined') return
     window.__klecQa = {
+      wipeChamp: () => {
+        wipeChampionshipSaves()
+        try {
+          localStorage.setItem('klecgp.champWipe.v3', '1')
+        } catch {
+          /* ignore */
+        }
+        this.activeChampionship = null
+        this.openMenu()
+        return true
+      },
       list: () => ({
         tracks: TRACKS.map((tr) => tr.id),
         vehicles: [...VEHICLE_KINDS],
@@ -1562,6 +1719,7 @@ function labelVehicle(kind: VehicleKind): string {
 declare global {
   interface Window {
     __klecQa?: {
+      wipeChamp: () => boolean
       list: () => { tracks: string[]; vehicles: VehicleKind[] }
       state: () => Record<string, unknown>
       openMenu: () => void

@@ -266,6 +266,15 @@ html.portrait-blocked #app {
   gap: 8px 12px;
   margin-bottom: 10px;
 }
+.lb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+
 .vehicle-branch-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -632,6 +641,198 @@ html.portrait-blocked #app {
   justify-content: center;
   flex-wrap: wrap;
   margin-top: 16px;
+}
+
+/* ——— Finish: větší oslava, pořád čitelná tabulka ——— */
+.overlay-finish {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-width: min(420px, 92vw);
+  max-width: min(520px, 94vw);
+  padding: 32px 40px 28px;
+  animation: finishCardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 220, 140, 0.12);
+}
+
+.overlay-finish--p1 {
+  border-color: rgba(255, 210, 120, 0.45);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 190, 80, 0.22), transparent 55%),
+    rgba(12, 16, 24, 0.96);
+}
+
+.overlay-finish--p2 {
+  border-color: rgba(200, 210, 230, 0.35);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(180, 200, 230, 0.16), transparent 55%),
+    rgba(12, 16, 24, 0.96);
+}
+
+.overlay-finish--p3 {
+  border-color: rgba(200, 140, 90, 0.35);
+}
+
+.finish-hero {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 8px;
+}
+
+.finish-place-badge {
+  display: inline-block;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: clamp(56px, 12vw, 88px);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  color: #ffe08a;
+  text-shadow: 0 8px 28px rgba(255, 180, 60, 0.35);
+  animation: finishBadgePop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.overlay-finish--p2 .finish-place-badge {
+  color: #d8e0ee;
+  text-shadow: 0 6px 20px rgba(160, 180, 220, 0.3);
+}
+
+.overlay-finish--p3 .finish-place-badge {
+  color: #e0b080;
+  text-shadow: none;
+}
+
+.overlay-finish--p4 .finish-place-badge {
+  color: rgba(247, 241, 234, 0.75);
+  font-size: clamp(42px, 9vw, 64px);
+  text-shadow: none;
+}
+
+.overlay-finish .overlay-winner {
+  font-size: clamp(22px, 4.5vw, 32px);
+  margin: 6px 0 4px !important;
+  animation: finishFadeUp 0.5s ease 0.08s both;
+}
+
+.finish-time {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(18px, 3.2vw, 24px) !important;
+  font-weight: 600 !important;
+  opacity: 0.95 !important;
+  color: #f4f0ea;
+  margin-bottom: 4px !important;
+  animation: finishFadeUp 0.5s ease 0.14s both;
+}
+
+.finish-track {
+  opacity: 0.7 !important;
+  margin-bottom: 4px !important;
+}
+
+.overlay-finish h2 {
+  margin-bottom: 6px;
+  opacity: 0.9;
+}
+
+.finish-standings {
+  margin: 12px 0 8px !important;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.finish-standings li {
+  padding: 8px 4px !important;
+  font-size: 15px;
+}
+
+.finish-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.finish-spark {
+  position: absolute;
+  left: 50%;
+  top: 28%;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: #ffd070;
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(calc(var(--i) * 20deg));
+  animation: finishSpark 1.15s ease-out calc(var(--i) * 0.03s) both;
+  box-shadow: 0 0 10px rgba(255, 200, 80, 0.7);
+}
+
+.overlay-finish--p2 .finish-spark {
+  background: #c8d4e8;
+  box-shadow: 0 0 8px rgba(180, 200, 230, 0.55);
+}
+
+.finish-spark:nth-child(3n) {
+  width: 5px;
+  height: 11px;
+  background: #fff3c8;
+}
+
+.finish-spark:nth-child(4n) {
+  width: 9px;
+  height: 4px;
+  background: #ff9a3c;
+}
+
+@keyframes finishCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes finishBadgePop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes finishFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes finishSpark {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, -40px)))
+      scale(0.2) rotate(calc(var(--i) * 28deg));
+  }
 }
 
 .pause-card {
@@ -1649,6 +1850,20 @@ html.portrait-blocked #app {
   cursor: pointer;
 }
 
+.mute-btn-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 8px 14px;
+}
+
+.mute-ico {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 .lang-btn.active,
 .mute-btn.active {
   color: #041018;
@@ -1962,18 +2177,47 @@ html.portrait-blocked #app {
   bottom: max(52px, calc(env(safe-area-inset-bottom) + 36px));
 }
 
-/* Scrollovací okna: Zpět na konci / u krátkých panelů dole (flex) */
+/* Scrollovací okna: Zpět na konci — pevná výška = Domů (token z .gta-home) */
+.gta-home > .menu-nav-back--flow {
+  margin-top: 10px;
+  margin-bottom: 0;
+  padding-top: 12px;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  height: var(--gta-footer-h, 72px);
+  min-height: var(--gta-footer-h, 72px);
+  max-height: var(--gta-footer-h, 72px);
+  box-sizing: border-box;
+  align-items: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: 0 0 14px 14px;
+}
+
 .menu-nav-back--flow {
   margin-top: auto;
   margin-bottom: 8px;
-  padding-top: 20px;
+  padding-top: 12px;
   padding-bottom: max(4px, env(safe-area-inset-bottom));
+  height: 68px;
+  min-height: 68px;
+  max-height: 68px;
+  box-sizing: border-box;
+  align-items: center;
 }
 
 .menu-nav-back--flow .menu-back-btn {
   position: relative;
   right: auto;
   bottom: auto;
+}
+
+/* Domů: neviditelné Zpět drží stejný slot jako hub/brief */
+.menu-back-btn--phantom {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .menu-nav-back--split {
@@ -1984,7 +2228,15 @@ html.portrait-blocked #app {
   gap: 10px;
 }
 
-.menu-nav-back--split .menu-tune-btn {
+.menu-nav-back--split .menu-nav-left {
+  order: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.menu-nav-back--split > .menu-tune-btn {
   order: 0;
   margin-right: auto;
 }
@@ -2524,6 +2776,15 @@ button.menu-start:disabled {
   pointer-events: auto;
 }
 
+/* Domů / Setup / Champ: logo nahoře; shell níž → Zpět nezasahuje do dlaždic */
+#menu:has(.gta-home) {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
 .menu-shell {
   width: min(1120px, 96vw);
   margin: 0 auto;
@@ -2539,22 +2800,72 @@ button.menu-start:disabled {
   backdrop-filter: blur(14px) saturate(1.15);
 }
 
+/*
+ * Menu 1 (Domů) = jediný footprint. Všechny .gta-home dědí stejné tokeny.
+ * Shell má pevnou výšku — dlaždice/scroll vyplní střed; patička vždy stejný slot.
+ * Žádné vlastní min-height na child tiles nesmí shell roztáhnout.
+ */
 .gta-home {
+  --gta-shell-w: min(1080px, 96vw);
+  --gta-shell-h: min(780px, calc(100dvh - 56px));
+  --gta-pad-y: 28px;
+  --gta-pad-x: 28px;
+  --gta-pad-b: 16px;
+  --gta-hero-mb: 22px;
+  --gta-hero-h: calc(clamp(56px, 9vw, 78px) + 2.75rem);
+  --gta-footer-h: 72px;
+  --gta-tile-row1: minmax(0, 1fr);
+  --gta-tile-row2: minmax(0, 0.55fr);
+  --gta-tiles-gap: 16px;
+
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: min(1080px, 96vw);
-  min-height: min(780px, 86vh);
-  padding: 28px 28px 36px;
+  width: var(--gta-shell-w);
+  height: var(--gta-shell-h);
+  min-height: var(--gta-shell-h);
+  max-height: var(--gta-shell-h);
+  padding: var(--gta-pad-y) var(--gta-pad-x) var(--gta-pad-b);
+  overflow: hidden;
   background: transparent;
   border: none;
   box-shadow: none;
   backdrop-filter: none;
 }
 
+/* Střed shellu: buď grid dlaždic, nebo scroll panel — stejný flex slot */
+.gta-home > .gta-tiles,
+.gta-home > .gta-home-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
 .gta-home-hero {
   text-align: left;
-  margin-bottom: 22px;
+  margin-bottom: var(--gta-hero-mb);
   max-width: 640px;
+  height: var(--gta-hero-h);
+  min-height: var(--gta-hero-h);
+  max-height: var(--gta-hero-h);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+/* Scrollovací střed (pit / série / liga / trophy) — shell se neroztahuje */
+.gta-home-scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* stejné jako .menu-panel-body — bez viditelného jezdce */
+  scrollbar-width: none;
+}
+
+.gta-home-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .gta-tagline {
@@ -2564,69 +2875,848 @@ button.menu-start:disabled {
   letter-spacing: 0.04em;
   color: rgba(247, 241, 234, 0.78);
   text-wrap: balance;
+  height: 1.35em;
+  min-height: 1.35em;
+  max-height: 1.35em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.gta-tagline--slot {
+  visibility: hidden;
+}
+
+.gta-tagline--soft {
+  opacity: 0.72;
+  font-size: 0.92em;
+}
+
+.champ-starter-budget {
+  margin-top: 2px;
 }
 
 .gta-tiles {
   display: grid;
   grid-template-columns: 1.45fr 1fr 1fr;
-  grid-template-rows: minmax(240px, 36vh) minmax(140px, 18vh);
-  gap: 16px;
-  align-content: center;
-  flex: 1;
-  width: 100%;
-  max-width: 1100px;
+  grid-template-rows: var(--gta-tile-row1) var(--gta-tile-row2);
+  gap: var(--gta-tiles-gap, 16px);
+  align-content: stretch;
+  align-items: stretch;
+  max-width: 100%;
   margin: 0 auto;
+  overflow: hidden;
+  padding-bottom: 0;
+  box-sizing: border-box;
 }
 
-/* Domů: Závod nahoře, pod tím Žebříček | Nastavení */
-.gta-tiles-home3 {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(240px, 38vh) minmax(140px, 20vh);
+/* Domů / Setup / Champ hub+brief: stejné metriky (tokeny z .gta-home) */
+.gta-tiles-home3,
+.gta-tiles-setup {
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: var(--gta-tile-row1) var(--gta-tile-row2);
 }
 
-.gta-tiles-home3 .gta-tile-hero {
+.gta-tiles-home3 .gta-tile-hero,
+.gta-tiles-setup .gta-tile-hero {
   grid-column: 1 / -1;
   grid-row: 1;
-  min-height: 240px;
+  min-height: 0;
+  height: 100%;
 }
 
-/* Setup: Trať | Peklostroj nahoře, Jet | Multi | Join dole */
-.gta-tiles-setup {
-  grid-template-columns: repeat(6, 1fr);
-  grid-template-rows: minmax(200px, 30vh) minmax(130px, 18vh);
+/* Uvnitř pevného shellu žádné min-height, co by přeteklo patičku */
+.gta-home .gta-tile,
+.gta-home .gta-tile-hero,
+.gta-home .gta-tile-setup {
+  min-height: 0;
 }
 
-.gta-tiles-setup .gta-tile-setup:nth-child(1) {
-  grid-column: 1 / 4;
-  grid-row: 1;
+.gta-tile-static {
+  cursor: default;
+  pointer-events: none;
 }
 
-.gta-tiles-setup .gta-tile-setup:nth-child(2) {
-  grid-column: 4 / 7;
-  grid-row: 1;
+
+.gta-tile-live {
+  box-shadow:
+    0 0 0 1px rgba(255, 210, 120, 0.45),
+    0 18px 40px rgba(0, 0, 0, 0.35);
 }
 
-.gta-tiles-setup .gta-tile-action:nth-child(3) {
-  grid-column: 1 / 3;
-  grid-row: 2;
+/* Šamp hotovost — růžově svítí */
+.champ-cash-glow {
+  color: #ff6ab0;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 0 6px rgba(255, 90, 180, 0.95),
+    0 0 14px rgba(255, 70, 160, 0.7),
+    0 0 28px rgba(255, 40, 140, 0.45);
+  animation: champ-cash-pulse 2.4s ease-in-out infinite;
 }
 
-.gta-tiles-setup .gta-tile-action:nth-child(4) {
-  grid-column: 3 / 5;
-  grid-row: 2;
+@keyframes champ-cash-pulse {
+  0%,
+  100% {
+    color: #ff6ab0;
+    text-shadow:
+      0 0 6px rgba(255, 90, 180, 0.95),
+      0 0 14px rgba(255, 70, 160, 0.7),
+      0 0 28px rgba(255, 40, 140, 0.45);
+  }
+  50% {
+    color: #ff9ad0;
+    text-shadow:
+      0 0 10px rgba(255, 120, 200, 1),
+      0 0 22px rgba(255, 80, 170, 0.85),
+      0 0 36px rgba(255, 50, 150, 0.55);
+  }
 }
 
-.gta-tiles-setup .gta-tile-action:nth-child(5) {
-  grid-column: 5 / 7;
-  grid-row: 2;
+/*
+ * Menu 2 šamp — 4 stejné svislé gta-tile v jedné řadě
+ * (Auto | Moto | Monster | FS), footprint Domů.
+ */
+.gta-tiles-champ-hub {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.gta-tiles-champ-hub .gta-tile {
+  min-height: 0;
+  height: 100%;
+  padding: 18px 14px;
+  overflow: hidden;
+}
+
+.gta-tiles-champ-hub .gta-tile-label {
+  font-size: clamp(18px, 2.2vw, 32px);
+}
+
+.gta-tiles-champ-hub .gta-tile-sub {
+  max-width: none;
+}
+
+/*
+ * Startér: stejný footprint jako Setup/Brief (home3).
+ * Jet hero = jedna dlaždice přesně půl na půl (levnější | dražší),
+ * mezera = --gta-tiles-gap jako u ostatních menu.
+ */
+.gta-tiles-champ-starter .gta-tile-jet-split {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gta-tiles-gap, 16px);
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.gta-tiles-champ-starter .gta-tile-starter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+  text-align: left;
+  cursor: default;
+}
+
+.gta-tiles-champ-starter .gta-tile-sub {
+  max-width: 36ch;
+}
+
+.gta-tile-start-btn {
+  margin-top: 8px;
+  align-self: stretch;
+  max-width: 220px;
+  pointer-events: auto;
+}
+
+/* footprint = .gta-home; žádný vlastní max-width */
+.champ-pit-shell {
+  max-width: none;
+}
+
+/*
+ * Menu accordion (liga / série / pit / obtížnost):
+ * rozklik hlavičky → tělo s volbami (jako liga + pool).
+ */
+.menu-accordion,
+.champ-league-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-accordion-block,
+.champ-league-block {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(8, 10, 14, 0.4);
+  overflow: hidden;
+}
+
+.menu-accordion-block.is-active,
+.champ-league-block.is-active {
+  border-color: color-mix(in srgb, var(--menu-accent, #c4a574) 55%, white);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--menu-accent, #c4a574) 25%, transparent);
+}
+
+.menu-accordion-block > [data-acc-toggle],
+.champ-league-block > [data-champ-league] {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.menu-accordion-block > [data-acc-toggle].active,
+.champ-league-block > [data-champ-league].active {
+  background: color-mix(in srgb, var(--menu-accent, #c4a574) 12%, transparent);
+}
+
+.menu-accordion-head,
+.champ-league-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.menu-accordion-meta,
+.champ-league-meta {
+  font-size: 0.85em;
+  opacity: 0.72;
+}
+
+.menu-accordion-chevron,
+.champ-league-chevron {
+  flex-shrink: 0;
+  opacity: 0.65;
+  font-size: 0.85em;
+}
+
+.champ-league-block.is-locked > [data-champ-league] {
+  cursor: pointer; /* rozklik na prohlížení pořád jde */
+}
+
+.menu-accordion-body,
+.champ-league-pool {
+  display: none;
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.menu-accordion-block.is-open > .menu-accordion-body,
+.champ-league-block.is-open .champ-league-pool {
+  display: block;
+}
+
+.menu-accordion-body .atm-scene-title,
+.champ-league-pool .atm-scene-title {
+  margin: 12px 0 8px;
+}
+
+.menu-accordion-body .dir-grid,
+.champ-league-pool .dir-grid {
+  margin: 0;
+}
+
+.menu-accordion-body .tune-stack {
+  margin-top: 8px;
+}
+
+.menu-accordion-body .champ-cal-list {
+  margin: 8px 0 0;
+}
+
+.champ-pit-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 18px;
+  min-height: min(28vh, 220px);
+  padding: 22px 20px;
+  margin-bottom: 16px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  background:
+    linear-gradient(180deg, rgba(8, 6, 12, 0.1), rgba(8, 6, 12, 0.72)),
+    var(--tile) center / cover no-repeat;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.champ-pit-buy {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.champ-pit-body {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 12px;
+  /* scroll řeší .gta-home-scroll */
+  max-height: none;
+  overflow: visible;
+}
+
+.champ-shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.champ-shop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 10, 14, 0.45);
+}
+
+.champ-shop-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.champ-shop-row span {
+  opacity: 0.75;
+  font-size: 0.92em;
+}
+
+.champ-shop-row.is-next {
+  border-color: rgba(255, 210, 120, 0.55);
+}
+
+.champ-shop-row.is-owned {
+  opacity: 0.85;
+}
+
+.champ-shop-row.is-locked {
+  opacity: 0.55;
+}
+
+.champ-shop-row {
+  cursor: pointer;
+}
+
+.champ-shop-row.is-preview {
+  border-color: rgba(140, 200, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(140, 200, 255, 0.25);
+}
+
+.champ-brief-meta {
+  width: 100%;
+  max-width: none;
+  margin: 0 0 8px;
+}
+
+.champ-ctrl-help {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  opacity: 0.88;
+  white-space: pre-line;
+}
+
+.champ-cart {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(8, 10, 14, 0.45);
+}
+
+.champ-cart-lines {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.champ-cart-total {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.champ-cart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.champ-trophy {
+  width: 100%;
+  max-width: none;
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: finishCardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.champ-trophy-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(280px, 32vh);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 28px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(8, 6, 12, 0.08), rgba(8, 6, 12, 0.78)),
+    var(--tile) center / cover no-repeat;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.champ-trophy--tier1 .champ-trophy-hero {
+  border-color: rgba(255, 210, 120, 0.55);
+  box-shadow:
+    0 22px 56px rgba(0, 0, 0, 0.4),
+    0 0 48px rgba(255, 180, 60, 0.18);
+}
+
+.champ-trophy--tier2 .champ-trophy-hero {
+  border-color: rgba(200, 210, 230, 0.4);
+}
+
+.champ-trophy--tier3 .champ-trophy-hero {
+  border-color: rgba(200, 140, 90, 0.4);
+}
+
+.champ-trophy-hero-copy {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: min(640px, 100%);
+}
+
+.trophy-tier-badge {
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: clamp(48px, 10vw, 92px);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  color: #ffe08a;
+  text-shadow: 0 10px 32px rgba(255, 180, 60, 0.4);
+  animation: finishBadgePop 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.champ-trophy--tier2 .trophy-tier-badge {
+  color: #d8e0ee;
+  text-shadow: 0 8px 24px rgba(160, 180, 220, 0.35);
+}
+
+.champ-trophy--tier3 .trophy-tier-badge {
+  color: #e0b080;
+  text-shadow: none;
+}
+
+.champ-trophy--tier4 .trophy-tier-badge {
+  color: rgba(247, 241, 234, 0.75);
+  font-size: clamp(36px, 7vw, 64px);
+  text-shadow: none;
+}
+
+.champ-trophy-title {
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: clamp(28px, 5.5vw, 52px);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin: 0;
+  animation: finishFadeUp 0.5s ease 0.1s both;
+}
+
+.champ-trophy-tier {
+  margin: 0;
+  opacity: 0.9;
+  font-size: clamp(15px, 2.2vw, 18px);
+}
+
+.champ-trophy-champagne {
+  margin: 4px 0 0;
+  font-size: clamp(16px, 2.6vw, 22px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #fff3c8;
+  text-shadow: 0 0 18px rgba(255, 220, 140, 0.45);
+  animation: trophyChampagnePulse 1.6s ease-in-out infinite;
+}
+
+.trophy-podium {
+  position: absolute;
+  right: 8%;
+  bottom: 12%;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.trophy-step {
+  display: block;
+  width: clamp(36px, 5vw, 52px);
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, rgba(255, 220, 150, 0.55), rgba(120, 90, 40, 0.55));
+  border: 1px solid rgba(255, 230, 180, 0.35);
+}
+
+.trophy-step--1 {
+  height: clamp(56px, 8vw, 88px);
+  background: linear-gradient(180deg, #ffe08a, #b8862a);
+}
+
+.trophy-step--2 {
+  height: clamp(40px, 6vw, 64px);
+  background: linear-gradient(180deg, #e8eef8, #8a96a8);
+}
+
+.trophy-step--3 {
+  height: clamp(28px, 4.5vw, 48px);
+  background: linear-gradient(180deg, #e0b080, #8a5a30);
+}
+
+.champ-trophy--tier4 .trophy-podium {
+  opacity: 0.28;
+  filter: grayscale(0.4);
+}
+
+.trophy-bottles {
+  position: absolute;
+  left: 6%;
+  bottom: 14%;
+  z-index: 1;
+  width: 120px;
+  height: 100px;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.champ-trophy--celebrate .trophy-bottles {
+  opacity: 0.85;
+}
+
+.trophy-bottle {
+  position: absolute;
+  bottom: 0;
+  width: 18px;
+  height: 72px;
+  border-radius: 4px 4px 6px 6px;
+  background: linear-gradient(180deg, #c8e8c0 0%, #2a6a3a 35%, #1a4024 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  transform-origin: 50% 90%;
+}
+
+.trophy-bottle::before {
+  content: '';
+  position: absolute;
+  top: -14px;
+  left: 5px;
+  width: 8px;
+  height: 16px;
+  border-radius: 3px;
+  background: #1a4024;
+}
+
+.trophy-bottle::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: -2px;
+  width: 22px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.trophy-bottle--l {
+  left: 18px;
+  animation: trophyBottleShake 0.7s ease-in-out 0.2s 3;
+}
+
+.trophy-bottle--r {
+  right: 18px;
+  animation: trophyBottleShakeMirror 0.7s ease-in-out 0.35s 3;
+}
+
+.trophy-spray {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.trophy-foam {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 250, 235, 0.95);
+  opacity: 0;
+  box-shadow: 0 0 12px rgba(255, 240, 200, 0.8);
+  animation: finishSpark 1.35s ease-out calc(var(--i) * 0.025s) both;
+}
+
+.trophy-foam:nth-child(3n) {
+  width: 5px;
+  height: 14px;
+  border-radius: 3px;
+  background: #fff8d8;
+}
+
+.trophy-foam:nth-child(5n) {
+  background: #ffe08a;
+}
+
+.champ-trophy-rewards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.champ-reward-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(8, 10, 14, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: finishFadeUp 0.45s ease both;
+}
+
+.champ-reward-card:nth-child(1) {
+  animation-delay: 0.12s;
+}
+.champ-reward-card:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.champ-reward-card:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.champ-reward-card:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+.champ-reward-card span {
+  font-size: 12px;
+  opacity: 0.7;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.champ-reward-card strong {
+  font-size: clamp(18px, 2.4vw, 26px);
+  font-variant-numeric: tabular-nums;
+}
+
+.champ-trophy-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(8, 10, 14, 0.4);
+}
+
+.champ-trophy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.champ-trophy-table th,
+.champ-trophy-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.champ-trophy-table th {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.champ-trophy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@keyframes trophyBottleShake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+  75% {
+    transform: rotate(-10deg);
+  }
+}
+
+@keyframes trophyBottleShakeMirror {
+  0%,
+  100% {
+    transform: scaleX(-1) rotate(0deg);
+  }
+  25% {
+    transform: scaleX(-1) rotate(18deg);
+  }
+  50% {
+    transform: scaleX(-1) rotate(-14deg);
+  }
+  75% {
+    transform: scaleX(-1) rotate(10deg);
+  }
+}
+
+@keyframes trophyChampagnePulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .champ-trophy-rewards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .trophy-podium {
+    right: 4%;
+    opacity: 0.4;
+  }
+
+  .trophy-bottles {
+    left: 2%;
+    transform: scale(0.85);
+    transform-origin: bottom left;
+  }
+}
+
+.champ-pit-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 12px;
+  align-items: start;
+}
+
+.champ-pit-stage {
+  position: sticky;
+  top: 0;
+}
+
+.champ-pit-stage .vehicle-preview-canvas {
+  width: 100%;
+  min-height: 220px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 860px) {
+  .champ-pit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .champ-pit-stage {
+    position: static;
+  }
+}
+
+.champ-cal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(36vh, 320px);
+  overflow: auto;
+}
+
+.champ-cal-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(8, 10, 14, 0.35);
+  border: 1px solid transparent;
+  font-size: 0.95em;
+}
+
+.champ-cal-row.is-done {
+  opacity: 0.55;
+}
+
+.champ-cal-row.is-current {
+  border-color: rgba(255, 210, 120, 0.55);
+  background: rgba(40, 32, 18, 0.55);
+}
+
+.champ-cal-idx {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 .gta-tile-setup {
-  min-height: 180px;
+  min-height: 140px;
 }
 
 .gta-tile-action {
-  min-height: 120px;
+  min-height: 140px;
 }
 
 .gta-tile {
@@ -2649,6 +3739,7 @@ button.menu-start:disabled {
   justify-content: flex-end;
   gap: 4px;
   min-height: 120px;
+  min-width: 0;
 }
 
 .gta-tile::after {
@@ -2691,6 +3782,12 @@ summary:focus-visible {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.4);
 }
 
+.gta-tile:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+}
+
 .gta-tile-hero {
   grid-row: 1 / span 2;
   min-height: 360px;
@@ -2727,74 +3824,158 @@ summary:focus-visible {
 }
 
 @media (max-width: 860px) {
+  /* Footprint drží tokeny — žádné auto rows / min-height, co roztáhnou shell */
   .gta-tiles {
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto;
+    grid-template-rows: var(--gta-tile-row1) var(--gta-tile-row2);
   }
 
   .gta-tile-hero {
     grid-column: 1 / -1;
-    grid-row: auto;
-    min-height: 200px;
+    grid-row: 1;
+    min-height: 0;
   }
 
-  .gta-tiles-home3 {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-  }
-
-  .gta-tiles-home3 .gta-tile-hero {
-    grid-column: 1 / -1;
-    min-height: 200px;
-  }
-
-  /* Telefon: 2 nahoře | Jet přes střed | 2 dole — stejná výška dlaždic jako dřív */
+  .gta-tiles-home3,
   .gta-tiles-setup {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto;
-    grid-template-areas:
-      'track vehicle'
-      'jet jet'
-      'multi join';
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: var(--gta-tile-row1) var(--gta-tile-row2);
   }
 
-  .gta-tiles-setup .gta-tile-setup:nth-child(1) {
-    grid-area: track;
+  .gta-tiles-home3 .gta-tile-hero,
+  .gta-tiles-setup .gta-tile-hero {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-height: 0;
   }
 
-  .gta-tiles-setup .gta-tile-setup:nth-child(2) {
-    grid-area: vehicle;
+  .gta-tiles-home3 .gta-tile-setup {
+    min-height: 0;
   }
 
-  .gta-tiles-setup .gta-tile-action:nth-child(3) {
-    grid-area: jet;
+  .gta-tiles-champ-hub {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
+/* Telefon na výšku: text musí zůstat uvnitř dlaždic */
+@media (orientation: portrait) and (max-width: 900px) {
+  .gta-home {
+    --gta-shell-w: min(100vw - 12px, 560px);
+    --gta-shell-h: min(94vh, calc(100dvh - 24px));
+    --gta-pad-y: 14px;
+    --gta-pad-x: 12px;
+    --gta-pad-b: 10px;
+    --gta-hero-mb: 10px;
+    --gta-footer-h: 64px;
+    --gta-tiles-gap: 8px;
   }
 
-  .gta-tiles-setup .gta-tile-action:nth-child(4) {
-    grid-area: multi;
+  .gta-home .gta-tile,
+  .gta-home .gta-tile-hero,
+  .gta-home .gta-tile-setup {
+    padding: 12px 10px;
+    min-height: 0;
+    overflow: hidden;
   }
 
-  .gta-tiles-setup .gta-tile-action:nth-child(5) {
-    grid-area: join;
+  .gta-tile-kicker {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
+  .gta-tile-label {
+    font-size: clamp(15px, 4.6vw, 22px);
+    letter-spacing: 0.02em;
+    line-height: 1.08;
+  }
+
+  .gta-tile-sub {
+    font-size: 11px;
+    line-height: 1.25;
+    max-width: 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  /* Hub šamp: 2×2 — 4 úzké sloupce na portrait nepustí text */
+  .gta-tiles-champ-hub {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .gta-tiles-champ-hub .gta-tile {
+    padding: 12px 10px;
+  }
+
+  .gta-tiles-champ-hub .gta-tile-label {
+    font-size: clamp(16px, 5vw, 24px);
+  }
+
+  .gta-tiles-champ-starter .gta-tile-jet-split {
+    gap: var(--gta-tiles-gap, 8px);
+  }
+
+  .gta-tiles-champ-starter .gta-tile-start-btn {
+    max-width: none;
+  }
+
+  .gta-tiles-home3,
+  .gta-tiles-setup,
+  .gta-tiles-champ-brief {
+    gap: var(--gta-tiles-gap);
+  }
+
+  .gta-tiles-home3 .gta-tile-setup,
   .gta-tiles-setup .gta-tile-setup,
-  .gta-tiles-setup .gta-tile-action {
-    min-height: 120px;
+  .gta-tiles-champ-brief .gta-tile-setup {
+    padding: 10px 8px;
+  }
+
+  .track-card-photo {
+    min-height: 72px;
+  }
+
+  .track-card-photo span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .champ-cash-glow {
+    display: inline;
+    word-break: break-word;
   }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .gta-tile-hero {
-    min-height: 120px;
-  }
-
   .gta-home {
-    padding: 16px 18px 20px;
+    --gta-shell-h: min(94vh, calc(100dvh - 40px));
+    --gta-pad-y: 16px;
+    --gta-pad-x: 18px;
+    --gta-pad-b: 12px;
+    --gta-hero-mb: 12px;
+    --gta-footer-h: 64px;
+    --gta-tile-row1: minmax(0, 1fr);
+    --gta-tile-row2: minmax(0, 0.55fr);
+    --gta-tiles-gap: 10px;
   }
 
-  .gta-home-hero {
-    margin-bottom: 12px;
+  .gta-home .gta-tile-hero {
+    min-height: 0;
   }
 }
 
@@ -3257,7 +4438,80 @@ summary:focus-visible {
     radial-gradient(ellipse at 80% 20%, var(--menu-glow-b), transparent 55%),
     var(--menu-photo) center / cover no-repeat;
   min-height: 320px;
+  max-height: min(62vh, 520px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  scrollbar-width: none;
+}
+
+.tracks-preview-pane::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Trať: levý seznam + pravý náhled scrollují odděleně */
+.menu-panel.menu-tracks {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-panel.menu-tracks .menu-panel-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.menu-panel.menu-tracks .tracks-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.menu-panel.menu-tracks .tracks-list {
+  max-height: none;
+  height: 100%;
+  min-height: 0;
+}
+
+.menu-panel.menu-tracks .tracks-preview-pane {
+  max-height: none;
+  height: 100%;
+  min-height: 0;
+}
+
+.tracks-layout-mobile {
+  grid-template-columns: 1fr;
+}
+
+.track-acc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.track-inline-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  margin-bottom: 6px;
+}
+
+@media (max-width: 860px) {
+  .menu-panel.menu-tracks .menu-panel-body {
+    overflow-y: auto;
+  }
+
+  .menu-panel.menu-tracks .tracks-layout-mobile,
+  .menu-panel.menu-tracks .tracks-list {
+    height: auto;
+    max-height: none;
+  }
 }
 
 .track-preview-photo {
@@ -3867,8 +5121,48 @@ summary:focus-visible {
 }
 
 .tune-row input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  outline: none;
   accent-color: var(--menu-accent, #c4a574);
+}
+
+.tune-row input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tune-row input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  background: var(--menu-accent, #c4a574);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.tune-row input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tune-row input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  background: var(--menu-accent, #c4a574);
+  cursor: pointer;
 }
 
 .tune-hint {

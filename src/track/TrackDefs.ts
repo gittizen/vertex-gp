@@ -2,13 +2,19 @@ export type VehicleKind =
   | 'moto'
   | 'harley'
   | 'kroska'
+  | 'naked'
+  | 'enduro'
   | 'formula'
   | 'monster'
   | 'street'
+  | 'cabrio'
+  | 'muscle'
   | 'skate'
   | 'bike'
   | 'truck'
   | 'tank'
+  | 'buggy'
+  | 'humvee'
   | 'limo'
   | 'scooter'
 export type WorldKind = 'city' | 'town' | 'rally' | 'climb' | 'plaza'
@@ -717,11 +723,17 @@ export const VEHICLE_KINDS: VehicleKind[] = [
   'moto',
   'harley',
   'kroska',
+  'naked',
+  'enduro',
   'formula',
   'monster',
   'truck',
   'tank',
+  'buggy',
+  'humvee',
   'street',
+  'cabrio',
+  'muscle',
   'limo',
   'skate',
   'bike',
@@ -731,8 +743,8 @@ export const VEHICLE_KINDS: VehicleKind[] = [
 /** Soupeři / závod — bez koloběžky (trap). */
 export const RACE_VEHICLE_KINDS: VehicleKind[] = VEHICLE_KINDS.filter((k) => k !== 'scooter')
 
-/** Freestyle peklostroje. */
-export const FREESTYLE_VEHICLE_KINDS: VehicleKind[] = ['skate', 'bike']
+/** Freestyle peklostroje (rychlejší nahoře). */
+export const FREESTYLE_VEHICLE_KINDS: VehicleKind[] = ['bike', 'skate']
 
 /** Otočí body (a výšky) — jízda v opačném směru. */
 export function resolveTrackDef(def: TrackDef, reverse: boolean): TrackDef {

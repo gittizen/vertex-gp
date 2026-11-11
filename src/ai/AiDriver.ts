@@ -43,14 +43,26 @@ function launchFeelFor(kind: VehicleKind): LaunchFeel {
       return { durationSec: 1.55, startFrac: 0.18, accelBlend: 2.2 }
     case 'harley':
       return { durationSec: 1.75, startFrac: 0.16, accelBlend: 2.0 }
+    case 'naked':
+      return { durationSec: 1.45, startFrac: 0.19, accelBlend: 2.3 }
+    case 'enduro':
+      return { durationSec: 1.5, startFrac: 0.18, accelBlend: 2.35 }
     case 'kroska':
       return { durationSec: 1.35, startFrac: 0.2, accelBlend: 2.5 }
     case 'street':
     case 'limo':
       return { durationSec: 2.05, startFrac: 0.14, accelBlend: 1.85 }
+    case 'cabrio':
+      return { durationSec: 1.85, startFrac: 0.16, accelBlend: 2.0 }
+    case 'muscle':
+      return { durationSec: 1.95, startFrac: 0.15, accelBlend: 1.9 }
     case 'monster':
     case 'truck':
       return { durationSec: 2.85, startFrac: 0.08, accelBlend: 1.45 }
+    case 'buggy':
+      return { durationSec: 2.35, startFrac: 0.1, accelBlend: 1.7 }
+    case 'humvee':
+      return { durationSec: 2.55, startFrac: 0.09, accelBlend: 1.55 }
     case 'tank':
       return { durationSec: 3.4, startFrac: 0.05, accelBlend: 1.2 }
     case 'bike':

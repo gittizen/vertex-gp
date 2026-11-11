@@ -28,6 +28,8 @@ export class RaceManager {
   readonly isStage: boolean
   /** Volná plocha (Plácek) — bez kol / cíle, skóre = triky. */
   readonly isSandbox: boolean
+  /** Časový limit (ms); 0 = bez limitu. Šamp FS kvalifikace = 60 s. */
+  timeLimitMs = 0
 
   constructor(track: Track, vehicles: Vehicle[]) {
     this.track = track
@@ -37,13 +39,17 @@ export class RaceManager {
     this.totalLaps = this.isStage ? 1 : 3
   }
 
-  start(opts?: { skipCountdown?: boolean; laps?: number }): void {
+  start(opts?: { skipCountdown?: boolean; laps?: number; timeLimitMs?: number }): void {
     this.phase = 'countdown'
     this.countdown = 3
     this.countdownAcc = 0
     this.raceTimeMs = 0
     this.standings = []
     this.finishGraceStartedAt = -1
+    this.timeLimitMs =
+      typeof opts?.timeLimitMs === 'number' && Number.isFinite(opts.timeLimitMs)
+        ? Math.max(0, Math.round(opts.timeLimitMs))
+        : 0
     this.lastT.clear()
     this.stageArmed.clear()
     if (this.isStage) {
@@ -100,6 +106,42 @@ export class RaceManager {
     this.standings = this.computeStandings()
   }
 
+  /**
+   * Odstopit: hráč poslední, nedokončení AI „dojedou“ podle vzdálenosti.
+   * @returns výsledné místo hráče (typicky N).
+   */
+  retirePlayerLast(): number {
+    const player = this.vehicles.find((v) => v.info.isPlayer)
+    if (!player) {
+      this.phase = 'finished'
+      this.standings = this.computeStandings()
+      return 1
+    }
+    let t = Math.max(1, this.raceTimeMs)
+    const others = this.vehicles
+      .filter((v) => !v.info.isPlayer)
+      .sort((a, b) => {
+        if (a.finished && b.finished) return a.finishTime - b.finishTime
+        if (a.finished) return -1
+        if (b.finished) return 1
+        return b.raceDistance - a.raceDistance
+      })
+    for (const v of others) {
+      if (!v.finished) {
+        v.finished = true
+        v.finishTime = t
+        t += 1_000
+      } else {
+        t = Math.max(t, v.finishTime + 1_000)
+      }
+    }
+    player.finished = true
+    player.finishTime = t + 1_000
+    this.phase = 'finished'
+    this.standings = this.computeStandings()
+    return this.playerPlace()
+  }
+
   update(dt: number): void {
     if (this.phase === 'countdown') {
       this.countdownAcc += dt
@@ -131,6 +173,19 @@ export class RaceManager {
   }
 
   private tryEndRace(): void {
+    // Časový limit (FS kvalifikace na Plácku) — konec i ve sandboxu.
+    if (this.timeLimitMs > 0 && this.raceTimeMs >= this.timeLimitMs) {
+      for (const v of this.vehicles) {
+        if (!v.finished) {
+          v.finished = true
+          v.finishTime = this.timeLimitMs
+        }
+      }
+      this.phase = 'finished'
+      this.standings = this.computeStandings()
+      return
+    }
+
     if (this.isSandbox) return
 
     if (this.finishPolicy === 'solo') {

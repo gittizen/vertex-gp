@@ -180,6 +180,8 @@ export function menuArtForTone(
   settings: string
   /** Dlaždice Žebříček */
   board: string
+  /** Domů → Šampionát */
+  championship: string
   /** Setup: Jet */
   jet: string
   /** Setup: Multiplayer */
@@ -190,12 +192,15 @@ export function menuArtForTone(
   const key = tone === 'calendar' ? calendarArtSuffix(calendarPack) : tone
   return {
     bg: assetUrl(`menu/bg-${key}.jpg`),
-    // Domů → Závod: Volvo V70 1. gen, tmavě modrá, nabídkový / tuning look
-    race: assetUrl('menu/race-volvo-v70.jpg'),
+    // Domů → Závod: jen quick-race (šamp Jet má vlastní champ-tile-jet-*).
+    race: assetUrl('menu/race-klecmania-road.jpg'),
     garage: assetUrl(`menu/garage-${key}.jpg`),
     tracks: assetUrl(`menu/tracks-${key}.jpg`),
     settings: assetUrl(`menu/settings-${key}.jpg`),
     board: assetUrl(`menu/board-${key}.jpg`),
+    // Domů → Šampionát dlaždice (≠ liga v briefu auto)
+    championship: assetUrl('menu/champ-tile-featured.jpg'),
+    // Setup Jet (≠ šamp auto Jet)
     jet: assetUrl('menu/tile-jet-start.jpg'),
     multi: assetUrl('menu/tile-multi-grid.jpg'),
     join: assetUrl('menu/tile-join-lobby.jpg'),

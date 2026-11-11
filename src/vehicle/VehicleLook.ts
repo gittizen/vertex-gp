@@ -41,21 +41,38 @@ export type VehicleBranch = 'freestyle' | 'auto' | 'moto' | 'monster'
 
 export function vehicleBranch(kind: VehicleKind): VehicleBranch {
   if (kind === 'skate' || kind === 'bike' || kind === 'scooter') return 'freestyle'
-  if (kind === 'moto' || kind === 'harley' || kind === 'kroska') return 'moto'
-  if (kind === 'monster' || kind === 'truck' || kind === 'tank') return 'monster'
+  if (
+    kind === 'moto' ||
+    kind === 'harley' ||
+    kind === 'kroska' ||
+    kind === 'naked' ||
+    kind === 'enduro'
+  ) {
+    return 'moto'
+  }
+  if (
+    kind === 'monster' ||
+    kind === 'truck' ||
+    kind === 'tank' ||
+    kind === 'buggy' ||
+    kind === 'humvee'
+  ) {
+    return 'monster'
+  }
   return 'auto'
 }
 
 export function kindsInBranch(branch: VehicleBranch): VehicleKind[] {
+  // Pořadí = max km/h sestupně (UI: nejrychlejší nahoře)
   switch (branch) {
     case 'freestyle':
-      return ['skate', 'bike', 'scooter']
+      return ['bike', 'skate', 'scooter']
     case 'moto':
-      return ['moto', 'harley', 'kroska']
+      return ['moto', 'naked', 'harley', 'enduro', 'kroska']
     case 'monster':
-      return ['monster', 'truck', 'tank']
+      return ['monster', 'buggy', 'humvee', 'truck', 'tank']
     default:
-      return ['street', 'formula', 'limo']
+      return ['formula', 'cabrio', 'muscle', 'street', 'limo']
   }
 }
 
@@ -64,6 +81,8 @@ export function vehicleHasRider(kind: VehicleKind): boolean {
     kind === 'moto' ||
     kind === 'harley' ||
     kind === 'kroska' ||
+    kind === 'naked' ||
+    kind === 'enduro' ||
     kind === 'skate' ||
     kind === 'bike' ||
     kind === 'scooter'
@@ -75,6 +94,8 @@ export function vehicleHasHelm(kind: VehicleKind): boolean {
     kind === 'moto' ||
     kind === 'harley' ||
     kind === 'kroska' ||
+    kind === 'naked' ||
+    kind === 'enduro' ||
     kind === 'skate' ||
     kind === 'bike'
   )

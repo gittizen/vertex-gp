@@ -11,11 +11,17 @@ import { DEFAULT_PLAYER_TUNING, tuningToPhysics } from '../tuning/PlayerTuning'
 /** −20 % oproti dřívějšímu katalogu (hráč i AI berou stejný strop). */
 export const CATALOG_MAX_KMH: Record<VehicleKind, number> = {
   street: 320,
+  muscle: 348, // kupé mezi street a cabrio
+  cabrio: 375, // mezi street a formula
   moto: 358,
   harley: 322, // −10 % vs moto
+  naked: 340, // streetfighter mezi harley a moto
+  enduro: 310, // adventure mezi kroska a harley
   kroska: 286, // −20 % vs moto
   formula: 435,
   monster: 243,
+  buggy: 220, // lehký offroad mezi truck a monster
+  humvee: 205, // vojenský SUV mezi truck a buggy
   truck: 194,
   tank: 175,
   limo: 288, // −10 % vs street
@@ -39,11 +45,17 @@ const TANK_DF = REF_DF * 0.2
 const SKATE_DF = REF_DF * 0.25
 
 const STREET_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.street)
+const MUSCLE_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.muscle)
+const CABRIO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.cabrio)
 const MOTO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.moto)
 const HARLEY_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.harley)
+const NAKED_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.naked)
+const ENDURO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.enduro)
 const KROSKA_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.kroska)
 const FORMULA_CAP = capForTarget(FORMULA_DF, CATALOG_MAX_KMH.formula)
 const MONSTER_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.monster)
+const BUGGY_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.buggy)
+const HUMVEE_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.humvee)
 const TRUCK_CAP = capForTarget(MONSTER_DF, CATALOG_MAX_KMH.truck)
 const TANK_CAP = capForTarget(TANK_DF, CATALOG_MAX_KMH.tank)
 const LIMO_CAP = capForTarget(STREET_DF, CATALOG_MAX_KMH.limo)
@@ -56,18 +68,29 @@ export function speedCapMultFor(kind: VehicleKind): number {
   if (kind === 'bike') return BIKE_CAP
   if (kind === 'moto') return MOTO_CAP
   if (kind === 'harley') return HARLEY_CAP
+  if (kind === 'naked') return NAKED_CAP
+  if (kind === 'enduro') return ENDURO_CAP
   if (kind === 'kroska') return KROSKA_CAP
   if (kind === 'formula') return FORMULA_CAP
   if (kind === 'monster') return MONSTER_CAP
+  if (kind === 'buggy') return BUGGY_CAP
+  if (kind === 'humvee') return HUMVEE_CAP
   if (kind === 'truck') return TRUCK_CAP
   if (kind === 'tank') return TANK_CAP
   if (kind === 'limo') return LIMO_CAP
+  if (kind === 'cabrio') return CABRIO_CAP
+  if (kind === 'muscle') return MUSCLE_CAP
   if (kind === 'scooter') return capForTarget(0.1, CATALOG_MAX_KMH.scooter)
   return STREET_CAP
 }
 
 export function catalogMaxKmh(kind: VehicleKind): number {
   return CATALOG_MAX_KMH[kind] ?? CATALOG_MAX_KMH.street
+}
+
+/** UI seznamy: nejrychlejší nahoře. */
+export function sortKindsBySpeedDesc(kinds: readonly VehicleKind[]): VehicleKind[] {
+  return [...kinds].sort((a, b) => (CATALOG_MAX_KMH[b] ?? 0) - (CATALOG_MAX_KMH[a] ?? 0))
 }
 
 /**
@@ -167,6 +190,36 @@ export function profileForKind(
     }
   }
 
+  if (kind === 'naked') {
+    const base = streetBase(playerTuning)
+    // Streetfighter: mezi harley a moto — lehčí, ostré řízení
+    return {
+      ...base,
+      power: base.power * 0.95 * 0.97,
+      downforce: base.downforce * 0.68,
+      grip: base.grip * 1.06,
+      drag: 0.23,
+      mass: 0.88,
+      speedCapMult: NAKED_CAP,
+      steerResp: 1.14,
+    }
+  }
+
+  if (kind === 'enduro') {
+    const base = streetBase(playerTuning)
+    // Adventure / dual-sport: mezi kroska a harley
+    return {
+      ...base,
+      power: base.power * 0.95 * 1.08,
+      downforce: base.downforce * 0.66,
+      grip: base.grip * 1.07,
+      drag: 0.255,
+      mass: 0.98,
+      speedCapMult: ENDURO_CAP,
+      steerResp: 1.06,
+    }
+  }
+
   if (kind === 'formula') {
     const base = tuningToPhysics(playerTuning ?? DEFAULT_PLAYER_TUNING)
     return {
@@ -213,6 +266,38 @@ export function profileForKind(
     }
   }
 
+  if (kind === 'buggy') {
+    const base = monsterBase(playerTuning)
+    // Lehký offroad: mezi truck a monster
+    return {
+      ...base,
+      power: base.power * 1.1 * 0.95,
+      brakeForce: base.brakeForce * 0.9,
+      downforce: base.downforce * 0.28,
+      grip: base.grip * 0.95,
+      drag: 0.3,
+      mass: 1.05,
+      speedCapMult: BUGGY_CAP,
+      steerResp: 0.78 * 1.5 * 1.3 * 1.25,
+    }
+  }
+
+  if (kind === 'humvee') {
+    const base = monsterBase(playerTuning)
+    // Vojenský SUV: mezi truck a buggy
+    return {
+      ...base,
+      power: base.power * 1.1 * 0.88,
+      brakeForce: base.brakeForce * 0.86,
+      downforce: base.downforce * 0.26,
+      grip: base.grip * 0.92,
+      drag: 0.33,
+      mass: 1.35,
+      speedCapMult: HUMVEE_CAP,
+      steerResp: 0.78 * 1.5 * 1.3 * 1.05,
+    }
+  }
+
   // Tank: −10 % vs kamion; steer +10 % navíc
   if (kind === 'tank') {
     const base = monsterBase(playerTuning)
@@ -241,6 +326,36 @@ export function profileForKind(
       mass: 1.15,
       speedCapMult: LIMO_CAP,
       steerResp: 0.92,
+    }
+  }
+
+  if (kind === 'cabrio') {
+    const base = streetBase(playerTuning)
+    // Kabrio / GT: mezi street a formula
+    return {
+      ...base,
+      power: base.power * 0.95 * 1.05,
+      downforce: base.downforce * 0.95,
+      grip: base.grip * 1.1,
+      drag: 0.21,
+      mass: 0.92,
+      speedCapMult: CABRIO_CAP,
+      steerResp: 1.05,
+    }
+  }
+
+  if (kind === 'muscle') {
+    const base = streetBase(playerTuning)
+    // Muscle kupé: mezi street a cabrio — dlouhá kapota, víc mass
+    return {
+      ...base,
+      power: base.power * 0.95 * 1.02,
+      downforce: base.downforce * 0.82,
+      grip: base.grip * 1.06,
+      drag: 0.225,
+      mass: 1.05,
+      speedCapMult: MUSCLE_CAP,
+      steerResp: 0.98,
     }
   }
 
@@ -328,6 +443,30 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       steerResp: 1.05,
     }
   }
+  if (kind === 'naked') {
+    return {
+      power: (46 + index * 1.8) * 0.97,
+      brakeForce: 75,
+      downforce: 0.72,
+      grip: 1.13 + index * 0.025,
+      drag: 0.23,
+      mass: 0.88,
+      speedCapMult: NAKED_CAP,
+      steerResp: 1.12,
+    }
+  }
+  if (kind === 'enduro') {
+    return {
+      power: (46 + index * 1.8) * 1.08,
+      brakeForce: 74,
+      downforce: 0.7,
+      grip: 1.13 + index * 0.025,
+      drag: 0.255,
+      mass: 0.98,
+      speedCapMult: ENDURO_CAP,
+      steerResp: 1.04,
+    }
+  }
   if (kind === 'formula') {
     return {
       power: 62 + index * 1.5,
@@ -364,6 +503,30 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       steerResp: 0.8 * 1.5 * 1.3 * 1.1,
     }
   }
+  if (kind === 'buggy') {
+    return {
+      power: (56 + index * 1.4) * 0.95,
+      brakeForce: 66,
+      downforce: 0.3,
+      grip: 1.0 + index * 0.025,
+      drag: 0.3,
+      mass: 1.05,
+      speedCapMult: BUGGY_CAP,
+      steerResp: 0.8 * 1.5 * 1.3 * 1.25,
+    }
+  }
+  if (kind === 'humvee') {
+    return {
+      power: (56 + index * 1.4) * 0.88,
+      brakeForce: 64,
+      downforce: 0.28,
+      grip: 0.99 + index * 0.025,
+      drag: 0.33,
+      mass: 1.35,
+      speedCapMult: HUMVEE_CAP,
+      steerResp: 0.8 * 1.5 * 1.3 * 1.05,
+    }
+  }
   if (kind === 'tank') {
     return {
       power: (56 + index * 1.4) * 0.8 * 0.9,
@@ -386,6 +549,30 @@ export function aiProfileForKind(kind: VehicleKind, index: number): Partial<Vehi
       mass: 1.12,
       speedCapMult: LIMO_CAP,
       steerResp: 0.92,
+    }
+  }
+  if (kind === 'cabrio') {
+    return {
+      power: (46 + index * 1.8) * 1.05,
+      brakeForce: 80,
+      downforce: 0.9,
+      grip: 1.18 + index * 0.025,
+      drag: 0.21,
+      mass: 0.92,
+      speedCapMult: CABRIO_CAP,
+      steerResp: 1.05,
+    }
+  }
+  if (kind === 'muscle') {
+    return {
+      power: (46 + index * 1.8) * 1.02,
+      brakeForce: 78,
+      downforce: 0.82,
+      grip: 1.14 + index * 0.025,
+      drag: 0.225,
+      mass: 1.05,
+      speedCapMult: MUSCLE_CAP,
+      steerResp: 0.98,
     }
   }
   return {

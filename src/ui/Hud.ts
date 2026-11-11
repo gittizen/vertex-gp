@@ -16,6 +16,8 @@ import type { CompetitionId } from '../render/CompetitionSettings'
 
 export type PauseHelp = {
   kind: VehicleKind
+  immortal?: boolean
+  allowImmortal?: boolean
 }
 
 /** HUD bez přepisování celého DOM každý frame. */
@@ -28,11 +30,16 @@ export class Hud {
   private onResumeRequest: (() => void) | null = null
   private onRestartRequest: (() => void) | null = null
   private onChampionshipNext: (() => void) | null = null
+  private onImmortalToggle: (() => void) | null = null
+  private onRetireRequest: (() => void) | null = null
   private champResult: {
     points: number
     progress: string
     done: boolean
     lastPts: number
+    qual?: boolean
+    fsQual?: boolean
+    place?: number
   } | null = null
   private built = false
   private elRaceMeta: HTMLElement | null = null
@@ -89,10 +96,22 @@ export class Hud {
           this.onMenuRequest?.()
           return
         }
+        if (el.id === 'btn-retire') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onRetireRequest?.()
+          return
+        }
         if (el.id === 'btn-resume') {
           e.preventDefault()
           e.stopPropagation()
           this.onResumeRequest?.()
+          return
+        }
+        if (el.id === 'btn-immortal') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onImmortalToggle?.()
           return
         }
       },
@@ -182,6 +201,14 @@ export class Hud {
     this.onPauseRequest = cb
   }
 
+  setOnImmortalToggle(cb: () => void): void {
+    this.onImmortalToggle = cb
+  }
+
+  setOnRetireRequest(cb: () => void): void {
+    this.onRetireRequest = cb
+  }
+
   setOnResumeRequest(cb: () => void): void {
     this.onResumeRequest = cb
   }
@@ -195,7 +222,15 @@ export class Hud {
   }
 
   setChampionshipResult(
-    result: { points: number; progress: string; done: boolean; lastPts: number } | null,
+    result: {
+      points: number
+      progress: string
+      done: boolean
+      lastPts: number
+      qual?: boolean
+      fsQual?: boolean
+      place?: number
+    } | null,
   ): void {
     this.champResult = result
     this.lastOverlayKey = ''
@@ -307,7 +342,15 @@ export class Hud {
         }
       }
       if (this.elRaceClock) {
-        if (race.isSandbox || race.phase === 'countdown') {
+        if (race.phase === 'countdown') {
+          this.elRaceClock.textContent = race.timeLimitMs > 0 ? formatTime(race.timeLimitMs) : '—'
+        } else if (race.isSandbox && race.timeLimitMs > 0) {
+          const left = Math.max(
+            0,
+            race.timeLimitMs - (race.phase === 'finished' ? race.timeLimitMs : race.raceTimeMs),
+          )
+          this.elRaceClock.textContent = formatTime(left)
+        } else if (race.isSandbox) {
           this.elRaceClock.textContent = '—'
         } else {
           const clockMs =
@@ -469,7 +512,7 @@ export class Hud {
       })
       if (fs || driftComp) scored.sort((a, b) => b.total - a.total || a.s.place - b.s.place)
       const champ = this.champResult
-      const key = `fin:${race.playerPlace()}:${scored.map((x) => x.total).join(',')}:${fs ? 1 : 0}:${driftComp ? 1 : 0}:${champ?.progress ?? ''}:${champ?.done ? 1 : 0}`
+      const key = `fin:${race.playerPlace()}:${scored.map((x) => x.total).join(',')}:${fs ? 1 : 0}:${driftComp ? 1 : 0}:${champ?.progress ?? ''}:${champ?.done ? 1 : 0}:${champ?.qual ? 1 : 0}`
       if (key === this.lastOverlayKey) return
       this.lastOverlayKey = key
       this.overlay.classList.add('visible')
@@ -496,50 +539,91 @@ export class Hud {
           return `<li class="${cls}">${i + 1}. ${s.vehicle.info.name}${tag} — ${time}${fsLine}</li>`
         })
         .join('')
-      const champLine = champ
-        ? `<p class="overlay-hint">${t('hud.champRound', {
-            progress: champ.progress,
-            pts: champ.lastPts,
-            total: champ.points,
-          })}</p>`
-        : ''
-      const player = race.standings.find((s) => s.vehicle.info.isPlayer)
+      const standingPlayer = race.standings.find((s) => s.vehicle.info.isPlayer)
+      const playerTrickPts = standingPlayer?.vehicle.trickPoints ?? 0
+      const champLine = champ?.qual
+        ? `<p class="overlay-hint">${t(champ.fsQual ? 'hud.champQualFs' : 'hud.champQual')}</p>${
+            !champ.fsQual && (champ.place ?? place) === 1
+              ? `<p class="overlay-hint">${t('hud.champQualFast')}</p>`
+              : ''
+          }${
+            champ.fsQual ? `<p class="overlay-hint">FS ${playerTrickPts}</p>` : ''
+          }<p class="overlay-hint">${t('hud.champQualNext')}</p>`
+        : champ
+          ? `<p class="overlay-hint">${t('hud.champRound', {
+              progress: champ.progress,
+              pts: champ.lastPts,
+              total: champ.points,
+            })}</p>`
+          : ''
       const timeStr =
-        player?.vehicle.finished ? formatTime(player.vehicle.finishTime) : '—'
+        standingPlayer?.vehicle.finished ? formatTime(standingPlayer.vehicle.finishTime) : '—'
       const scoreBit = fs
         ? scored.find((r) => r.s.vehicle.info.isPlayer)
         : driftComp
           ? scored.find((r) => r.s.vehicle.info.isPlayer)
           : null
       const extra =
-        fs && scoreBit
-          ? ` · FS ${scoreBit.total}`
-          : driftComp && scoreBit
-            ? ` · drift ${scoreBit.driftPts}`
-            : ''
+        champ?.fsQual
+          ? ` · FS ${playerTrickPts}`
+          : fs && scoreBit
+            ? ` · FS ${scoreBit.total}`
+            : driftComp && scoreBit
+              ? ` · drift ${scoreBit.driftPts}`
+              : ''
       this.shareText = `KlecMania · ${this.trackName} · P${place} · ${timeStr}${extra}`
       const shareBtn = `<button type="button" class="btn-ghost" id="btn-share"><span>${t('hud.share')}</span></button>`
       const actions = this.onlineRace
         ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>${shareBtn}`
-        : champ && !champ.done
-          ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champNext')}</button>
+        : champ?.qual
+          ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champQualContinue')}</button>
+            ${shareBtn}
+            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+          : champ && !champ.done
+            ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champNext')}</button>
             <button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
             ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
-          : champ?.done
-            ? `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+            : champ?.done
+              ? `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
             ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.champDone')}</button>`
-            : `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
+              : `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
             ${shareBtn}
             <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+      const placeTier = place <= 1 ? 'p1' : place === 2 ? 'p2' : place === 3 ? 'p3' : 'p4'
+      const burst =
+        place <= 2
+          ? `<div class="finish-burst" aria-hidden="true">${Array.from(
+              { length: place === 1 ? 18 : 10 },
+              (_, i) => {
+                const ang = (i / (place === 1 ? 18 : 10)) * Math.PI * 2
+                const dist = 90 + (i % 5) * 14
+                const dx = Math.round(Math.cos(ang) * dist)
+                const dy = Math.round(Math.sin(ang) * dist * 0.72 - 28)
+                return `<span class="finish-spark" style="--i:${i};--dx:${dx}px;--dy:${dy}px"></span>`
+              },
+            ).join('')}</div>`
+          : ''
+      const modeBit = fs
+        ? ` · Freestyle`
+        : driftComp
+          ? ` · ${t('hud.drift')}`
+          : champ
+            ? ` · ${t('comp.championship')}`
+            : ''
       this.overlay.innerHTML = `
-        <div class="overlay-card">
-          <p class="overlay-winner">${t(placeKey)}</p>
-          <h2>${t('hud.results')}${fs ? ' · Freestyle' : driftComp ? ` · ${t('hud.drift')}` : champ ? ` · ${t('comp.championship')}` : ''}</h2>
-          <p>${this.trackName}</p>
+        <div class="overlay-card overlay-finish overlay-finish--${placeTier}">
+          ${burst}
+          <div class="finish-hero">
+            <span class="finish-place-badge">P${place}</span>
+            <p class="overlay-winner">${t(placeKey)}</p>
+            <p class="finish-time">${timeStr}${extra}</p>
+          </div>
+          <h2>${t('hud.results')}${modeBit}</h2>
+          <p class="finish-track">${this.trackName}</p>
           ${champLine}
-          <ol>${rows}</ol>
+          <ol class="finish-standings">${rows}</ol>
           <div class="overlay-actions">${actions}</div>
         </div>
       `
@@ -554,7 +638,8 @@ export class Hud {
   }
 
   private renderPause(help: PauseHelp): void {
-    const key = `pause:${help.kind}`
+    const immortalOn = !!help.immortal
+    const key = `pause:${help.kind}:${immortalOn ? 1 : 0}:${help.allowImmortal ? 1 : 0}`
     if (key === this.lastOverlayKey) return
     this.lastOverlayKey = key
     this.overlay.classList.add('visible')
@@ -584,6 +669,10 @@ export class Hud {
       `
     }
 
+    const immortalBtn = help.allowImmortal
+      ? `<button type="button" class="btn-ghost ${immortalOn ? 'active' : ''}" id="btn-immortal">${t('hud.immortal')}: ${immortalOn ? t('menu.ctrlOn') : t('menu.ctrlOff')}</button>`
+      : ''
+
     this.overlay.innerHTML = `
       <div class="overlay-card pause-card">
         <h2>${t('pause.controls')}</h2>
@@ -592,7 +681,11 @@ export class Hud {
         ${trickBlock}
         <div class="overlay-actions pause-actions">
           <button type="button" class="menu-start" id="btn-resume">${t('hud.resume')}</button>
-          <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>
+          ${immortalBtn}
+          <button type="button" class="btn-ghost" id="btn-retire">${t('pause.retire')}</button>
+          <p class="overlay-hint pause-action-hint">${t('pause.retireHint')}</p>
+          <button type="button" class="btn-ghost" id="btn-menu">${t('pause.cancelRace')}</button>
+          <p class="overlay-hint pause-action-hint">${t('pause.cancelHint')}</p>
         </div>
       </div>
     `
@@ -604,8 +697,16 @@ function pauseActionsFor(kind: VehicleKind): BindAction[] {
   const actions: BindAction[] = ['throttle', 'brake', 'steerLeft', 'steerRight']
   if (kind === 'skate') {
     actions.push('push', 'tab')
-  } else if (kind === 'monster' || kind === 'truck' || kind === 'tank') {
+  } else if (
+    kind === 'monster' ||
+    kind === 'truck' ||
+    kind === 'tank' ||
+    kind === 'buggy' ||
+    kind === 'humvee'
+  ) {
     actions.push('push', 'tab')
+  } else if (kind === 'moto' || kind === 'harley' || kind === 'kroska' || kind === 'naked' || kind === 'enduro') {
+    actions.push('push')
   } else if (kind !== 'bike' && kind !== 'scooter') {
     actions.push('ebrake')
   }

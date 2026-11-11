@@ -9,8 +9,10 @@ export type PlayerTuningValues = {
   lightness: number
 }
 
-/** Stupnice slideru 0–10 (10 kroků od nuly). */
+/** Stupnice slideru 0–10 (10 kroků od nuly) — solo garáž. */
 export const TUNING_MAX = 10
+/** Šampionát: 0–5 (5 = stejný strop jako solo 10). */
+export const CHAMP_TUNING_MAX = 5
 /** Neutrál uprostřed — 0 = −15 %, 10 = +15 %. */
 export const TUNING_NEUTRAL = 5
 /** Rozpočet = 6× neutrál; vytáhneš jedno jen když jiné snížíš. */
@@ -23,6 +25,60 @@ export const DEFAULT_PLAYER_TUNING: PlayerTuningValues = {
   grip: TUNING_NEUTRAL,
   steer: TUNING_NEUTRAL,
   lightness: TUNING_NEUTRAL,
+}
+
+/** Šamp start: vše na 0. */
+export const DEFAULT_CHAMP_TUNING: PlayerTuningValues = {
+  power: 0,
+  brakes: 0,
+  downforce: 0,
+  grip: 0,
+  steer: 0,
+  lightness: 0,
+}
+
+/** Champ 0–5 → solo 0–10 (pro `tuningMult` / fyziku). */
+export function champTuningToSolo(vals: PlayerTuningValues): PlayerTuningValues {
+  const map = (n: number) =>
+    Math.max(0, Math.min(TUNING_MAX, Math.round((Math.max(0, Math.min(CHAMP_TUNING_MAX, n)) / CHAMP_TUNING_MAX) * TUNING_MAX)))
+  return {
+    power: map(vals.power),
+    brakes: map(vals.brakes),
+    downforce: map(vals.downforce),
+    grip: map(vals.grip),
+    steer: map(vals.steer),
+    lightness: map(vals.lightness),
+  }
+}
+
+/**
+ * Šamp 0–5. Legacy:
+ * - hodnoty >5 → solo 0–10 škála → přemapuj
+ * - přesný solo neutrál (vše 5) bez `tuneScale:5` na čerstvé sezóně → 0
+ *   (dřív migrate nechalo 5 jako „max šamp“)
+ */
+export function normalizeChampTuning(
+  raw?: Partial<PlayerTuningValues> | null,
+  opts?: { alreadyChampScale?: boolean; freshSeason?: boolean },
+): PlayerTuningValues {
+  const out = { ...DEFAULT_CHAMP_TUNING }
+  if (!raw) return out
+  const sample = TUNE_KEYS.map((k) => Number(raw[k])).filter((n) => Number.isFinite(n))
+  if (sample.length === 0) return out
+  const looksSolo10 = sample.some((n) => n > CHAMP_TUNING_MAX)
+  const looksSoloNeutralStuck =
+    !opts?.alreadyChampScale &&
+    Boolean(opts?.freshSeason) &&
+    sample.length === TUNE_KEYS.length &&
+    sample.every((n) => n === TUNING_NEUTRAL)
+  if (looksSoloNeutralStuck) return out
+  for (const k of TUNE_KEYS) {
+    let v = Number(raw[k])
+    if (!Number.isFinite(v)) continue
+    if (looksSolo10) v = Math.round((v / TUNING_MAX) * CHAMP_TUNING_MAX)
+    out[k] = Math.max(0, Math.min(CHAMP_TUNING_MAX, Math.round(v)))
+  }
+  return out
 }
 
 const TUNE_KEYS = Object.keys(DEFAULT_PLAYER_TUNING) as (keyof PlayerTuningValues)[]

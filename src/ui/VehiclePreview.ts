@@ -134,10 +134,11 @@ export class VehiclePreview {
       disposeGroup(this.mesh)
       this.mesh = null
     }
+    const fs = kind === 'skate' || kind === 'bike' || kind === 'scooter'
     const full: VehicleLook =
       typeof look === 'number'
-        ? { ...DEFAULT_VEHICLE_LOOK, body: look, neon }
-        : look
+        ? { ...DEFAULT_VEHICLE_LOOK, body: look, neon: fs ? -1 : neon }
+        : { ...look, neon: fs ? -1 : look.neon }
     this.mesh = createVehicleMesh(kind, full.body, full.neon)
     const box = new THREE.Box3().setFromObject(this.mesh)
     const size = box.getSize(new THREE.Vector3())
@@ -153,7 +154,7 @@ export class VehiclePreview {
 
   applyLook(look: VehicleLook): void {
     this.setColor(look.body)
-    this.setNeon(look.neon)
+    this.setNeon(look.neon < 0 ? -1 : look.neon)
     this.setWheelColor(look.wheel)
     this.setRiderColor(look.rider)
     this.setHelmColor(look.helm)

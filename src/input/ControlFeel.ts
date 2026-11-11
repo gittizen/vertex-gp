@@ -2,6 +2,9 @@ import { GAME_STORAGE_NS } from './KeyBindings'
 
 export type CamFollow = 'soft' | 'normal' | 'tight'
 
+/** Skate: Regular = levá noha vpředu, Goofy = pravá. */
+export type SkateStance = 'regular' | 'goofy'
+
 /** Režimy řízení na telefonu / tabletu (ve hrách formulí běžné). */
 export type MobileDriveScheme = 'joystick' | 'tilt' | 'tap' | 'pads'
 
@@ -22,6 +25,8 @@ export type ControlFeelValues = {
   allowPortraitRotation: boolean
   /** Solo: bez pádu / bouračky. Na žebříčku s duchem; online ignorovat. */
   immortality: boolean
+  /** Skate stance — Regular / Goofy (natočení ~45° + zrcadlení). */
+  skateStance: SkateStance
 }
 
 const STORAGE_KEY = `${GAME_STORAGE_NS}.control-feel`
@@ -39,9 +44,11 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
   /** Otáčení volné — landscape doporučený, portrait OK (Messenger/in-app). */
   allowPortraitRotation: true,
   immortality: false,
+  skateStance: 'regular',
 }
 
 const CAM_FOLLOWS: CamFollow[] = ['soft', 'normal', 'tight']
+export const SKATE_STANCES: SkateStance[] = ['regular', 'goofy']
 /** Pořadí v UI: ťukání → náklon → volant → joystick. */
 export const MOBILE_DRIVE_SCHEMES: MobileDriveScheme[] = ['tap', 'tilt', 'pads', 'joystick']
 
@@ -115,6 +122,9 @@ export function loadControlFeel(): ControlFeelValues {
       mobileScheme: migrateMobileScheme(p.mobileScheme),
       allowPortraitRotation: migrateAllowPortrait(p.allowPortraitRotation),
       immortality: typeof p.immortality === 'boolean' ? p.immortality : DEFAULT_CONTROL_FEEL.immortality,
+      skateStance: SKATE_STANCES.includes(p.skateStance as SkateStance)
+        ? (p.skateStance as SkateStance)
+        : DEFAULT_CONTROL_FEEL.skateStance,
     }
   } catch {
     return { ...DEFAULT_CONTROL_FEEL }

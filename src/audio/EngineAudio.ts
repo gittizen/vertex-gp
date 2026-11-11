@@ -125,6 +125,28 @@ const KIND_SAMPLE: Record<VehicleKind, KindSample> = {
     amp: 1.1,
     bassMul: 0.5,
   },
+  naked: {
+    id: 'naked',
+    low: 'loop1',
+    mid: 'sport',
+    high: 'top',
+    rate: 1.52,
+    noise: 0.26,
+    cutoff: 3400,
+    amp: 1.06,
+    bassMul: 0.48,
+  },
+  enduro: {
+    id: 'enduro',
+    low: 'loop1',
+    mid: 'sport',
+    high: 'top',
+    rate: 1.4,
+    noise: 0.3,
+    cutoff: 3100,
+    amp: 1.08,
+    bassMul: 0.52,
+  },
   monster: {
     id: 'monster',
     low: 'heavy',
@@ -147,6 +169,28 @@ const KIND_SAMPLE: Record<VehicleKind, KindSample> = {
     amp: 1.12,
     bassMul: 1.25,
   },
+  buggy: {
+    id: 'buggy',
+    low: 'heavy',
+    mid: 'loop3',
+    high: 'sport',
+    rate: 0.88,
+    noise: 0.26,
+    cutoff: 900,
+    amp: 1.08,
+    bassMul: 1.05,
+  },
+  humvee: {
+    id: 'humvee',
+    low: 'heavy',
+    mid: 'loop3',
+    high: 'mid',
+    rate: 0.72,
+    noise: 0.28,
+    cutoff: 650,
+    amp: 1.1,
+    bassMul: 1.2,
+  },
   tank: {
     id: 'tank',
     low: 'bass',
@@ -168,6 +212,28 @@ const KIND_SAMPLE: Record<VehicleKind, KindSample> = {
     cutoff: 1600,
     amp: 0.88,
     bassMul: 1.1,
+  },
+  cabrio: {
+    id: 'cabrio',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1.12,
+    noise: 0.08,
+    cutoff: 2600,
+    amp: 1.0,
+    bassMul: 0.85,
+  },
+  muscle: {
+    id: 'muscle',
+    low: 'idle',
+    mid: 'mid',
+    high: 'high',
+    rate: 1.05,
+    noise: 0.1,
+    cutoff: 2400,
+    amp: 1.04,
+    bassMul: 0.95,
   },
   scooter: {
     id: 'scooter',
@@ -424,7 +490,11 @@ export class EngineAudio {
           ? v.turboAmount * 0.9
           : v.kind === 'formula'
             ? rpm * 0.14
-            : v.kind === 'moto' || v.kind === 'harley' || v.kind === 'kroska'
+            : v.kind === 'moto' ||
+                v.kind === 'harley' ||
+                v.kind === 'kroska' ||
+                v.kind === 'naked' ||
+                v.kind === 'enduro'
               ? rpm * 0.1
               : overrev * 0.2
       voice.noiseGain.gain.setTargetAtTime(kind.noise + turboWhistle + scream * 0.35, now, 0.05)

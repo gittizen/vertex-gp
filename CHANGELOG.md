@@ -4,12 +4,21 @@ Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nah
 
 ---
 
-## [0.8.0] — 2026-11-10 · *Race setup + žebříček*
+## [0.8.0] — 2026-11-11 · *Race setup + šampionát*
 
 ### Domů & závod
 - Domů: **Závod** nahoře, pod ním **Žebříček | Nastavení**.
 - Setup: **Trať | Peklostroj** nahoře → **Jet | Multiplayer | Join** dole.
 - Dlaždice Závod: **Volvo V70 1. gen**, tmavě modrá, nabídkový look; Jet/Multi/Join mají vlastní fotky.
+
+### Šampionát (kariéra)
+- Nový průběh: **startovní koupě** (2 nejhorší v kategorii) → **kvalifikace** → liga / série.
+- Startovní cash **45 000 Kč**; nejhorší unlock **15 000 Kč** (stačí na první vůz).
+- UI: 2 dlaždice (menu styl); Jet split levá levnější / pravá dražší.
+- Kvalifikace 1 kolo (bez výhry) → gratulace → volba ligy/série; OK potvrdí, Esc zpět.
+- Freestyle kvalifikace: **Plácek**, ~1 min triků.
+- Thematický tile art (třídy, série, Jet); Klecany moto série = **žlutá Babeta**.
+- Wipe starých champ save (`champWipe.v3`) při vstupu do nové ekonomiky.
 
 ### Nesmrtelnost & žebříček
 - **Nesmrtelnost** v Ovládání (jen singleplayer, default off) + 👻 na HUD.
@@ -24,7 +33,7 @@ Formát: co hráč a návštěvník pozná. Delší příběh verzí (od 0.1 nah
 - Klecany celkově světlejší (slabší překryvy, jasnější entry).
 
 ### Release
-- GitHub tag `v0.8.0` + Pages archiv `/0.8/` — **Netlify zatím nepřidáno** (produkce zůstává 0.7).
+- GitHub tag `v0.8.0` + Pages `/0.8/` + **Netlify produkce** https://klecmania.netlify.app/
 
 ---
 

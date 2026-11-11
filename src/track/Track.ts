@@ -728,36 +728,38 @@ export class Track {
     padBase.position.y = padY * 0.5 - 0.02
     this.group.add(padBase)
 
-    // Světlé čáry — mřížka na freestyle
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xe8e8ec, transparent: false })
-    const lineY = padY + 0.04
+    // Světlé čáry — flat ribbon mesh (ne THREE.Line → žádný z-fight flicker)
+    const markY = padY + 0.03
+    const stripeMat = matRoadMark(0xe8e8ec)
+    const addStripe = (ax: number, az: number, bx: number, bz: number, halfW: number) => {
+      const dx = bx - ax
+      const dz = bz - az
+      const len = Math.hypot(dx, dz) || 1
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2, 0.02, len), stripeMat)
+      mesh.position.set((ax + bx) * 0.5, markY, (az + bz) * 0.5)
+      mesh.rotation.y = Math.atan2(dx, dz)
+      mesh.renderOrder = 3
+      mesh.castShadow = false
+      mesh.receiveShadow = true
+      mesh.userData.noCastShadow = true
+      this.group.add(mesh)
+    }
     for (let i = -3; i <= 3; i++) {
       if (i === 0) continue
       const x = (i / 3) * b.halfX * 0.85
       const z = (i / 3) * b.halfZ * 0.85
-      const hx = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-b.halfX * 0.92, lineY, z),
-        new THREE.Vector3(b.halfX * 0.92, lineY, z),
-      ])
-      const hz = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(x, lineY, -b.halfZ * 0.92),
-        new THREE.Vector3(x, lineY, b.halfZ * 0.92),
-      ])
-      this.group.add(new THREE.Line(hx, lineMat))
-      this.group.add(new THREE.Line(hz, lineMat.clone()))
+      addStripe(-b.halfX * 0.92, z, b.halfX * 0.92, z, 0.12)
+      addStripe(x, -b.halfZ * 0.92, x, b.halfZ * 0.92, 0.12)
     }
-    // Středový kruh
-    const ringPts: THREE.Vector3[] = []
-    for (let i = 0; i <= 48; i++) {
-      const a = (i / 48) * Math.PI * 2
-      ringPts.push(new THREE.Vector3(Math.cos(a) * 18, lineY + 0.01, Math.sin(a) * 18))
-    }
-    this.group.add(
-      new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(ringPts),
-        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: false }),
-      ),
-    )
+    // Středový kruh — RingGeometry na padu
+    const ring = new THREE.Mesh(new THREE.RingGeometry(17.65, 18.35, 64), matRoadMark(0xffffff))
+    ring.rotation.x = -Math.PI / 2
+    ring.position.y = markY
+    ring.renderOrder = 3
+    ring.castShadow = false
+    ring.receiveShadow = true
+    ring.userData.noCastShadow = true
+    this.group.add(ring)
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(520, 40),

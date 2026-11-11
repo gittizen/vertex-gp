@@ -163,7 +163,10 @@ export class Vehicle {
 
   applyLook(look: VehicleLook): void {
     this.setColor(look.body)
-    this.setNeon(look.neon)
+    // Freestyle (skate/bike/scooter) — bez neonu
+    const fs =
+      this.kind === 'skate' || this.kind === 'bike' || this.kind === 'scooter'
+    this.setNeon(fs ? -1 : look.neon)
     this.setWheelColor(look.wheel)
     this.setRiderColor(look.rider)
     this.setHelmColor(look.helm)
@@ -282,9 +285,15 @@ export class Vehicle {
     return this.isMotoKind() || this.kind === 'skate' || this.kind === 'bike'
   }
 
-  /** Klasická / chopper / cross motorka. */
+  /** Klasická / chopper / cross / enduro motorka. */
   isMotoKind(): boolean {
-    return this.kind === 'moto' || this.kind === 'harley' || this.kind === 'kroska'
+    return (
+      this.kind === 'moto' ||
+      this.kind === 'harley' ||
+      this.kind === 'kroska' ||
+      this.kind === 'naked' ||
+      this.kind === 'enduro'
+    )
   }
 
   /** Formule: bouračka při tvrdém nárazu. */
@@ -296,9 +305,15 @@ export class Vehicle {
     return this.kind === 'skate' || this.kind === 'bike'
   }
 
-  /** Monster / kamion / tank — turbo + wheelie. */
+  /** Monster / kamion / tank / buggy / humvee — turbo + wheelie. */
   isMonsterFamily(): boolean {
-    return this.kind === 'monster' || this.kind === 'truck' || this.kind === 'tank'
+    return (
+      this.kind === 'monster' ||
+      this.kind === 'truck' ||
+      this.kind === 'tank' ||
+      this.kind === 'buggy' ||
+      this.kind === 'humvee'
+    )
   }
 
   /**
@@ -524,6 +539,16 @@ export class Vehicle {
     })
   }
 
+  /** Regular: ~45° stance; Goofy: zrcadlení (opačná noha + natočení). */
+  applySkateStance(stance: 'regular' | 'goofy'): void {
+    if (this.kind !== 'skate') return
+    this.mesh.traverse((obj) => {
+      if (!(obj instanceof THREE.Group) || !obj.userData.skateRider) return
+      obj.rotation.y = Math.PI / 4
+      obj.scale.x = stance === 'goofy' ? -1 : 1
+    })
+  }
+
   /** Monsterstruck / kamion / tank: boost při plynu; žluté kužely při Shift nebo Tab. */
   private applyMonsterTurbo(dt: number, controls: VehicleControls): void {
     if (!this.isMonsterFamily()) {
@@ -543,7 +568,7 @@ export class Vehicle {
   /** Cílový násobek cruise při plném Shiftu. */
   private shiftBoostMult(): number {
     if (this.isMonsterFamily()) return 1.56
-    if (this.kind === 'kroska') return 1.3
+    if (this.kind === 'kroska' || this.kind === 'enduro') return 1.3
     if (this.isMotoKind()) return 1.1
     if (this.kind === 'bike') return 2
     if (this.kind === 'skate') return 3
