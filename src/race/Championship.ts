@@ -1,7 +1,7 @@
 import { GAME_STORAGE_NS } from '../input/KeyBindings'
 import { TRACKS } from '../track/TrackDefs'
 import type { VehicleKind } from '../track/TrackDefs'
-import type { DifficultyId } from '../ai/Difficulty'
+import { DIFFICULTIES, type DifficultyId } from '../ai/Difficulty'
 import {
   CHAMP_TUNING_MAX,
   DEFAULT_CHAMP_TUNING,
@@ -30,8 +30,10 @@ import {
 /** Tratě šampionátu — bez Plácku, pořadí jako v TRACKS. */
 export const CHAMPIONSHIP_TRACKS: string[] = TRACKS.filter((t) => !t.sandbox).map((t) => t.id)
 
-/** Baby 1 · Malá 3 · Velká 9 = kola na okruhu (ne počet závodů). */
+/** Baby 1 · Malá 3 · Velká 9 = kola na okruhu (ne počet závodů). = Cena. */
 export type ChampLeague = 'baby' | 'small' | 'grand'
+
+export const CHAMP_LEAGUES: ChampLeague[] = ['baby', 'small', 'grand']
 /**
  * Délka / směry sezóny:
  * - half = jen po směru (každá mapa 1×)
@@ -67,21 +69,24 @@ export function championshipTrackIsLoop(trackId: string): boolean {
 }
 
 /**
- * Kalendář: všechny non-sandbox.
- * half → každá mapa 1× F; all (plný) → loop: F pak R; stage: jen 1× F.
- * `league` neovlivňuje počet závodů — jen kola na okruhu.
+ * Kalendář: všechny non-sandbox, každá mapa 1×.
+ * Orientace podle sezóny: S1/S3/… dopředu, S2/S4/… obráceně (jen loop).
+ * `pool` zůstává v API kvůli save, ale F+R zdvojení už ne.
  */
 export function championshipSchedule(
   _league: ChampLeague = 'baby',
-  pool: ChampTrackPool = 'half',
+  _pool: ChampTrackPool = 'half',
+  season = 1,
 ): { trackId: string; reverse: boolean }[] {
+  const qualId = championshipQualTrackId()
+  // Kval = klecanek F → první závod sezóny nesmí být stejná trať stejným směrem.
+  const tracks = CHAMPIONSHIP_TRACKS.filter((id) => id !== qualId)
+  tracks.push(...CHAMPIONSHIP_TRACKS.filter((id) => id === qualId))
+  const wantReverse = Math.max(1, Math.round(season)) % 2 === 0
   const out: { trackId: string; reverse: boolean }[] = []
-  for (const trackId of CHAMPIONSHIP_TRACKS) {
+  for (const trackId of tracks) {
     const loop = championshipTrackIsLoop(trackId)
-    out.push({ trackId, reverse: false })
-    if (pool === 'all' && loop) {
-      out.push({ trackId, reverse: true })
-    }
+    out.push({ trackId, reverse: Boolean(wantReverse && loop) })
   }
   return out
 }
@@ -89,19 +94,21 @@ export function championshipSchedule(
 export function championshipTotalRounds(
   league: ChampLeague = 'baby',
   pool: ChampTrackPool = 'half',
+  season = 1,
 ): number {
-  return championshipSchedule(league, pool).length
+  return championshipSchedule(league, pool, season).length
 }
 
 /** Zpětná kompatibilita (hub / legacy). */
-export const CHAMPIONSHIP_TOTAL_ROUNDS = championshipTotalRounds('grand', 'all')
+export const CHAMPIONSHIP_TOTAL_ROUNDS = championshipTotalRounds('grand', 'half', 1)
 
 export function championshipRoundMeta(
   round: number,
   league: ChampLeague = 'baby',
   pool: ChampTrackPool = 'half',
+  season = 1,
 ): ChampionshipRoundMeta | null {
-  const schedule = championshipSchedule(league, pool)
+  const schedule = championshipSchedule(league, pool, season)
   const total = schedule.length
   if (round < 0 || round >= total) return null
   const entry = schedule[round]
@@ -157,20 +164,18 @@ export function startOrderFromPlaces(
 }
 
 /**
- * Kvalifikace:
- * - freestyle → Plácek (1 min triků; mimo kalendář)
- * - ostatní → Do Klecánek
+ * Kvalifikace: vždy Do Klecánek (F) — FS už nejezdí Plácek.
  */
-export function championshipQualTrackId(branch?: VehicleBranch): string {
-  if (branch === 'freestyle') return 'placek'
+export function championshipQualTrackId(_branch?: VehicleBranch): string {
   return 'klecanek'
 }
 
-/** FS kvalifikace: 60 s na Plácku. */
+/** @deprecated FS už nemá časový limit na Plácku — kvalifikace je 1 kolo jako ostatní. */
 export const CHAMP_FS_QUAL_MS = 60_000
 
-export function isChampFsQual(career: ChampCareer): boolean {
-  return !career.qualified && career.branch === 'freestyle'
+/** FS kvalifikace na Plácku zrušena. */
+export function isChampFsQual(_career: ChampCareer): boolean {
+  return false
 }
 
 export function isChampQualifying(career: ChampCareer): boolean {
@@ -178,7 +183,10 @@ export function isChampQualifying(career: ChampCareer): boolean {
 }
 
 export function needsChampPostQualSetup(career: ChampCareer): boolean {
-  return Boolean(career.qualified) && (!career.leagueChosen || !career.seriesChosen)
+  return (
+    Boolean(career.qualified) &&
+    (!career.nameChosen || !career.leagueChosen || !career.seriesChosen)
+  )
 }
 
 export type ChampRoundResult = {
@@ -190,12 +198,16 @@ export type ChampRoundResult = {
   trickPts?: number
 }
 
+/** Stabilní jména AI soupeřů v kariéře (F1 žebříček). */
+export const CHAMP_RIVAL_NAMES = ['Nikola Beran', 'Petra Holá', 'Marek Diviš'] as const
+
 export type ChampCareer = {
   branch: VehicleBranch
-  season: 1 | 2
+  /** 1, 2, 3… — sudé sezóny jedou okruhy obráceně. */
+  season: number
   difficulty: DifficultyId
   league: ChampLeague
-  /** half = jen F; all = plný F+R na loopech. */
+  /** Legacy; kalendář už není half/all, jen sezónní flip. */
   trackPool: ChampTrackPool
   /**
    * Pevní AI soupeři sezóny (ne hráč).
@@ -208,6 +220,8 @@ export type ChampCareer = {
   unlocked: VehicleKind[]
   cash: number
   points: number
+  /** Body jezdců sezóny: [hráč, AI0, AI1, AI2] — F1 žebříček. */
+  driverPoints: [number, number, number, number]
   results: ChampRoundResult[]
   tuning: PlayerTuningValues
   /** Půlka sezóny: hráč byl nejpomalejší → útěcha (scooter), bez poháru. */
@@ -220,12 +234,16 @@ export type ChampCareer = {
   cashGrant45k?: boolean
   /** Kvalifikační 1 kolo hotové (bez výhry). */
   qualified?: boolean
+  /** Jméno jezdce (povinné po kvalifikaci, před Cenou). */
+  playerName?: string
+  /** Jméno potvrzené OK. */
+  nameChosen?: boolean
   /** Po kvalifikaci: liga + pool potvrzené. */
   leagueChosen?: boolean
   /** Po kvalifikaci: série (obtížnost) potvrzená. */
   seriesChosen?: boolean
   /**
-   * Sezóna je „commitnutá“ (kval + liga + obtížnost hotové).
+   * Sezóna je „commitnutá“ (kval + jméno + liga + obtížnost hotové).
    * Bez toho = draft — při odchodu se maže.
    */
   setupComplete?: boolean
@@ -240,35 +258,38 @@ export type ChampSeason1Snapshot = {
   cash: number
   tuning: PlayerTuningValues
   rivals: [VehicleKind, VehicleKind, VehicleKind]
+  playerName?: string
 }
 
 export type ChampMeta = {
-  /** Peněženka na start další sezóny (per větev). Legacy — S2 bere snapshot. */
-  podiumCarry: Record<VehicleBranch, number>
-  season2Unlocked: Record<VehicleBranch, boolean>
-  /** Stav po S1 pro 1:1 přenos / restart S2. */
-  season1End?: Partial<Record<VehicleBranch, ChampSeason1Snapshot>>
+  /** Klíč = `branch:league` — oddělená ekonomika / S2 per Cena. */
+  podiumCarry: Record<string, number>
+  season2Unlocked: Record<string, boolean>
+  /** Stav po S1 pro 1:1 přenos / restart S2 (per Cena). */
+  season1End?: Record<string, ChampSeason1Snapshot>
 }
 
 const META_KEY = `${GAME_STORAGE_NS}.champMeta`
 const CAREERS_KEY = `${GAME_STORAGE_NS}.champCareers`
 const LEGACY_KEY = `${GAME_STORAGE_NS}.championship`
-/** Jednorázový wipe starých kariér (nový model lig / grid / S2). */
-const CHAMP_WIPE_KEY = `${GAME_STORAGE_NS}.champWipe.v4`
+/** Wipe: sloty Kategorie × Cena + oddělené garáže. */
+const CHAMP_WIPE_KEY = `${GAME_STORAGE_NS}.champWipe.v6`
 
 const BRANCHES: VehicleBranch[] = ['auto', 'moto', 'monster', 'freestyle']
 
-function emptyBranchRecord<T>(fill: T): Record<VehicleBranch, T> {
-  return { auto: fill, moto: fill, monster: fill, freestyle: fill }
-}
-
 const DEFAULT_META: ChampMeta = {
-  podiumCarry: emptyBranchRecord(0),
-  season2Unlocked: emptyBranchRecord(false),
+  podiumCarry: {},
+  season2Unlocked: {},
 }
 
-function careerKey(branch: VehicleBranch, season: 1 | 2): string {
-  return `${branch}:s${season}`
+/** Meta / snapshot klíč: `auto:baby`. */
+export function champSlotKey(branch: VehicleBranch, league: ChampLeague): string {
+  return `${branch}:${league}`
+}
+
+/** Kariéra: `auto:baby:s1`. */
+export function careerKey(branch: VehicleBranch, league: ChampLeague, season: number): string {
+  return `${branch}:${league}:s${season}`
 }
 
 function kindsForChampionship(branch: VehicleBranch): VehicleKind[] {
@@ -355,6 +376,7 @@ function snapshotFromCareer(career: ChampCareer): ChampSeason1Snapshot {
     cash: career.cash,
     tuning: { ...career.tuning },
     rivals: [...career.rivals] as [VehicleKind, VehicleKind, VehicleKind],
+    playerName: career.playerName ?? '',
   }
 }
 
@@ -407,7 +429,7 @@ export function championshipRivalSpikeRound(totalRounds: number): number {
  */
 export function ensureChampRivalMidSpike(career: ChampCareer): ChampCareer {
   if (career.done || career.consolation || career.midSpikeDone) return career
-  const total = championshipTotalRounds(career.league, career.trackPool)
+  const total = championshipTotalRounds(career.league, career.trackPool, career.season)
   const half1 = championshipRivalSpikeRound(total)
   if (half1 <= 0 || career.round + 1 < half1) return career
 
@@ -460,7 +482,8 @@ export function ensureChampRivalMidSpike(career: ChampCareer): ChampCareer {
 export function starterVehicles(branch: VehicleBranch): VehicleKind[] {
   const order = listUnlockOrder(branch)
   if (branch === 'freestyle') {
-    const preferred: VehicleKind[] = ['skate', 'bike', 'skates', 'scooter']
+    // skate → brusle → BMX → koloběžka
+    const preferred: VehicleKind[] = ['skate', 'skates', 'bike', 'scooter']
     return preferred.filter((k) => order.includes(k) || k === 'scooter')
   }
   return order.slice(0, Math.min(2, order.length))
@@ -471,6 +494,15 @@ export function defaultChampStarter(branch: VehicleBranch): VehicleKind {
   return starterVehicles(branch)[0] ?? listUnlockOrder(branch)[0]!
 }
 
+function parseSlotKey(key: string): { branch: VehicleBranch; league: ChampLeague } | null {
+  const m = /^([a-z]+):(baby|small|grand)$/.exec(key)
+  if (!m) return null
+  const branch = m[1] as VehicleBranch
+  const league = m[2] as ChampLeague
+  if (!BRANCHES.includes(branch)) return null
+  return { branch, league }
+}
+
 export function loadChampMeta(): ChampMeta {
   try {
     const raw = localStorage.getItem(META_KEY)
@@ -478,36 +510,42 @@ export function loadChampMeta(): ChampMeta {
     const p = JSON.parse(raw) as Partial<ChampMeta>
     const meta: ChampMeta = structuredClone(DEFAULT_META)
     if (p.podiumCarry && typeof p.podiumCarry === 'object') {
-      for (const b of BRANCHES) {
-        const v = Number((p.podiumCarry as Record<string, number>)[b])
-        if (Number.isFinite(v)) meta.podiumCarry[b] = Math.max(0, Math.round(v))
+      for (const [k, rawV] of Object.entries(p.podiumCarry as Record<string, number>)) {
+        if (!parseSlotKey(k)) continue
+        const v = Number(rawV)
+        if (Number.isFinite(v)) meta.podiumCarry[k] = Math.max(0, Math.round(v))
       }
     }
     if (p.season2Unlocked && typeof p.season2Unlocked === 'object') {
-      for (const b of BRANCHES) {
-        meta.season2Unlocked[b] = Boolean((p.season2Unlocked as Record<string, boolean>)[b])
+      for (const [k, rawV] of Object.entries(p.season2Unlocked as Record<string, boolean>)) {
+        if (!parseSlotKey(k)) continue
+        meta.season2Unlocked[k] = Boolean(rawV)
       }
     }
     if (p.season1End && typeof p.season1End === 'object') {
       meta.season1End = {}
-      for (const b of BRANCHES) {
-        const snap = (p.season1End as Record<string, ChampSeason1Snapshot | undefined>)[b]
-        if (!snap || typeof snap !== 'object') continue
-        const order = listUnlockOrder(b)
+      for (const [k, snap] of Object.entries(
+        p.season1End as Record<string, ChampSeason1Snapshot | undefined>,
+      )) {
+        const slot = parseSlotKey(k)
+        if (!slot || !snap || typeof snap !== 'object') continue
+        const order = listUnlockOrder(slot.branch)
         const unlocked = Array.isArray(snap.unlocked)
-          ? snap.unlocked.filter((k): k is VehicleKind => order.includes(k as VehicleKind))
+          ? snap.unlocked.filter((x): x is VehicleKind => order.includes(x as VehicleKind))
           : []
         if (unlocked.length === 0) continue
         const vehicle =
           typeof snap.vehicle === 'string' && unlocked.includes(snap.vehicle as VehicleKind)
             ? (snap.vehicle as VehicleKind)
             : unlocked[0]!
-        meta.season1End[b] = {
+        meta.season1End[k] = {
           vehicle,
           unlocked,
           cash: Math.max(0, Math.round(Number(snap.cash) || 0)),
           tuning: normalizeChampTuning(snap.tuning, { alreadyChampScale: true }),
-          rivals: normalizeRivals(snap.rivals, b),
+          rivals: normalizeRivals(snap.rivals, slot.branch),
+          playerName:
+            typeof snap.playerName === 'string' ? snap.playerName.trim().slice(0, 24) : '',
         }
       }
     }
@@ -565,7 +603,12 @@ export function maybeWipeChampionshipSavesOnce(): boolean {
 // Hned při načtení modulu (dev / po deployi) — starý moto save pryč.
 maybeWipeChampionshipSavesOnce()
 
-function normalizeCareer(raw: Partial<ChampCareer>, branch: VehicleBranch, season: 1 | 2): ChampCareer | null {
+function normalizeCareer(
+  raw: Partial<ChampCareer>,
+  branch: VehicleBranch,
+  league: ChampLeague,
+  season: number,
+): ChampCareer | null {
   if (!raw || raw.branch !== branch || raw.season !== season) return null
   const difficulty = (raw.difficulty ?? 'normal') as DifficultyId
   const starters = starterVehicles(branch)
@@ -583,10 +626,16 @@ function normalizeCareer(raw: Partial<ChampCareer>, branch: VehicleBranch, seaso
       ? raw.vehicle
       : unlocked[0] ?? starters[0] ?? order[0] ?? 'street'
   const legacyCup = (raw as { cup?: unknown }).cup
-  const league = normalizeLeague((raw as { league?: unknown }).league, legacyCup)
+  // Slot určuje Cenu; raw.league jen fallback při legacy.
+  const resolvedLeague =
+    league || normalizeLeague((raw as { league?: unknown }).league, legacyCup)
   const trackPool = normalizeTrackPool((raw as { trackPool?: unknown }).trackPool, legacyCup)
   const rivals = normalizeRivals(raw.rivals, branch)
-  const maxRound = championshipTotalRounds(league, trackPool)
+  const seasonNum =
+    typeof raw.season === 'number' && Number.isFinite(raw.season)
+      ? Math.max(1, Math.round(raw.season))
+      : season
+  const maxRound = championshipTotalRounds(resolvedLeague, trackPool, seasonNum)
   const round = typeof raw.round === 'number' ? Math.max(0, Math.min(maxRound, Math.round(raw.round))) : 0
   const results: ChampRoundResult[] = Array.isArray(raw.results)
     ? raw.results
@@ -612,11 +661,20 @@ function normalizeCareer(raw: Partial<ChampCareer>, branch: VehicleBranch, seaso
     cash = CHAMP_START_CASH
     cashGrant45k = true
   }
-  return {
+  const rawDp = (raw as { driverPoints?: unknown }).driverPoints
+  const driverPoints: [number, number, number, number] = Array.isArray(rawDp)
+    ? [
+        Math.max(0, Math.round(Number(rawDp[0]) || 0)),
+        Math.max(0, Math.round(Number(rawDp[1]) || 0)),
+        Math.max(0, Math.round(Number(rawDp[2]) || 0)),
+        Math.max(0, Math.round(Number(rawDp[3]) || 0)),
+      ]
+    : [points, 0, 0, 0]
+  const career: ChampCareer = {
     branch,
-    season,
+    season: seasonNum,
     difficulty,
-    league,
+    league: resolvedLeague,
     trackPool,
     rivals,
     round,
@@ -625,6 +683,7 @@ function normalizeCareer(raw: Partial<ChampCareer>, branch: VehicleBranch, seaso
     unlocked,
     cash: Math.max(0, Math.round(cash)),
     points,
+    driverPoints,
     results,
     tuning: normalizeChampTuning(raw.tuning, {
       alreadyChampScale: (raw as { tuneScale?: unknown }).tuneScale === 5,
@@ -635,31 +694,110 @@ function normalizeCareer(raw: Partial<ChampCareer>, branch: VehicleBranch, seaso
     tuneScale: 5,
     cashGrant45k,
     qualified: Boolean((raw as { qualified?: unknown }).qualified),
+    playerName:
+      typeof (raw as { playerName?: unknown }).playerName === 'string'
+        ? String((raw as { playerName: string }).playerName).trim().slice(0, 24)
+        : '',
+    nameChosen: Boolean((raw as { nameChosen?: unknown }).nameChosen),
     leagueChosen: Boolean((raw as { leagueChosen?: unknown }).leagueChosen),
     seriesChosen: Boolean((raw as { seriesChosen?: unknown }).seriesChosen),
     setupComplete: Boolean((raw as { setupComplete?: unknown }).setupComplete),
     startOrder: normalizeStartOrder((raw as { startOrder?: unknown }).startOrder),
   }
+  // Staré rozehrané save: setup už hotový → nevracet do výběru jména/Ceny/obtížnosti.
+  if (career.setupComplete) {
+    career.leagueChosen = true
+    career.seriesChosen = true
+    career.nameChosen = true
+    career.qualified = true
+    if (!career.playerName) career.playerName = 'Jezdec'
+  } else if (career.qualified && (career.round > 0 || career.results.length > 0)) {
+    career.setupComplete = true
+    career.leagueChosen = true
+    career.seriesChosen = true
+    career.nameChosen = true
+    if (!career.playerName) career.playerName = 'Jezdec'
+  }
+  return career
 }
 
-export function getCareer(branch: VehicleBranch, season: 1 | 2): ChampCareer | null {
+export function getCareer(
+  branch: VehicleBranch,
+  league: ChampLeague,
+  season: number,
+): ChampCareer | null {
   const map = loadCareerMap()
-  const key = careerKey(branch, season)
+  const key = careerKey(branch, league, season)
   const raw = map[key]
   if (!raw) return null
   const rawCash = typeof (raw as { cash?: unknown }).cash === 'number' ? Math.round((raw as { cash: number }).cash) : -1
-  const career = normalizeCareer(raw, branch, season)
+  const career = normalizeCareer(raw, branch, league, season)
   if (!career) return null
   ensureChampStartCash(career)
-  // Persist migraci (tuning / 45k).
+  // Persist migraci (tuning / 45k / post-qual flagy).
+  const rawSetup = Boolean((raw as { setupComplete?: unknown }).setupComplete)
+  const rawSeries = Boolean((raw as { seriesChosen?: unknown }).seriesChosen)
+  const rawName = Boolean((raw as { nameChosen?: unknown }).nameChosen)
   if (
     (raw as { tuneScale?: unknown }).tuneScale !== 5 ||
     (raw as { cashGrant45k?: unknown }).cashGrant45k !== true ||
-    rawCash !== career.cash
+    rawCash !== career.cash ||
+    rawSetup !== Boolean(career.setupComplete) ||
+    rawSeries !== Boolean(career.seriesChosen) ||
+    rawName !== Boolean(career.nameChosen)
   ) {
     saveCareer(career)
   }
   return ensureChampRivalMidSpike(career)
+}
+
+/** Živá kariéra slotu (S2 když běží, jinak S1). */
+export function getLiveCareer(branch: VehicleBranch, league: ChampLeague): ChampCareer | null {
+  const s2 = getCareer(branch, league, 2)
+  if (s2 && !s2.done) return s2
+  const s1 = getCareer(branch, league, 1)
+  if (s1 && !s1.done) return s1
+  return s2?.done ? s2 : s1
+}
+
+/** Všechny uložené kariéry větve (všechny Ceny × sezóny). */
+export function listCareersForBranch(branch: VehicleBranch): ChampCareer[] {
+  const out: ChampCareer[] = []
+  for (const league of CHAMP_LEAGUES) {
+    for (const season of [1, 2] as const) {
+      const c = getCareer(branch, league, season)
+      if (c) out.push(c)
+    }
+  }
+  return out
+}
+
+/** Jedna aktivní kariéra ve větvi (ne paralelní Ceny). */
+export function getActiveCareerForBranch(branch: VehicleBranch): ChampCareer | null {
+  const all = listCareersForBranch(branch).filter((c) => !c.done)
+  return (
+    all.find((c) => c.setupComplete) ??
+    all.find((c) => c.qualified) ??
+    all[0] ??
+    null
+  )
+}
+
+/** Smaž ostatní sloty větve — max 1 šampionát / kategorie. */
+export function wipeOtherCareersForBranch(keep: ChampCareer): void {
+  for (const c of listCareersForBranch(keep.branch)) {
+    if (c.league === keep.league && c.season === keep.season) continue
+    deleteCareer(c.branch, c.league, c.season)
+  }
+}
+
+/** Smaž celou větev (před novým startem). */
+export function wipeBranchCareers(branch: VehicleBranch): void {
+  for (const league of CHAMP_LEAGUES) {
+    for (const season of [1, 2] as const) {
+      deleteCareer(branch, league, season)
+    }
+  }
 }
 
 /** Jednorázový grant 45k — po započtení (nákup starteru) už cash nedoplňovat. */
@@ -675,21 +813,22 @@ export function ensureChampStartCash(career: ChampCareer): ChampCareer {
 
 export function saveCareer(career: ChampCareer): void {
   const map = loadCareerMap()
-  map[careerKey(career.branch, career.season)] = career
+  map[careerKey(career.branch, career.league, career.season)] = career
   saveCareerMap(map)
 }
 
 export function startNewSeason(
   branch: VehicleBranch,
-  season: 1 | 2,
+  season: number,
   difficulty: DifficultyId,
   starterVehicle: VehicleKind,
   league: ChampLeague = 'baby',
   trackPool: ChampTrackPool = 'half',
 ): ChampCareer {
+  const slot = champSlotKey(branch, league)
   const meta = loadChampMeta()
-  if (season === 2 && !meta.season2Unlocked[branch]) {
-    throw new Error(`Season 2 locked for branch ${branch}`)
+  if (season === 2 && !meta.season2Unlocked[slot]) {
+    throw new Error(`Season 2 locked for ${slot}`)
   }
   // S2: bez nákupu / kvalifikace — 1:1 ze snapshotu po S1.
   if (season === 2) {
@@ -708,8 +847,11 @@ export function startNewSeason(
   if (!order.includes(starter)) {
     throw new Error(`Invalid starter ${starter} for ${branch}`)
   }
-  meta.podiumCarry[branch] = 0
+  meta.podiumCarry[slot] = 0
   saveChampMeta(meta)
+
+  // Jedna kariéra / kategorie — smaž paralelní Ceny.
+  wipeBranchCareers(branch)
 
   const starterIdx = starter === 'scooter' ? 0 : order.indexOf(starter)
   const price = vehicleBuyPrice(branch, Math.max(0, starterIdx), difficulty) ?? 15_000
@@ -735,6 +877,7 @@ export function startNewSeason(
     unlocked: [starter],
     cash,
     points: 0,
+    driverPoints: [0, 0, 0, 0],
     results: [],
     tuning: { ...DEFAULT_CHAMP_TUNING },
     consolation: false,
@@ -742,6 +885,9 @@ export function startNewSeason(
     tuneScale: 5,
     cashGrant45k: true,
     qualified: false,
+    playerName: '',
+    nameChosen: false,
+    /** Cena se volí až po kvalifikaci. */
     leagueChosen: false,
     seriesChosen: false,
     setupComplete: false,
@@ -751,22 +897,55 @@ export function startNewSeason(
   return career
 }
 
-/** S2 ze snapshotu po S1 — bez kval / nákupu; hned výběr ligy + obtížnosti. */
+/**
+ * Po kvalifikaci: přiřadí Cenu (případně přesune save na nový klíč).
+ * Cílový slot musí být volný (nebo je to stejný league).
+ */
+export function assignChampLeague(career: ChampCareer, league: ChampLeague): ChampCareer {
+  const next = normalizeLeague(league)
+  if (career.league === next) {
+    career.leagueChosen = true
+    wipeOtherCareersForBranch(career)
+    saveCareer(career)
+    return career
+  }
+  const prevLeague = career.league
+  deleteCareer(career.branch, prevLeague, career.season)
+  const existing = getCareer(career.branch, next, career.season)
+  if (existing) deleteCareer(career.branch, next, career.season)
+  career.league = next
+  career.leagueChosen = true
+  wipeOtherCareersForBranch(career)
+  saveCareer(career)
+  return career
+}
+
+export function assignChampPlayerName(career: ChampCareer, name: string): ChampCareer {
+  const cleaned = name.trim().slice(0, 24)
+  if (!cleaned) throw new Error('Name required')
+  career.playerName = cleaned
+  career.nameChosen = true
+  saveCareer(career)
+  return career
+}
+
+/** S2 ze snapshotu po S1 — Cena už je daná slotem; setup hned hotový. */
 export function startSeason2FromSnapshot(
   branch: VehicleBranch,
   difficulty: DifficultyId = 'normal',
   league: ChampLeague = 'baby',
   trackPool: ChampTrackPool = 'half',
 ): ChampCareer {
+  const slot = champSlotKey(branch, league)
   const meta = loadChampMeta()
-  if (!meta.season2Unlocked[branch]) {
-    throw new Error(`Season 2 locked for branch ${branch}`)
+  if (!meta.season2Unlocked[slot]) {
+    throw new Error(`Season 2 locked for ${slot}`)
   }
-  const snap = meta.season1End?.[branch]
+  const snap = meta.season1End?.[slot]
   if (!snap) {
-    throw new Error(`No season 1 snapshot for ${branch}`)
+    throw new Error(`No season 1 snapshot for ${slot}`)
   }
-  deleteCareer(branch, 2)
+  deleteCareer(branch, league, 2)
   const career: ChampCareer = {
     branch,
     season: 2,
@@ -780,6 +959,7 @@ export function startSeason2FromSnapshot(
     unlocked: [...snap.unlocked],
     cash: snap.cash,
     points: 0,
+    driverPoints: [0, 0, 0, 0],
     results: [],
     tuning: { ...snap.tuning },
     consolation: false,
@@ -787,61 +967,75 @@ export function startSeason2FromSnapshot(
     tuneScale: 5,
     cashGrant45k: true,
     qualified: true,
-    leagueChosen: false,
-    seriesChosen: false,
-    setupComplete: false,
+    playerName: snap.playerName ?? '',
+    nameChosen: Boolean(snap.playerName),
+    leagueChosen: true,
+    seriesChosen: true,
+    setupComplete: true,
     startOrder: defaultChampStartOrder(),
   }
+  wipeOtherCareersForBranch(career)
   saveCareer(career)
   return career
 }
 
-export function deleteCareer(branch: VehicleBranch, season: 1 | 2): void {
+export function deleteCareer(branch: VehicleBranch, league: ChampLeague, season: number): void {
   const map = loadCareerMap()
-  delete map[careerKey(branch, season)]
+  delete map[careerKey(branch, league, season)]
   saveCareerMap(map)
 }
 
 /** Nedokončený draft (bez setupComplete) — smaž. */
-export function discardIncompleteCareer(branch: VehicleBranch, season: 1 | 2): boolean {
-  const career = getCareer(branch, season)
+export function discardIncompleteCareer(
+  branch: VehicleBranch,
+  league: ChampLeague,
+  season: number,
+): boolean {
+  const career = getCareer(branch, league, season)
   if (!career) return false
   if (career.setupComplete) return false
-  deleteCareer(branch, season)
+  deleteCareer(branch, league, season)
   return true
 }
 
-/** Commit po výběru ligy + obtížnosti (sezóna se trvale uloží). */
+/** Commit po kvalifikaci (jméno + Cena + obtížnost zamčené; změna jen restartem). */
 export function markChampSetupComplete(career: ChampCareer): ChampCareer {
   career.setupComplete = true
+  career.nameChosen = true
   career.leagueChosen = true
   career.seriesChosen = true
   if (!career.qualified) career.qualified = true
+  wipeOtherCareersForBranch(career)
   saveCareer(career)
   return career
 }
 
 /**
- * Restart sezóny:
- * - S2 → začátek S2 ze snapshotu po S1 (výběr ligy + obtížnosti)
- * - S1 → úplný wipe větve S1 → výběr auta + kvalifikace
+ * Restart sezóny v dané Ceně:
+ * - S2 → začátek S2 ze snapshotu
+ * - S1 → wipe slotu → výběr auta + kvalifikace
  */
-export function restartChampSeason(branch: VehicleBranch, season: 1 | 2): void {
+export function restartChampSeason(
+  branch: VehicleBranch,
+  league: ChampLeague,
+  season: number,
+): void {
   if (season === 2) {
-    deleteCareer(branch, 2)
+    deleteCareer(branch, league, 2)
     return
   }
-  restartChampCareer(branch)
+  restartChampCareer(branch, league)
 }
 
-/** Restart kariéry větve → S1 před výběrem auta (smaže S1 i S2). */
-export function restartChampCareer(branch: VehicleBranch): void {
-  deleteCareer(branch, 1)
-  deleteCareer(branch, 2)
+/** Restart kariéry jedné Ceny (S1+S2) — ostatní Ceny větve zůstanou. */
+export function restartChampCareer(branch: VehicleBranch, league: ChampLeague): void {
+  deleteCareer(branch, league, 1)
+  deleteCareer(branch, league, 2)
+  const slot = champSlotKey(branch, league)
   const meta = loadChampMeta()
-  meta.podiumCarry[branch] = 0
-  meta.season2Unlocked[branch] = false
-  if (meta.season1End) delete meta.season1End[branch]
+  meta.podiumCarry[slot] = 0
+  meta.season2Unlocked[slot] = false
+  if (meta.season1End) delete meta.season1End[slot]
   saveChampMeta(meta)
 }
 
@@ -853,9 +1047,12 @@ export function championshipTrackId(
   if (arg && 'branch' in arg) {
     const career = arg
     if (!career.qualified) return championshipQualTrackId(career.branch)
-    const total = championshipTotalRounds(career.league, career.trackPool)
+    const total = championshipTotalRounds(career.league, career.trackPool, career.season)
     if (career.done || career.round >= total) return null
-    return championshipRoundMeta(career.round, career.league, career.trackPool)?.trackId ?? null
+    return (
+      championshipRoundMeta(career.round, career.league, career.trackPool, career.season)
+        ?.trackId ?? null
+    )
   }
   const state = arg ?? loadChampionship()
   return legacyTrackId(state)
@@ -863,9 +1060,12 @@ export function championshipTrackId(
 
 export function championshipReverse(career: ChampCareer): boolean {
   if (!career.qualified) return false
-  const total = championshipTotalRounds(career.league, career.trackPool)
+  const total = championshipTotalRounds(career.league, career.trackPool, career.season)
   if (career.done || career.round >= total) return false
-  return championshipRoundMeta(career.round, career.league, career.trackPool)?.reverse ?? false
+  return (
+    championshipRoundMeta(career.round, career.league, career.trackPool, career.season)?.reverse ??
+    false
+  )
 }
 
 export function championshipProgressLabel(career: ChampCareer): string
@@ -875,7 +1075,7 @@ export function championshipProgressLabel(
 ): string {
   if (arg && 'branch' in arg) {
     if (!arg.qualified) return 'Q'
-    const total = championshipTotalRounds(arg.league, arg.trackPool)
+    const total = championshipTotalRounds(arg.league, arg.trackPool, arg.season)
     if (arg.done) return `${total}/${total}`
     return `${Math.min(arg.round + 1, total)}/${total}`
   }
@@ -887,13 +1087,32 @@ export function championshipProgressLabel(
 
 export function championshipAiSpeedFactor(
   roundIndex: number,
-  season: 1 | 2 = 1,
+  season: number = 1,
   totalRounds = CHAMPIONSHIP_TOTAL_ROUNDS,
 ): number {
   const last = Math.max(1, totalRounds - 1)
   const r = Math.max(0, Math.min(last, roundIndex | 0))
   if (season === 2) return 0.7 + 0.3 * (r / last)
   return 0.6 + 0.4 * (r / last)
+}
+
+/** Sezónní závod (ne kvalifikace): postup jen při 1.–2. místě. */
+export function champPlaceAdvances(place: number): boolean {
+  return place >= 1 && place <= 2
+}
+
+/** O stupeň těžší obtížnost (strop = superHard). */
+export function nextChampDifficulty(id: DifficultyId): DifficultyId {
+  const ids = DIFFICULTIES.map((d) => d.id)
+  const i = ids.indexOf(id)
+  if (i < 0) return 'normal'
+  return ids[Math.min(i + 1, ids.length - 1)]!
+}
+
+export type ChampRoundFinishResult = {
+  career: ChampCareer
+  /** false = 3.+ místo — kolo se neposunulo, opakuj trať */
+  advanced: boolean
 }
 
 export function recordRoundFinish(
@@ -904,13 +1123,14 @@ export function recordRoundFinish(
     /** Místa AI (rivals[0..2]); bez toho se rošt nemění. */
     rivalPlaces?: [number, number, number]
   },
-): ChampCareer {
-  if (career.done) return career
+): ChampRoundFinishResult {
+  if (career.done) return { career, advanced: false }
 
   // Kvalifikace: bez bodů / výhry / bez zápisu do results (kalendář = jen sezóna).
-  // FS → náhodný rošt; race → podle dojezdu.
+  // FS → náhodný rošt; race → podle dojezdu. Cena = slot → leagueChosen hned.
   if (!career.qualified) {
     career.qualified = true
+    career.nameChosen = false
     career.leagueChosen = false
     career.seriesChosen = false
     career.setupComplete = false
@@ -922,15 +1142,27 @@ export function recordRoundFinish(
       career.startOrder = defaultChampStartOrder()
     }
     saveCareer(career)
-    return career
+    return { career, advanced: true }
   }
 
-  const meta = championshipRoundMeta(career.round, career.league, career.trackPool)
+  const meta = championshipRoundMeta(
+    career.round,
+    career.league,
+    career.trackPool,
+    career.season,
+  )
   if (!meta) {
     career.done = true
     saveCareer(career)
-    return career
+    return { career, advanced: true }
   }
+
+  // Top-2 brána: 3.+ neposouvá kolo, bez bodů / cash.
+  if (!champPlaceAdvances(finish.place)) {
+    saveCareer(career)
+    return { career, advanced: false }
+  }
+
   const trickPts = finish.trickPts ?? 0
   const pts = roundPoints(career.branch, finish.place, trickPts)
   let cashEarned = placeCash(finish.place, career.difficulty)
@@ -948,23 +1180,30 @@ export function recordRoundFinish(
   })
   career.points += pts
   career.cash += cashEarned
+  if (!career.driverPoints) career.driverPoints = [0, 0, 0, 0]
+  career.driverPoints[0] += pts
   if (finish.rivalPlaces) {
+    for (let i = 0; i < 3; i++) {
+      const rp = finish.rivalPlaces[i] ?? 4
+      career.driverPoints[i + 1] += roundPoints(career.branch, rp, 0)
+    }
     career.startOrder = startOrderFromPlaces(finish.place, finish.rivalPlaces)
   }
   career.round += 1
-  if (career.round >= championshipTotalRounds(career.league, career.trackPool)) {
+  if (
+    career.round >= championshipTotalRounds(career.league, career.trackPool, career.season)
+  ) {
     career.done = true
     saveCareer(career)
-    return career
+    return { career, advanced: true }
   }
   saveCareer(career)
-  return ensureChampRivalMidSpike(career)
+  return { career: ensureChampRivalMidSpike(career), advanced: true }
 }
 
-/** Odstopit: postup kola jako poslední v poli (hráč + rivals). */
+/** Odstopit: kolo se neposouvá (stejná trať zůstává). */
 export function abandonRound(career: ChampCareer): ChampCareer {
-  const lastPlace = Math.max(2, 1 + career.rivals.length)
-  return recordRoundFinish(career, { place: lastPlace, trickPts: 0 })
+  return career
 }
 
 export function canBuy(
@@ -1019,7 +1258,7 @@ export function applyTuningUpgrade(
 export function seasonPodiumRank(career: ChampCareer): SeasonPodiumTier {
   return seasonPodiumTier({
     ...career,
-    totalRounds: championshipTotalRounds(career.league, career.trackPool),
+    totalRounds: championshipTotalRounds(career.league, career.trackPool, career.season),
   })
 }
 
@@ -1028,6 +1267,50 @@ export type SeasonCompleteInfo = {
   purse: number
   cashCarry: number
   unlockedSeason2: boolean
+  /** Další sezóna auto-vytvořená po dokončení (null = útěcha / stop). */
+  nextSeason: number | null
+  /** Dokončena sezóna na superHard → „pokořil Klecany“. */
+  conquered: boolean
+}
+
+/** Další sezóna ze stavu právě dokončené (cash už včetně purse). */
+export function startNextSeasonFromCareer(
+  prev: ChampCareer,
+  difficulty: DifficultyId = nextChampDifficulty(prev.difficulty),
+): ChampCareer {
+  const nextSeason = Math.max(1, Math.round(prev.season)) + 1
+  deleteCareer(prev.branch, prev.league, nextSeason)
+  const career: ChampCareer = {
+    branch: prev.branch,
+    season: nextSeason,
+    difficulty,
+    league: normalizeLeague(prev.league),
+    trackPool: normalizeTrackPool(prev.trackPool),
+    rivals: [...prev.rivals] as [VehicleKind, VehicleKind, VehicleKind],
+    round: 0,
+    done: false,
+    vehicle: prev.vehicle,
+    unlocked: [...prev.unlocked],
+    cash: prev.cash,
+    points: 0,
+    driverPoints: [0, 0, 0, 0],
+    results: [],
+    tuning: { ...prev.tuning },
+    consolation: false,
+    midSpikeDone: false,
+    tuneScale: 5,
+    cashGrant45k: true,
+    qualified: true,
+    playerName: prev.playerName ?? '',
+    nameChosen: Boolean(prev.playerName),
+    leagueChosen: true,
+    seriesChosen: true,
+    setupComplete: true,
+    startOrder: defaultChampStartOrder(),
+  }
+  wipeOtherCareersForBranch(career)
+  saveCareer(career)
+  return career
 }
 
 export function completeSeasonAndPrepareNext(career: ChampCareer): SeasonCompleteInfo {
@@ -1036,28 +1319,54 @@ export function completeSeasonAndPrepareNext(career: ChampCareer): SeasonComplet
     saveCareer(career)
   }
   const meta = loadChampMeta()
-  // Útěcha (scooter): bez poháru / purse / S2 unlock
+  // Útěcha (scooter): bez poháru / purse / další sezóny
   if (career.consolation) {
-    return { tier: 4, purse: 0, cashCarry: 0, unlockedSeason2: false }
+    return {
+      tier: 4,
+      purse: 0,
+      cashCarry: 0,
+      unlockedSeason2: false,
+      nextSeason: null,
+      conquered: false,
+    }
   }
   const tier = seasonPodiumRank(career)
   const purse = seasonPodiumPurse(tier, career.difficulty)
-  // Purse se přičte k cash před snapshotem S1 (1:1 přenos do S2).
+  // Purse se přičte k cash před snapshotem / startem další sezóny.
   if (purse > 0) {
     career.cash += purse
     saveCareer(career)
   }
-  let unlockedSeason2 = false
+  const slot = champSlotKey(career.branch, career.league)
+  const conquered = career.difficulty === 'superHard'
   if (career.season === 1) {
-    meta.season2Unlocked[career.branch] = true
+    meta.season2Unlocked[slot] = true
     if (!meta.season1End) meta.season1End = {}
-    meta.season1End[career.branch] = snapshotFromCareer(career)
-    unlockedSeason2 = true
+    meta.season1End[slot] = snapshotFromCareer(career)
   }
-  // Legacy carry už nepoužíváme pro S2 (snapshot); necháme 0.
-  meta.podiumCarry[career.branch] = 0
+  meta.podiumCarry[slot] = 0
   saveChampMeta(meta)
-  return { tier, purse, cashCarry: 0, unlockedSeason2 }
+  const nextSeason = career.season + 1
+  try {
+    startNextSeasonFromCareer(career, nextChampDifficulty(career.difficulty))
+  } catch {
+    return {
+      tier,
+      purse,
+      cashCarry: 0,
+      unlockedSeason2: career.season === 1,
+      nextSeason: null,
+      conquered,
+    }
+  }
+  return {
+    tier,
+    purse,
+    cashCarry: 0,
+    unlockedSeason2: nextSeason === 2,
+    nextSeason,
+    conquered,
+  }
 }
 
 // —— Legacy (Game.ts — 9 kol, bez reverse) ——

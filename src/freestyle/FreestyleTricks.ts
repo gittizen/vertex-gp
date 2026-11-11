@@ -1,6 +1,6 @@
 /**
  * Freestyle (skate / brusle / BMX + raketové): triky na písmena bez konfliktu se speciálními bindy.
- * Rezervováno (ne triky): W/A/S/D řízení, Q/E řazení, R restart, C kamera.
+ * Rezervováno (ne triky): P pauza, R restart, C kamera. WASD defaultně = triky (ne řízení).
  */
 
 import type { VehicleKind } from '../track/TrackDefs'
@@ -21,8 +21,8 @@ export type FreestyleTrickDef = {
   spin: SpinStyle
 }
 
-/** Klávesy závodu / menu — nesmí spouštět FS trik. P = pauza (jako Esc). Q/E volné pro triky. */
-export const RESERVED_TRICK_LETTERS = new Set(['W', 'A', 'S', 'D', 'P', 'R', 'C'])
+/** Klávesy závodu / menu — nesmí spouštět FS trik. P = pauza (jako Esc). WASD = triky. */
+export const RESERVED_TRICK_LETTERS = new Set(['P', 'R', 'C'])
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
@@ -41,8 +41,12 @@ function trick(
   return { id, letter, nameCs, nameEn, difficulty: d, dur, peak, points, spin }
 }
 
-/** Skate triky — volná písmena (bez W/A/S/D/P/R/C; Q/E ok). */
+/** Skate triky — volná písmena (bez P/R/C; WASD = základní triky). */
 export const SKATE_FREESTYLE: FreestyleTrickDef[] = [
+  trick('W', 'ollie', 'Ollie', 'Ollie', 1, 'none'),
+  trick('A', 'nosegrab', 'Nosegrab', 'Nosegrab', 3, 'none'),
+  trick('S', 'boardslide', 'Boardslide', 'Boardslide', 3, 'roll'),
+  trick('D', 'indy', 'Indy', 'Indy', 3, 'none'),
   trick('B', 'nollie', 'Nollie', 'Nollie', 2, 'none'),
   trick('E', 'bs360', 'BS 360', 'BS 360', 6, 'yaw'),
   trick('F', 'kickflip', 'Kickflip', 'Kickflip', 4, 'kick'),
@@ -68,8 +72,12 @@ export const SKATE_FREESTYLE: FreestyleTrickDef[] = [
  * Kolečkové brusle — mezi skate a BMX (obtížnosti o ~0.5 níž než skate flip / blíž grindům).
  */
 export const SKATES_FREESTYLE: FreestyleTrickDef[] = [
+  trick('W', 'rollout', 'Roll-out', 'Roll-out', 1, 'none'),
+  trick('A', 'alleyoop', 'Alley-oop', 'Alley-oop', 3, 'yaw'),
+  trick('S', 'soulbasic', 'Soul', 'Soul', 2, 'roll'),
+  trick('D', 'frontside', 'Frontside', 'Frontside', 3, 'yaw'),
   trick('B', 'royale', 'Royale', 'Royale', 2, 'none'),
-  trick('F', 'soul', 'Soul', 'Soul grind', 3, 'roll'),
+  trick('F', 'soul', 'Soul grind', 'Soul grind', 3, 'roll'),
   trick('G', 'makio', 'Makio', 'Makio', 4, 'roll'),
   trick('H', 'unity', 'Unity', 'Unity', 5, 'yaw'),
   trick('I', 'fishbrain', 'Fishbrain', 'Fishbrain', 5, 'heel'),
@@ -91,6 +99,10 @@ export const SKATES_FREESTYLE: FreestyleTrickDef[] = [
 
 /** Bike / BMX — stejná rezervovaná písmena. */
 export const BIKE_FREESTYLE: FreestyleTrickDef[] = [
+  trick('W', 'bunnyhop', 'Bunnyhop', 'Bunnyhop', 1, 'none'),
+  trick('A', 'endo', 'Endo', 'Endo', 3, 'imp'),
+  trick('S', 'fakie', 'Fakie', 'Fakie', 2, 'none'),
+  trick('D', 'footjam', 'Footjam', 'Footjam', 3, 'none'),
   trick('B', 'manual', 'Manual', 'Manual', 2, 'none'),
   trick('F', 'tabletop', 'Tabletop', 'Tabletop', 4, 'roll'),
   trick('G', 'cancan', 'Can-can', 'Can-can', 4, 'roll'),

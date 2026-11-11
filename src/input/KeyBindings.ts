@@ -24,8 +24,9 @@ export type KeyBindingsMap = Record<BindAction, KeyPair>
 export const DEFAULT_BINDINGS: KeyBindingsMap = {
   steerLeft: ['ArrowLeft', null],
   steerRight: ['ArrowRight', null],
-  throttle: ['ArrowUp', 'KeyW'],
-  brake: ['ArrowDown', 'KeyS'],
+  /** Řízení jen šipky — WASD je defaultně na triky. */
+  throttle: ['ArrowUp', null],
+  brake: ['ArrowDown', null],
   push: ['ShiftLeft', 'ShiftRight'],
   /** Boost / Tab akce — default jen Alt (ne Tab). */
   tab: ['AltLeft', 'AltRight'],
@@ -78,6 +79,36 @@ export function loadKeyBindings(): KeyBindingsMap {
         } catch {
           /* ignore */
         }
+      }
+    }
+    // Jednorázově: WASD pryč z řízení (jdou na triky)
+    const wasdDriveFlag = `${GAME_STORAGE_NS}.v08-wasd-tricks`
+    if (!localStorage.getItem(wasdDriveFlag)) {
+      try {
+        localStorage.setItem(wasdDriveFlag, '1')
+      } catch {
+        /* ignore */
+      }
+      const scrubWasd = (pair: KeyPair): KeyPair => [
+        pair[0] === 'KeyW' || pair[0] === 'KeyA' || pair[0] === 'KeyS' || pair[0] === 'KeyD'
+          ? null
+          : pair[0],
+        pair[1] === 'KeyW' || pair[1] === 'KeyA' || pair[1] === 'KeyS' || pair[1] === 'KeyD'
+          ? null
+          : pair[1],
+      ]
+      out.throttle = scrubWasd(out.throttle)
+      out.brake = scrubWasd(out.brake)
+      out.steerLeft = scrubWasd(out.steerLeft)
+      out.steerRight = scrubWasd(out.steerRight)
+      if (!out.throttle[0] && !out.throttle[1]) out.throttle = ['ArrowUp', null]
+      if (!out.brake[0] && !out.brake[1]) out.brake = ['ArrowDown', null]
+      if (!out.steerLeft[0] && !out.steerLeft[1]) out.steerLeft = ['ArrowLeft', null]
+      if (!out.steerRight[0] && !out.steerRight[1]) out.steerRight = ['ArrowRight', null]
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(out))
+      } catch {
+        /* ignore */
       }
     }
     if (!out.tab[0] && !out.tab[1]) out.tab = ['AltLeft', 'AltRight']

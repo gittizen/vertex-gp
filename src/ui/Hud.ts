@@ -15,6 +15,7 @@ import {
 } from '../input/KeyBindings'
 import { loadTrickBindings, TRICK_LETTERS } from '../input/TrickBindings'
 import type { CompetitionId } from '../render/CompetitionSettings'
+import { assetUrl } from './assetUrl'
 
 /** Radar barvy (všichni stejně, bez ohledu na to jestli můžou umřít). */
 const RADAR_GREEN_KMH = 100
@@ -43,6 +44,8 @@ export class Hud {
   private onResumeRequest: (() => void) | null = null
   private onRestartRequest: (() => void) | null = null
   private onChampionshipNext: (() => void) | null = null
+  /** Finish → brief aktuální S1/S2. */
+  private onChampionshipHome: (() => void) | null = null
   private onImmortalToggle: (() => void) | null = null
   private onRetireRequest: (() => void) | null = null
   private champResult: {
@@ -53,6 +56,8 @@ export class Hud {
     qual?: boolean
     fsQual?: boolean
     place?: number
+    /** false = musí opakovat trať (3.+) */
+    advanced?: boolean
   } | null = null
   private built = false
   private elRaceMeta: HTMLElement | null = null
@@ -101,6 +106,12 @@ export class Hud {
           e.preventDefault()
           e.stopPropagation()
           this.onChampionshipNext?.()
+          return
+        }
+        if (el.id === 'btn-champ-home') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.onChampionshipHome?.()
           return
         }
         if (el.id === 'btn-share') {
@@ -240,6 +251,10 @@ export class Hud {
     this.onChampionshipNext = cb
   }
 
+  setOnChampionshipHome(cb: () => void): void {
+    this.onChampionshipHome = cb
+  }
+
   setChampionshipResult(
     result: {
       points: number
@@ -249,6 +264,7 @@ export class Hud {
       qual?: boolean
       fsQual?: boolean
       place?: number
+      advanced?: boolean
     } | null,
   ): void {
     this.champResult = result
@@ -595,12 +611,22 @@ export class Hud {
       })
       if (fs || driftComp) scored.sort((a, b) => b.total - a.total || a.s.place - b.s.place)
       const champ = this.champResult
-      const key = `fin:${race.playerPlace()}:${scored.map((x) => x.total).join(',')}:${fs ? 1 : 0}:${driftComp ? 1 : 0}:${champ?.progress ?? ''}:${champ?.done ? 1 : 0}:${champ?.qual ? 1 : 0}`
+      const key = `fin:${race.playerPlace()}:${scored.map((x) => x.total).join(',')}:${fs ? 1 : 0}:${driftComp ? 1 : 0}:${champ?.progress ?? ''}:${champ?.done ? 1 : 0}:${champ?.qual ? 1 : 0}:${champ?.advanced === false ? 0 : 1}`
       if (key === this.lastOverlayKey) return
       this.lastOverlayKey = key
       this.overlay.classList.add('visible')
       const place = race.playerPlace()
       const placeKey = place <= 4 ? `hud.place${place}` : 'hud.place4'
+      const medalSrc =
+        place === 1
+          ? assetUrl('ui/finish-medal-gold.jpg')
+          : place === 2
+            ? assetUrl('ui/finish-medal-silver.jpg')
+            : place === 3
+              ? assetUrl('ui/finish-medal-bronze.jpg')
+              : assetUrl('ui/finish-consolation-scooter.jpg')
+      const medalAlt = place >= 4 ? t('hud.placeConsolation') : t(placeKey)
+      const medalHtml = `<img class="finish-place-medal" src="${medalSrc}" alt="${medalAlt}" width="148" height="148" decoding="async" />`
       const rows = scored
         .map((row, i) => {
           const s = row.s
@@ -655,25 +681,32 @@ export class Hud {
               ? ` · drift ${scoreBit.driftPts}`
               : ''
       this.shareText = `KlecMania · ${this.trackName} · P${place} · ${timeStr}${extra}`
-      const shareBtn = `<button type="button" class="btn-ghost" id="btn-share"><span>${t('hud.share')}</span></button>`
+      const champHomeBtn = `<button type="button" class="btn-ghost" id="btn-champ-home">${t('hud.champHome')}</button>`
+      const menuBtn = `<button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+      const retryPreferred = `<button type="button" class="menu-start finish-cta-preferred" id="btn-restart">${t('hud.again')}</button>`
+      const retryGhost = `<button type="button" class="btn-ghost" id="btn-restart">${t('hud.again')}</button>`
+      const nextPreferred = `<button type="button" class="menu-start finish-cta-preferred" id="btn-champ-next">${t('hud.champNext')}</button>`
+      const advancedOk = champ?.advanced !== false
       const actions = this.onlineRace
-        ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>${shareBtn}`
+        ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>`
         : champ?.qual
-          ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champQualContinue')}</button>
-            ${shareBtn}
-            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+          ? `<button type="button" class="menu-start finish-cta-preferred" id="btn-champ-next">${t('hud.champQualContinue')}</button>
+            ${menuBtn}`
           : champ && !champ.done
-            ? `<button type="button" class="menu-start" id="btn-champ-next">${t('hud.champNext')}</button>
-            <button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
-            ${shareBtn}
-            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+            ? advancedOk
+              ? `${nextPreferred}
+            ${retryGhost}
+            ${champHomeBtn}
+            ${menuBtn}`
+              : `${retryPreferred}
+            ${champHomeBtn}
+            ${menuBtn}`
             : champ?.done
-              ? `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
-            ${shareBtn}
-            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.champDone')}</button>`
-              : `<button type="button" class="menu-start" id="btn-restart">${t('hud.again')}</button>
-            ${shareBtn}
-            <button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
+              ? `${retryGhost}
+            ${champHomeBtn}
+            <button type="button" class="menu-start finish-cta-preferred" id="btn-menu">${t('hud.champDone')}</button>`
+              : `${retryPreferred}
+            ${menuBtn}`
       const placeTier = place <= 1 ? 'p1' : place === 2 ? 'p2' : place === 3 ? 'p3' : 'p4'
       const sparkN = place === 1 ? 22 : place === 2 ? 12 : place === 3 ? 6 : 0
       const burst =
@@ -698,9 +731,15 @@ export class Hud {
           ${burst}
           <header class="pause-card-head finish-hero">
             <p class="pause-kicker finish-kicker">${t('hud.results')}${modeBit}</p>
+            ${medalHtml}
             <p class="overlay-winner">${place >= 4 ? t('hud.placeConsolation') : t(placeKey)}</p>
             <p class="finish-time">${timeStr}${extra}</p>
             <p class="finish-track overlay-hint">${this.trackName}</p>
+            ${
+              champ && !champ.qual && champ.advanced === false
+                ? `<p class="overlay-hint">${t('hud.champMustTop2')}</p>`
+                : ''
+            }
           </header>
           <div class="pause-card-body">
             ${champLine}
@@ -758,9 +797,16 @@ export class Hud {
       const cells = TRICK_LETTERS.map((ch) => {
         const def = tricks.find((tr) => tr.letter === ch)
         const name = def?.nameCs ?? ch
+        const [k0, k1] = tb[ch] ?? [null, null]
+        const keyBtns = [
+          k0 ? `<span class="bind-key pause-key">${codeLabel(k0)}</span>` : '',
+          k1 ? `<span class="bind-key pause-key">${codeLabel(k1)}</span>` : '',
+        ]
+          .filter(Boolean)
+          .join('')
         return `<div class="bind-row bind-row-trick pause-bind-row">
           <div class="bind-row-label"><span class="bind-name">${name}</span></div>
-          <span class="bind-key pause-key">${codeLabel(tb[ch] ?? null)}</span>
+          ${keyBtns || `<span class="bind-key pause-key">—</span>`}
         </div>`
       }).join('')
       trickBlock = `
@@ -790,26 +836,29 @@ export class Hud {
         }`
     }
 
-    const escHint =
-      escN >= 2
-        ? t('pause.escHintQuit', { n: escN, left: 3 - escN })
-        : t('pause.escHintSolo')
+    const escSteps = `
+      <div class="pause-esc-steps" aria-hidden="true">
+        <span class="pause-esc-chip ${escN >= 1 ? 'is-on is-1' : ''}">${t('pause.escStep1')}</span>
+        <span class="pause-esc-chip ${escN >= 2 ? 'is-on is-2' : ''}">${t('pause.escStep2')}</span>
+      </div>`
+    const escHint = escN >= 2 ? t('pause.escHintQuit') : t('pause.escHintSolo')
 
     this.overlay.innerHTML = `
       <div class="overlay-card pause-card">
         <header class="pause-card-head">
           <p class="pause-kicker">${t('hud.pause')}</p>
-          <h2>${t('pause.controls')}</h2>
-          <p class="overlay-hint pause-esc-hint">${escHint}</p>
+          ${escSteps}
         </header>
-        <div class="pause-card-body">
-          <div class="pause-bind-list bind-list">${bindRows}</div>
-          ${trickBlock}
-        </div>
         <div class="overlay-actions pause-actions">
           <button type="button" class="menu-start pause-resume-btn" id="btn-resume">${t('hud.resume')}</button>
           ${immortalBtn}
           ${exitBlock}
+          <p class="overlay-hint pause-esc-hint">${escHint}</p>
+        </div>
+        <div class="pause-card-body">
+          <h2>${t('pause.controls')}</h2>
+          <div class="pause-bind-list bind-list">${bindRows}</div>
+          ${trickBlock}
         </div>
       </div>
     `

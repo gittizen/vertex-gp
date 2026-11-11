@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { AiDriver } from '../ai/AiDriver'
+import { AiDriver, launchFeelFor } from '../ai/AiDriver'
 import { getDifficulty, type DifficultyDef, type DifficultyId } from '../ai/Difficulty'
 import {
   ingestFinishedRace,
@@ -48,8 +48,10 @@ import {
   recordRoundFinish,
   wipeChampionshipSaves,
   isChampFsQual,
+  needsChampPostQualSetup,
   defaultChampStartOrder,
   type ChampGridSlot,
+  type ChampLeague,
   CHAMP_FS_QUAL_MS,
 } from '../race/Championship'
 import { clampRaceLaps } from '../render/RaceSettings'
@@ -160,7 +162,11 @@ export class Game {
   private controlFeel: ControlFeelValues = loadControlFeel()
   private visual: VisualSettingsValues = loadVisualSettings()
   private activeCompetition: CompetitionId = 'none'
-  private activeChampionship: { branch: VehicleBranch; season: 1 | 2 } | null = null
+  private activeChampionship: {
+    branch: VehicleBranch
+    season: number
+    league: ChampLeague
+  } | null = null
   private recordsSaved = false
   /** Pauza na mapě (Esc). */
   private paused = false
@@ -170,6 +176,11 @@ export class Game {
   private escWasDown = false
   /** Po Esc z countdownu neber hned další Esc jako „zpět na entry“. */
   private ignoreEscUntilRelease = false
+  /**
+   * Hráčský start — stejný náběh jako AI launchFeel (0→1), jen na začátku závodu.
+   * Po doběhnutí už jen normální fyzika.
+   */
+  private playerLaunch = 1
   /** Počet Esc stisků v aktuální pauze (1 = otevření; 3 = odejít). */
   private escQuitCount = 0
   private fpsAcc = 0
@@ -216,14 +227,18 @@ export class Game {
     this.menu.setOnBrowseOnline(() => void this.ensureHubBrowse())
     this.menu.setOnBackToEntry(() => this.showEntry())
     this.entry.setOnEnter(() => this.openMenuFromEntry())
-    // Zrušit závod = ven bez postupu (šamp kolo se neposune)
+    // Finish „Menu“ = Domů (šamp se uvolní). „Šampionát“ = brief.
     this.hud.setOnMenuRequest(() => {
+      if (this.multiplayer) this.leaveLobby()
+      else this.openMainMenuFromRace()
+    })
+    this.hud.setOnChampionshipHome(() => {
       if (this.multiplayer) this.leaveLobby()
       else this.openMenu()
     })
     this.hud.setOnPauseRequest(() => {
       if (this.mode !== 'race' || this.paused) return
-      // Dojetí → menu; odpočet i závod → stejná pauza
+      // Dojetí → šamp brief / menu; odpočet i závod → stejná pauza
       if (this.race.phase === 'finished') {
         this.openMenu()
         return
@@ -236,8 +251,12 @@ export class Game {
     this.hud.setOnRestartRequest(() => this.restartSoloSameRace({ sameTrack: true }))
     this.hud.setOnChampionshipNext(() => {
       if (this.activeChampionship) {
-        const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
-        if (career?.done || (career?.qualified && (!career.leagueChosen || !career.seriesChosen))) {
+        const career = getCareer(
+          this.activeChampionship.branch,
+          this.activeChampionship.league,
+          this.activeChampionship.season,
+        )
+        if (career?.done || (career && needsChampPostQualSetup(career))) {
           this.openMenu()
           return
         }
@@ -258,7 +277,7 @@ export class Game {
       this.clearPause()
       // Šamp: DNF / postup kola jako poslední → brief (bez finish karty)
       if (this.activeChampionship) {
-        const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+        const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
         if (career && !career.done) abandonRound(career)
         this.openMenu()
         return
@@ -468,6 +487,37 @@ export class Game {
     this.audio.setMusic(true)
   }
 
+  /** Finish „Menu“ — Domů, bez návratu do šamp briefu. */
+  private openMainMenuFromRace(): void {
+    if (this.mode === 'race' && this.track?.def.sandbox) {
+      this.saveSandboxRecord()
+    }
+    this.activeChampionship = null
+    this.clearPause()
+    this.input.setTabBoostHeld(false)
+    this.input.setEbrakeHeld(false)
+    this.escWasDown = true
+    this.ignoreEscUntilRelease = true
+    this.mode = 'menu'
+    this.multiplayer = false
+    this.net.disconnect()
+    this.unsubNet?.()
+    this.unsubNet = null
+    this.menu.setLobby(null, '', false)
+    for (const v of this.vehicles) {
+      v.mesh.visible = false
+      v.physics.speed = 0
+    }
+    this.entry.hide()
+    this.input.setMobileHud(false)
+    this.menu.showHome()
+    this.hud.update(this.player, this.race, this.cams, false)
+    this.hud.setMirrorFrame(false)
+    this.audio.setActive(false)
+    this.audio.unlock()
+    this.audio.setMusic(true)
+  }
+
   private openMenu(): void {
     if (this.mode === 'race' && this.track?.def.sandbox) {
       this.saveSandboxRecord()
@@ -496,10 +546,13 @@ export class Game {
       this.activeChampionship = null
       this.menu.showOnline()
     } else if (champ) {
-      const career = getCareer(champ.branch, champ.season)
-      if (career?.done) this.menu.showChampionshipTrophy(career)
-      else if (career) this.menu.showChampionshipBrief(champ.branch, champ.season)
-      else {
+      const career = getCareer(champ.branch, champ.league, champ.season)
+      if (career?.done) {
+        // Trophy (completeSeason auto-startuje S2 s těžší obtížností).
+        this.menu.showChampionshipTrophy(career)
+      } else if (career) {
+        this.menu.showChampionshipBrief(champ.branch, champ.league, champ.season)
+      } else {
         this.activeChampionship = null
         this.menu.showHome()
       }
@@ -740,7 +793,7 @@ export class Game {
     let vehicle = this.lastVehicle
     let tuning = this.lastTuning
     if (this.activeChampionship) {
-      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
       if (career?.done) {
         this.openMenu()
         return
@@ -793,7 +846,7 @@ export class Game {
     this.activeCompetition = 'none'
     saveCompetitionSettings({ id: 'none' })
     if (!opts?.keepTrack && this.activeChampionship) {
-      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
       const champTrack = career ? championshipTrackId(career) : null
       if (champTrack) trackId = champTrack
       if (career) {
@@ -810,13 +863,16 @@ export class Game {
     this.applyAiDifficulty()
     this.race = new RaceManager(this.track, this.vehicles)
     this.race.finishPolicy = 'solo'
-    let laps = this.track.def.loop ? this.raceSettings.laps : 1
+    // Solo: okruhy berou race.laps; etapa / sandbox = 1 průjezd.
+    let laps = this.track.def.loop && !this.track.def.sandbox
+      ? clampRaceLaps(this.raceSettings.laps)
+      : 1
     let timeLimitMs =
       typeof opts?.timeLimitMs === 'number' && Number.isFinite(opts.timeLimitMs)
         ? Math.max(0, Math.round(opts.timeLimitMs))
         : 0
     if (this.activeChampionship) {
-      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
       if (career && isChampFsQual(career)) {
         timeLimitMs = CHAMP_FS_QUAL_MS
         laps = 1
@@ -987,12 +1043,12 @@ export class Game {
   private applyAiDifficulty(): void {
     let diff = this.lastDifficulty
     if (this.activeChampionship) {
-      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
       if (career && !career.done) {
         const ramp = championshipAiSpeedFactor(
           career.round,
           career.season,
-          championshipTotalRounds(career.league, career.trackPool),
+          championshipTotalRounds(career.league, career.trackPool, career.season),
         )
         diff = {
           ...this.lastDifficulty,
@@ -1007,6 +1063,7 @@ export class Game {
   }
 
   private resetAiRails(): void {
+    this.playerLaunch = 0
     for (let i = 0; i < this.vehicles.length; i++) {
       const v = this.vehicles[i]
       const brain = this.ai.get(v)
@@ -1127,7 +1184,7 @@ export class Game {
     // Šampionát: pevný roster z career (nemění se s hráčovým autem).
     // Solo: default každý závod noví soupeři; jinak pevní z nastavení. Multi: lobby.
     const champCareer = this.activeChampionship
-      ? getCareer(this.activeChampionship.branch, this.activeChampionship.season)
+      ? getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
       : null
     let opponents: [VehicleKind, VehicleKind, VehicleKind]
     if (champCareer && !champCareer.done) {
@@ -1679,10 +1736,24 @@ export class Game {
                 trickLetter: null,
               }
         if (this.race.phase === 'countdown') {
+          // Stojí na startu — přirozený náběh až po GO.
           v.physics.speed = 0
           v.syncMesh()
         } else {
           v.update(dt, controls, this.track)
+          // Jen start: stejný launchFeel jako AI (podlaha rychlosti při plynu).
+          if (this.race.phase === 'racing' && this.playerLaunch < 1) {
+            const feel = launchFeelFor(v.kind)
+            this.playerLaunch = Math.min(1, this.playerLaunch + dt / Math.max(0.35, feel.durationSec))
+            const ease = 1 - Math.pow(1 - this.playerLaunch, 2.15)
+            const frac = Math.min(1, feel.startFrac + (1 - feel.startFrac) * ease)
+            const floor = Math.max(0, v.physics.maxSpeedAbs * frac)
+            if (controls.throttle > 0.2 && v.physics.speed >= -0.5 && v.physics.speed < floor) {
+              const blend = Math.min(1, feel.accelBlend * dt)
+              v.physics.speed += (floor - v.physics.speed) * blend
+              v.syncMesh()
+            }
+          }
         }
       } else if (this.isAiSlot(i)) {
         if (this.track.def.sandbox) {
@@ -1757,28 +1828,36 @@ export class Game {
         if (this.activeChampionship) {
           const career = getCareer(
             this.activeChampionship.branch,
+            this.activeChampionship.league,
             this.activeChampionship.season,
           )
           if (career && !career.done) {
             const wasQual = !career.qualified
             const wasFsQual = isChampFsQual(career)
             const rivalPlaces = this.champRivalPlaces(career.startOrder)
-            const updated = recordRoundFinish(career, {
+            const { career: updated, advanced } = recordRoundFinish(career, {
               place,
               trickPts: this.player.trickPoints,
               rivalPlaces,
             })
-            this.hud.setChampionshipResult({
-              points: updated.points,
-              progress: championshipProgressLabel(updated),
-              done: updated.done,
-              lastPts: wasQual
-                ? 0
-                : roundPoints(updated.branch, place, this.player.trickPoints),
-              qual: wasQual,
-              fsQual: wasFsQual,
-              place,
-            })
+            // Kvalifikace: bez výsledkové karty → volba obtížnosti (S1), pak brief.
+            if (wasQual) {
+              this.hud.setChampionshipResult(null)
+              queueMicrotask(() => this.openMenu())
+            } else {
+              this.hud.setChampionshipResult({
+                points: updated.points,
+                progress: championshipProgressLabel(updated),
+                done: updated.done,
+                lastPts: advanced
+                  ? roundPoints(updated.branch, place, this.player.trickPoints)
+                  : 0,
+                qual: false,
+                fsQual: wasFsQual,
+                place,
+                advanced,
+              })
+            }
           }
         } else {
           this.hud.setChampionshipResult(null)

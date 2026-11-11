@@ -190,20 +190,22 @@ export function menuArtForTone(
   join: string
 } {
   const key = tone === 'calendar' ? calendarArtSuffix(calendarPack) : tone
+  // WebP menu arty (menší decode); JPG zůstávají jako zdroj / fallback soubory.
+  const art = (p: string) => assetUrl(p.replace(/\.jpe?g$/i, '.webp'))
   return {
-    bg: assetUrl(`menu/bg-${key}.jpg`),
+    bg: art(`menu/bg-${key}.jpg`),
     // Domů → Závod: jen quick-race (šamp Jet má vlastní champ-tile-jet-*).
-    race: assetUrl('menu/race-klecmania-road.jpg'),
-    garage: assetUrl(`menu/garage-${key}.jpg`),
-    tracks: assetUrl(`menu/tracks-${key}.jpg`),
-    settings: assetUrl(`menu/settings-${key}.jpg`),
-    board: assetUrl(`menu/board-${key}.jpg`),
+    race: art('menu/race-klecmania-road.jpg'),
+    garage: art(`menu/garage-${key}.jpg`),
+    tracks: art(`menu/tracks-${key}.jpg`),
+    settings: art(`menu/settings-${key}.jpg`),
+    board: art(`menu/board-${key}.jpg`),
     // Domů → Šampionát dlaždice (≠ liga v briefu auto)
-    championship: assetUrl('menu/champ-tile-featured.jpg'),
+    championship: art('menu/champ-tile-featured.jpg'),
     // Setup Jet (≠ šamp auto Jet)
-    jet: assetUrl('menu/tile-jet-start.jpg'),
-    multi: assetUrl('menu/tile-multi-grid.jpg'),
-    join: assetUrl('menu/tile-join-lobby.jpg'),
+    jet: art('menu/tile-jet-start.jpg'),
+    multi: art('menu/tile-multi-grid.jpg'),
+    join: art('menu/tile-join-lobby.jpg'),
   }
 }
 

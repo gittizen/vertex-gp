@@ -29,11 +29,12 @@ export class VehiclePreview {
     this.canvas = canvas
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: !isMobileClient(),
       alpha: true,
       powerPreference: 'low-power',
     })
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+    // Preview nepotřebuje HiDPI 2× — šetří GPU při menu / pit.
+    this.renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio || 1))
     this.renderer.setClearColor(0x000000, 0)
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 40)
     const z = 5.2 * mobileCamDist()
@@ -240,8 +241,10 @@ export class VehiclePreview {
   }
 
   dispose(): void {
+    if (this.disposed) return
     this.disposed = true
     cancelAnimationFrame(this.raf)
+    this.raf = 0
     this.canvas.removeEventListener('pointerdown', this.onPointerDown)
     this.canvas.removeEventListener('pointermove', this.onPointerMove)
     this.canvas.removeEventListener('pointerup', this.onPointerUp)
@@ -251,6 +254,7 @@ export class VehiclePreview {
       disposeGroup(this.mesh)
       this.mesh = null
     }
+    this.renderer.forceContextLoss()
     this.renderer.dispose()
   }
 

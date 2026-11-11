@@ -5,8 +5,6 @@ import {
   getCareer,
   saveCareer,
   startNewSeason,
-  startSeason2FromSnapshot,
-  loadChampMeta,
   championshipRoundMeta,
   championshipProgressLabel,
   championshipRaceLaps,
@@ -26,9 +24,12 @@ import {
   needsChampPostQualSetup,
   championshipQualTrackId,
   markChampSetupComplete,
-  discardIncompleteCareer,
-  restartChampSeason,
-  restartChampCareer,
+  assignChampLeague,
+  assignChampPlayerName,
+  getActiveCareerForBranch,
+  wipeBranchCareers,
+  CHAMP_RIVAL_NAMES,
+  CHAMP_LEAGUES,
   LEAGUE_LAPS,
   CHAMP_FS_QUAL_MS,
   type ChampCareer,
@@ -36,7 +37,13 @@ import {
   type ChampTrackPool,
   type SeasonCompleteInfo,
 } from '../race/Championship'
-import { CHAMP_START_CASH, tuningUpgradeCost, vehicleBuyPrice } from '../race/ChampEconomy'
+import {
+  CHAMP_START_CASH,
+  placeCash,
+  roundPoints,
+  tuningUpgradeCost,
+  vehicleBuyPrice,
+} from '../race/ChampEconomy'
 import {
   analyticsTable,
   exportCommunityBundle,
@@ -91,10 +98,14 @@ import {
 import { brandLockupHtml } from './Brand'
 import {
   champBriefArt,
+  champCenaArt,
   champClassArt,
   champStarterVehicleArt,
   champPitArt,
+  champSeasonArt,
+  champStandingsArt,
   difficultyArt,
+  preloadMenuArts,
 } from './ChampArt'
 import {
   DEFAULT_CONTROL_FEEL,
@@ -212,7 +223,7 @@ export type MenuStartPayload = {
   /** Časový limit (ms) — FS kvalifikace na Plácku. */
   timeLimitMs?: number
   ready?: boolean
-  championship?: { branch: VehicleBranch; season: 1 | 2 }
+  championship?: { branch: VehicleBranch; season: number; league: ChampLeague }
 }
 
 export type OnlineBrowserState = {
@@ -238,9 +249,14 @@ type Screen =
   | 'records'
   | 'online'
   | 'champHub'
+  | 'champName'
+  | 'champCena'
+  | 'champDiff'
   | 'champBrief'
   | 'champPit'
   | 'champSeries'
+  | 'champStandings'
+  | 'champSeason'
   | 'champLeague'
   | 'champPostQual'
   | 'champStarter'
@@ -355,7 +371,8 @@ export class Menu {
     helm: number
   } | null = null
   private champBranch: VehicleBranch = 'auto'
-  private champSeason: 1 | 2 = 1
+  private champLeague: ChampLeague = 'baby'
+  private champSeason = 1
   private champCareer: ChampCareer | null = null
   private champSeasonCompleteInfo: SeasonCompleteInfo | null = null
   private champTrophyCareerKey = ''
@@ -364,17 +381,16 @@ export class Menu {
   /** Pit košík: draft tuningu + případný nákup vozu (až po Potvrdit). */
   private pitCartTune: PlayerTuningValues | null = null
   private pitCartBuy: VehicleKind | null = null
-  /** Preferovaná liga / pool při startu nové sezóny. */
-  private champLeaguePref: ChampLeague = 'baby'
+  /** Preferovaný pool (F / F+R) při startu nové sezóny. */
   private champPoolPref: ChampTrackPool = 'half'
-  /** Draft ligy — OK uloží, Esc/Zpět vrátí. */
-  private champLeagueDraft: { league: ChampLeague; trackPool: ChampTrackPool } | null = null
   /** Draft série (obtížnost) — OK uloží, Esc/Zpět vrátí. */
   private champSeriesDraft: { difficulty: DifficultyId } | null = null
-  /** Která liga v accordionu je rozbalená (pool uvnitř). */
-  private leagueAccordionOpen: ChampLeague | null = 'baby'
-  /** Accordion v Sérii / Pitu / solo Obtížnosti (stejný UX jako liga). */
-  private seriesAccordionOpen: 'diff' | 'calendar' | 'rivals' | null = 'diff'
+  /** Výběr dlaždice před OK (jako výběr auta). */
+  private champPickLeague: ChampLeague | null = null
+  private champPickDiff: DifficultyId | null = null
+  private champNameDraft = ''
+  /** Náhled kola v kalendáři sezóny (index). */
+  private champCalPreviewRound = 0
   private pitAccordionOpen: 'shop' | 'garage' | 'tune' | null = 'shop'
   private settingsDraft: {
     kind: SettingsDraftKind
@@ -521,6 +537,17 @@ export class Menu {
     this.root.classList.add('menu-visible')
     this.screen = 'home'
     applyUiAtmosphere(this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE)
+    const atm = this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE
+    const homeArt = menuArtForTone(atm.tone, atm.calendarPack)
+    const brief = champBriefArt()
+    preloadMenuArts([
+      homeArt.race,
+      homeArt.settings,
+      champStandingsArt(),
+      brief.featured,
+      brief.jet,
+      brief.series,
+    ])
     this.render()
     this.startWatermarkRotation()
   }
@@ -534,18 +561,25 @@ export class Menu {
     this.startWatermarkRotation()
   }
 
-  showChampionshipBrief(branch: VehicleBranch, season: 1 | 2): void {
+  showChampionshipBrief(branch: VehicleBranch, league: ChampLeague, season: number): void {
     this.visible = true
     this.root.classList.add('menu-visible')
     this.champBranch = branch
+    this.champLeague = league
     this.champSeason = season
-    this.champCareer = getCareer(branch, season)
+    this.champCareer = getCareer(branch, league, season) ?? getActiveCareerForBranch(branch)
     const career = this.champCareer
-    if (career && needsChampPostQualSetup(career)) {
+    // Po kvalifikaci: brána (dál / zrušit) → jméno → Cena → obtížnost → brief.
+    if (career && career.qualified && !career.setupComplete && !career.nameChosen) {
       this.screen = 'champPostQual'
-      this.leagueAccordionOpen = career.league
-      this.seriesAccordionOpen = 'diff'
+    } else if (career && career.qualified && !career.nameChosen) {
+      this.screen = 'champName'
+    } else if (career && career.qualified && !career.leagueChosen) {
+      this.screen = 'champCena'
+    } else if (career && career.qualified && !career.seriesChosen) {
+      this.screen = 'champDiff'
     } else {
+      if (career && needsChampPostQualSetup(career)) markChampSetupComplete(career)
       this.screen = 'champBrief'
     }
     applyUiAtmosphere(this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE)
@@ -558,8 +592,9 @@ export class Menu {
     this.root.classList.add('menu-visible')
     this.champCareer = career
     this.champBranch = career.branch
+    this.champLeague = career.league
     this.champSeason = career.season
-    const trophyKey = `${career.branch}:s${career.season}:done`
+    const trophyKey = `${career.branch}:${career.league}:s${career.season}:done`
     if (this.champTrophyCareerKey !== trophyKey) {
       this.champTrophyCareerKey = trophyKey
       this.champSeasonCompleteInfo = completeSeasonAndPrepareNext(career)
@@ -880,12 +915,22 @@ export class Menu {
     </div>`
   }
 
-  /** Šamp / split patička: Zpět vlevo, OK vpravo (stejný slot layout). */
-  private champOkNavRow(okAttr: string): string {
+  /**
+   * Kariéra / split patička: Zpět vlevo (volitelně), OK/Další vpravo.
+   * `hideBack` = jen potvrzení (obtížnost).
+   */
+  private champOkNavRow(
+    okAttr: string,
+    opts?: { okLabel?: string; hideBack?: boolean },
+  ): string {
     const esc = this.kbdHintHtml()
+    const okLabel = opts?.okLabel ?? t('menu.ok')
+    const back = opts?.hideBack
+      ? `<button type="button" class="btn-ghost menu-back-btn menu-back-btn--phantom" tabindex="-1" aria-hidden="true">${t('menu.back')}</button>`
+      : `<button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>`
     return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
-      <button type="button" class="btn-ghost menu-back-btn" data-back>${t('menu.back')}</button>
-      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" ${okAttr}>${t('menu.ok')}</button>
+      ${back}
+      <button type="button" class="btn-ghost menu-back-btn menu-tune-btn" ${okAttr}>${okLabel}</button>
       ${esc}
     </div>`
   }
@@ -910,7 +955,9 @@ export class Menu {
     }
     if (kind === 'controls') {
       draft.bindings = cloneBindings(loadKeyBindings())
-      draft.tricks = { ...loadTrickBindings() }
+      draft.tricks = Object.fromEntries(
+        Object.entries(loadTrickBindings()).map(([k, v]) => [k, [v[0], v[1]] as const]),
+      ) as TrickBindingsMap
       draft.controlFeel = { ...(this.controlFeelApi?.get() ?? DEFAULT_CONTROL_FEEL) }
       draft.race = { ...(this.raceApi?.get() ?? DEFAULT_RACE) }
       draft.ctrlTrickKind = this.ctrlTrickKind
@@ -1081,6 +1128,33 @@ export class Menu {
     this.root.querySelector('.scooter-modal')?.remove()
   }
 
+  /** Herní confirm (ne window.confirm) — stejný footprint jako scooter modal. */
+  private showMenuConfirm(message: string, onYes: () => void): void {
+    this.root.querySelector('.menu-confirm-modal')?.remove()
+    this.root.insertAdjacentHTML(
+      'beforeend',
+      `<div class="scooter-modal menu-confirm-modal" role="dialog" aria-modal="true">
+        <div class="scooter-modal-card menu-confirm-card">
+          <p>${this.escape(message)}</p>
+          <div class="menu-confirm-actions">
+            <button type="button" class="btn-ghost" data-confirm-no>${t('menu.back')}</button>
+            <button type="button" class="menu-start" data-confirm-yes>${t('menu.ok')}</button>
+          </div>
+        </div>
+      </div>`,
+    )
+    const close = () => this.root.querySelector('.menu-confirm-modal')?.remove()
+    this.root.querySelector('[data-confirm-no]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
+      close()
+    })
+    this.root.querySelector('[data-confirm-yes]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
+      close()
+      onYes()
+    })
+  }
+
   private bindScooterModal(onDismiss?: () => void): void {
     this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
       this.confirmScooterModal(onDismiss)
@@ -1118,38 +1192,32 @@ export class Menu {
     if (
       this.screen === 'champPit' ||
       this.screen === 'champSeries' ||
-      this.screen === 'champLeague' ||
-      this.screen === 'champPostQual'
+      this.screen === 'champDiff' ||
+      this.screen === 'champStandings' ||
+      this.screen === 'champSeason' ||
+      this.screen === 'champLeague'
     ) {
-      const career = this.champCareer ?? getCareer(this.champBranch, this.champSeason)
-      if (this.screen === 'champPit') {
-        this.champPitPreview = null
-        if (career) this.resetPitCart(career)
+      const career =
+        this.champCareer ?? getCareer(this.champBranch, this.champLeague, this.champSeason)
+      if (
+        this.screen === 'champPit' ||
+        this.screen === 'champStandings' ||
+        this.screen === 'champSeason'
+      ) {
+        if (this.screen === 'champPit') {
+          this.champPitPreview = null
+          if (career) this.resetPitCart(career)
+        }
         this.screen = 'champBrief'
-      } else if (this.screen === 'champPostQual') {
-        this.revertChampLeagueDraft(career)
+      } else if (this.screen === 'champDiff') {
         this.revertChampSeriesDraft(career)
-        if (career && needsChampPostQualSetup(career)) {
-          discardIncompleteCareer(career.branch, career.season)
-          this.champCareer = null
-          this.screen = 'champHub'
-        } else {
-          this.screen = 'champBrief'
-        }
-      } else if (this.screen === 'champLeague') {
-        this.revertChampLeagueDraft(career)
-        if (career && needsChampPostQualSetup(career) && !career.leagueChosen) {
-          this.screen = 'champPostQual'
-        } else {
-          this.screen = 'champBrief'
-        }
+        this.champPickDiff = null
+        this.screen = career && career.qualified && !career.seriesChosen ? 'champCena' : 'champBrief'
+      } else if (this.screen === 'champSeries') {
+        this.revertChampSeriesDraft(career)
+        this.screen = 'champBrief'
       } else {
-        this.revertChampSeriesDraft(career)
-        if (career && needsChampPostQualSetup(career) && !career.seriesChosen) {
-          this.screen = 'champPostQual'
-        } else {
-          this.screen = 'champBrief'
-        }
+        this.screen = 'champBrief'
       }
       this.render()
       return 'stay'
@@ -1160,6 +1228,31 @@ export class Menu {
       return 'stay'
     }
     if (this.screen === 'champBrief') {
+      // Po zamčení setupu: Cena = pokračovat / zrušit
+      this.screen = 'champCena'
+      this.render()
+      return 'stay'
+    }
+    if (this.screen === 'champCena') {
+      const career =
+        this.champCareer ?? getActiveCareerForBranch(this.champBranch)
+      this.champPickLeague = null
+      if (career && career.qualified && !career.seriesChosen && career.nameChosen) {
+        this.screen = 'champName'
+      } else if (career && career.qualified && !career.nameChosen) {
+        this.screen = 'champPostQual'
+      } else {
+        this.screen = 'champHub'
+      }
+      this.render()
+      return 'stay'
+    }
+    if (this.screen === 'champName') {
+      this.screen = 'champPostQual'
+      this.render()
+      return 'stay'
+    }
+    if (this.screen === 'champPostQual') {
       this.screen = 'champHub'
       this.render()
       return 'stay'
@@ -1253,8 +1346,8 @@ export class Menu {
   /** Scroll pozice panelu / seznamu / náhledu — po kliknutí na kartu se nesmí skákat nahoru. */
   private savePanelScroll(): { body: number; list: number; preview: number } {
     const body = this.root.querySelector<HTMLElement>('.menu-panel-body')
-    const list = this.root.querySelector<HTMLElement>('.tracks-list')
-    const preview = this.root.querySelector<HTMLElement>('.vehicle-stage')
+    const list = this.root.querySelector<HTMLElement>('.tracks-list, .champ-cal-list-scroll')
+    const preview = this.root.querySelector<HTMLElement>('.vehicle-stage, .tracks-preview-pane')
     return {
       body: body?.scrollTop ?? 0,
       list: list?.scrollTop ?? 0,
@@ -1265,8 +1358,8 @@ export class Menu {
   private restorePanelScroll(pos: { body: number; list: number; preview: number }): void {
     requestAnimationFrame(() => {
       const body = this.root.querySelector<HTMLElement>('.menu-panel-body')
-      const list = this.root.querySelector<HTMLElement>('.tracks-list')
-      const preview = this.root.querySelector<HTMLElement>('.vehicle-stage')
+      const list = this.root.querySelector<HTMLElement>('.tracks-list, .champ-cal-list-scroll')
+      const preview = this.root.querySelector<HTMLElement>('.vehicle-stage, .tracks-preview-pane')
       if (body) body.scrollTop = pos.body
       if (list) list.scrollTop = pos.list
       if (preview) preview.scrollTop = pos.preview
@@ -1300,7 +1393,7 @@ export class Menu {
             <button type="button" class="gta-tile gta-tile-setup" data-go-setup style="--tile:url('${art.race}')">
               <strong class="gta-tile-label">${t('menu.raceTile')}</strong>
             </button>
-            <button type="button" class="gta-tile gta-tile-setup" data-go="records" style="--tile:url('${art.board}')">
+            <button type="button" class="gta-tile gta-tile-setup" data-go="records" style="--tile:url('${champStandingsArt()}')">
               <strong class="gta-tile-label">${t('menu.leaderboard')}</strong>
             </button>
             <button type="button" class="gta-tile gta-tile-setup" data-go="settings" style="--tile:url('${art.settings}')">
@@ -1323,7 +1416,7 @@ export class Menu {
           if (go === 'champHub') {
             this.champCareer = null
             this.champBranch = 'auto'
-            this.champLeaguePref = 'baby'
+            this.champLeague = 'baby'
             this.champPoolPref = 'half'
           }
           this.screen = go
@@ -1336,8 +1429,25 @@ export class Menu {
     if (this.screen === 'raceSetup') {
       const atm = this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE
       const art = menuArtForTone(atm.tone, atm.calendarPack)
+      const trackDef = TRACKS.find((tr) => tr.id === this.selectedTrackId) ?? TRACKS[0]
+      const race = this.raceApi?.get() ?? { ...DEFAULT_RACE }
+      const lapsNow = clampRaceLaps(race.laps)
+      const lapsSelectable = Boolean(trackDef && !trackDef.sandbox && trackDef.loop)
       const trackName = this.escape(this.trackLabel())
       const vehicleName = this.vehicleLabel(this.selectedVehicle)
+      const jetSub = lapsSelectable
+        ? `${trackName} · ${vehicleName} · ${lapsNow} ${t('menu.onlineLaps').toLowerCase()}`
+        : `${trackName} · ${vehicleName}`
+      const lapsPanel = lapsSelectable
+        ? `<section class="menu-section race-setup-laps" aria-label="${t('menu.onlineLaps')}">
+            <p class="tune-rules">${t('menu.onlineLaps')}</p>
+            <div class="lap-stepper" role="group" aria-label="${t('menu.onlineLaps')}">
+              <button type="button" class="btn-ghost lap-step" data-setup-laps-delta="-1" aria-label="-">−</button>
+              <input type="number" class="lap-step-input" min="${RACE_LAP_MIN}" max="${RACE_LAP_MAX}" step="1" value="${lapsNow}" data-setup-laps-input inputmode="numeric" />
+              <button type="button" class="btn-ghost lap-step" data-setup-laps-delta="1" aria-label="+">+</button>
+            </div>
+          </section>`
+        : `<p class="tune-help race-setup-laps-na">${t('menu.circuitLapsNA')}</p>`
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -1349,7 +1459,7 @@ export class Menu {
           <div class="gta-tiles gta-tiles-home3 gta-tiles-setup">
             <button type="button" class="gta-tile gta-tile-hero" data-setup-jet style="--tile:url('${art.jet}')">
               <strong class="gta-tile-label">${t('menu.jet')}</strong>
-              <span class="gta-tile-sub">${trackName} · ${vehicleName}</span>
+              <span class="gta-tile-sub">${jetSub}</span>
             </button>
             <button type="button" class="gta-tile gta-tile-setup" data-go="tracks" style="--tile:url('${art.tracks}')">
               <strong class="gta-tile-label">${t('menu.trackSelect')}</strong>
@@ -1363,11 +1473,28 @@ export class Menu {
               <strong class="gta-tile-label">${t('menu.raceMulti')}</strong>
             </button>
           </div>
+          ${lapsPanel}
           ${this.backRow('home', 'flow')}
         </div>
       `
       this.bindMuteBar()
       this.bindBack('home')
+      if (lapsSelectable) {
+        this.bindLapStepper({
+          get: () => clampRaceLaps(this.raceApi?.get().laps ?? DEFAULT_RACE.laps),
+          set: (n) => {
+            this.raceApi?.set({ laps: n })
+            const input = this.root.querySelector<HTMLInputElement>('[data-setup-laps-input]')
+            if (input && input.value !== String(n)) input.value = String(n)
+            const jetSubEl = this.root.querySelector<HTMLElement>('[data-setup-jet] .gta-tile-sub')
+            if (jetSubEl) {
+              jetSubEl.textContent = `${this.trackLabel()} · ${this.vehicleLabel(this.selectedVehicle)} · ${n} ${t('menu.onlineLaps').toLowerCase()}`
+            }
+          },
+          deltaAttr: 'data-setup-laps-delta',
+          inputAttr: 'data-setup-laps-input',
+        })
+      }
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const go = (btn.dataset.go as Screen) || 'raceSetup'
@@ -1379,11 +1506,13 @@ export class Menu {
       })
       this.root.querySelector('[data-setup-jet]')?.addEventListener('click', () => {
         this.raceModePick = 'classic'
+        const lapsInput = this.root.querySelector<HTMLInputElement>('[data-setup-laps-input]')
+        if (lapsInput) this.raceApi?.set({ laps: clampRaceLaps(lapsInput.value) })
         this.raceApi?.set({ freestyle: false })
-        const race = this.raceApi?.get()
-        if (race) {
+        const raceNow = this.raceApi?.get()
+        if (raceNow) {
           this.raceApi?.set({
-            opponents: clampOpponentsToCategory(race.opponents, this.selectedVehicle, false),
+            opponents: clampOpponentsToCategory(raceNow.opponents, this.selectedVehicle, false),
           })
         }
         this.startSolo()
@@ -1487,11 +1616,12 @@ export class Menu {
       const race = this.raceApi?.get() ?? { ...DEFAULT_RACE }
       const lapsNow = clampRaceLaps(race.laps)
       const onPhone = isMobileClient()
-      const lapsBlock = (tr: TrackDef) =>
+      /** Počet kol 1–69 — jen okruhy; etapa/Plácek bez stepperu. */
+      const lapsUnderPreview = (tr: TrackDef) =>
         tr.sandbox || !tr.loop
-          ? `<p class="tune-rules">${t('menu.circuitLapsNA')}</p>`
-          : `<p class="tune-rules">${t('menu.circuitLaps')}</p>
-        <div class="lap-stepper" role="group" aria-label="${t('menu.circuitLaps')}">
+          ? `<p class="tune-rules track-laps-na">${t('menu.circuitLapsNA')}</p>`
+          : `<p class="tune-rules track-laps-label">${t('menu.onlineLaps')}</p>
+        <div class="lap-stepper track-laps-stepper" role="group" aria-label="${t('menu.onlineLaps')}">
           <button type="button" class="btn-ghost lap-step" data-track-laps-delta="-1" aria-label="-">−</button>
           <input type="number" class="lap-step-input" min="${RACE_LAP_MIN}" max="${RACE_LAP_MAX}" step="1" value="${lapsNow}" data-track-laps-input inputmode="numeric" />
           <button type="button" class="btn-ghost lap-step" data-track-laps-delta="1" aria-label="+">+</button>
@@ -1499,6 +1629,7 @@ export class Menu {
       const previewBlock = (tr: TrackDef) => `
         <div class="track-inline-preview">
           ${trackPreviewHtml(tr, race.reverse)}
+          ${lapsUnderPreview(tr)}
           <div class="track-preview-meta">
             <strong>${this.escape(this.trackName(tr))}</strong>
             <span>${tr.sandbox ? t('menu.sandboxMeta') : this.escape(this.trackBlurb(tr))}</span>
@@ -1515,8 +1646,7 @@ export class Menu {
             <button type="button" class="track-card ${race.reverse ? 'active' : ''}" data-reverse="1">
               <strong>${t('menu.raceDir.reverse')}</strong>
             </button>
-          </div>
-          ${lapsBlock(tr)}`
+          </div>`
           }
         </div>`
       const listHtml = onPhone
@@ -1541,6 +1671,7 @@ export class Menu {
                   ? ''
                   : `<div class="tracks-preview-pane">
                 ${trackPreviewHtml(selected, race.reverse)}
+                ${lapsUnderPreview(selected)}
                 <div class="track-preview-meta">
                   <strong>${this.escape(this.trackName(selected))}</strong>
                   <span>${selected.sandbox ? t('menu.sandboxMeta') : this.escape(this.trackBlurb(selected))}</span>
@@ -1557,8 +1688,7 @@ export class Menu {
                   <button type="button" class="track-card ${race.reverse ? 'active' : ''}" data-reverse="1">
                     <strong>${t('menu.raceDir.reverse')}</strong>
                   </button>
-                </div>
-                ${lapsBlock(selected)}`
+                </div>`
                 }
               </div>`
               }
@@ -1571,6 +1701,8 @@ export class Menu {
       this.bindBack('raceSetup')
       this.bindTracks()
       const commitTracks = () => {
+        const input = this.root.querySelector<HTMLInputElement>('[data-track-laps-input]')
+        if (input) this.raceApi?.set({ laps: clampRaceLaps(input.value) })
         this.commitTracksDraft()
         this.screen = 'raceSetup'
         this.render()
@@ -1579,6 +1711,8 @@ export class Menu {
       this.root.querySelectorAll<HTMLButtonElement>('[data-reverse]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const scroll = this.savePanelScroll()
+          const lapsInput = this.root.querySelector<HTMLInputElement>('[data-track-laps-input]')
+          if (lapsInput) this.raceApi?.set({ laps: clampRaceLaps(lapsInput.value) })
           this.raceApi?.set({ reverse: btn.dataset.reverse === '1' })
           this.render()
           this.restorePanelScroll(scroll)
@@ -1783,7 +1917,10 @@ export class Menu {
                 ${this.paintRowHtml('wheel', t('menu.wheelPick'), this.selectedWheel, NEON_COLOR_CHOICES, true)}
                 ${
                   vehicleHasRider(kind)
-                    ? this.paintRowHtml('rider', t('menu.riderPick'), this.selectedRider, NEON_COLOR_CHOICES, true)
+                    ? this.paintRowHtml('rider', t('menu.riderPick'), this.selectedRider, NEON_COLOR_CHOICES, true, {
+                        stepMinus: true,
+                        stepPlus: true,
+                      })
                     : ''
                 }
                 ${
@@ -1826,8 +1963,12 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-settings-hub menu-panel-dock">
-          <div class="menu-panel-body">
+        <div class="menu-shell menu-home gta-home menu-settings-hub">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline gta-tagline--slot" aria-hidden="true">&nbsp;</p>
+          </header>
+          <div class="gta-home-scroll menu-panel-body">
             <div class="home-actions">
               <p class="settings-group-label">${t('menu.settingsPlayer')}</p>
               <button type="button" class="btn-ghost home-panel" data-go="controls">${t('menu.settingsControls')}</button>
@@ -1978,9 +2119,11 @@ export class Menu {
       const trickRows = TRICK_LETTERS.map((ch) => {
         const def = trickDefs.find((tr) => tr.letter === ch)
         const name = def?.nameCs ?? ch
+        const [a, b] = tricks[ch] ?? [null, null]
         return `<div class="bind-row bind-row-trick" data-trick-letter="${ch}">
           <span class="bind-name">${ch} · ${this.escape(name)}</span>
-          <button type="button" class="bind-key" data-trick-key>${codeLabel(tricks[ch] ?? null)}</button>
+          <button type="button" class="bind-key" data-trick-slot="0">${codeLabel(a)}</button>
+          <button type="button" class="bind-key" data-trick-slot="1">${codeLabel(b)}</button>
         </div>`
       }).join('')
       const feel = this.controlFeelApi?.get() ?? { ...DEFAULT_CONTROL_FEEL }
@@ -2163,20 +2306,24 @@ export class Menu {
           this.render()
         })
       })
-      type Listen =
+      let listen:
         | { kind: 'action'; action: BindAction; slot: 0 | 1 }
-        | { kind: 'trick'; letter: string }
-        | null
-      let listen: Listen = null
+        | { kind: 'trick'; letter: string; slot: 0 | 1 }
+        | null = null
       const onKey = (e: KeyboardEvent) => {
         if (!listen) return
         e.preventDefault()
         e.stopPropagation()
+        const clear = e.code === 'Backspace' || e.code === 'Delete' || e.code === 'Escape'
         if (listen.kind === 'action') {
-          binds[listen.action][listen.slot] = e.code
+          if (clear) binds[listen.action][listen.slot] = null
+          else binds[listen.action][listen.slot] = e.code
           saveKeyBindings(binds)
         } else {
-          tricks[listen.letter] = e.code
+          const pair = tricks[listen.letter] ?? [null, null]
+          if (clear) pair[listen.slot] = null
+          else pair[listen.slot] = e.code
+          tricks[listen.letter] = pair
           saveTrickBindings(tricks)
         }
         listen = null
@@ -2195,12 +2342,13 @@ export class Menu {
         })
       })
       const wireTrickKeys = () => {
-        this.root.querySelectorAll<HTMLButtonElement>('[data-trick-key]').forEach((btn) => {
+        this.root.querySelectorAll<HTMLButtonElement>('[data-trick-slot]').forEach((btn) => {
           btn.addEventListener('click', () => {
             const row = btn.closest('[data-trick-letter]') as HTMLElement
             const letter = row?.dataset.trickLetter
+            const slot = Number(btn.dataset.trickSlot) as 0 | 1
             if (!letter) return
-            listen = { kind: 'trick', letter }
+            listen = { kind: 'trick', letter, slot }
             btn.textContent = '…'
             window.addEventListener('keydown', onKey, true)
           })
@@ -2223,9 +2371,11 @@ export class Menu {
             list.innerHTML = TRICK_LETTERS.map((ch) => {
               const def = defs.find((tr) => tr.letter === ch)
               const name = def?.nameCs ?? ch
+              const [a, b] = tricks[ch] ?? [null, null]
               return `<div class="bind-row bind-row-trick" data-trick-letter="${ch}">
                 <span class="bind-name">${ch} · ${this.escape(name)}</span>
-                <button type="button" class="bind-key" data-trick-key>${codeLabel(tricks[ch] ?? null)}</button>
+                <button type="button" class="bind-key" data-trick-slot="0">${codeLabel(a)}</button>
+                <button type="button" class="bind-key" data-trick-slot="1">${codeLabel(b)}</button>
               </div>`
             }).join('')
             wireTrickKeys()
@@ -2318,8 +2468,12 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock">
-          <div class="menu-panel-body">
+        <div class="menu-shell menu-home gta-home">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline gta-tagline--slot" aria-hidden="true">&nbsp;</p>
+          </header>
+          <div class="gta-home-scroll menu-panel-body">
             <p class="tune-rules">${scope === 'world' ? t('menu.lbBlurbWorld') : t('menu.lbBlurb')}</p>
             <div class="lb-toolbar">
               <div class="vehicle-branch-tabs">${scopeTabs}</div>
@@ -2626,69 +2780,23 @@ export class Menu {
     }
 
     if (this.screen === 'champHub') {
-      const meta = loadChampMeta()
       const branches: VehicleBranch[] = ['auto', 'moto', 'monster', 'freestyle']
       if (!branches.includes(this.champBranch)) this.champBranch = 'auto'
 
-      const goBrief = (career: ChampCareer) => {
-        ensureChampStartCash(career)
-        this.champCareer = career
-        this.champBranch = career.branch
-        this.champSeason = career.season
-        this.screen = 'champBrief'
-        this.render()
-      }
-
-      const openBranch = (b: VehicleBranch) => {
-        this.champBranch = b
-        // Nedokončený draft (bez ligy/obtížnosti) → zruš a začni znovu.
-        discardIncompleteCareer(b, 1)
-        discardIncompleteCareer(b, 2)
-        const s2 = getCareer(b, 2)
-        const s1 = getCareer(b, 1)
-        if (s2 && !s2.done) {
-          goBrief(s2)
-          return
-        }
-        if (s1 && !s1.done) {
-          goBrief(s1)
-          return
-        }
-        // S2: bez výběru auta — snapshot po S1 → výběr ligy + obtížnosti.
-        if (meta.season2Unlocked[b] && s1?.done && meta.season1End?.[b]) {
-          this.champSeason = 2
-          try {
-            const career = startSeason2FromSnapshot(b, this.selectedDifficulty)
-            this.champCareer = career
-            this.screen = needsChampPostQualSetup(career) ? 'champPostQual' : 'champLeague'
-            this.leagueAccordionOpen = career.league
-            this.seriesAccordionOpen = 'diff'
-            this.render()
-          } catch {
-            this.champSeason = 1
-            this.screen = 'champStarter'
-            this.render()
-          }
-          return
-        }
-        // S1 → výběr ze 2 nejpomalejších + kvalifikace
-        this.champSeason = 1
-        this.screen = 'champStarter'
-        this.render()
-      }
-
       const branchMeta = (b: VehicleBranch) => {
-        const s1 = getCareer(b, 1)
-        const s2 = getCareer(b, 2)
-        const live = (s2 && !s2.done ? s2 : s1 && !s1.done ? s1 : null) as ChampCareer | null
+        const live = getActiveCareerForBranch(b)
         const sub = live
-          ? `S${live.season} · ${championshipProgressLabel(live)} · ${live.points}b`
-          : s1?.done
-            ? meta.season2Unlocked[b]
-              ? t('champ.hubReadyS2')
-              : `S1 ✓ · ${s1.points}b`
+          ? live.setupComplete
+            ? `${t(`champ.league.${live.league}`)} · S${live.season} · ${championshipProgressLabel(live)}`
+            : live.qualified
+              ? t('champ.postQualTitle')
+              : t('champ.hubNewSeries')
+          : t('champ.hubNewSeries')
+        const kicker = live?.setupComplete
+          ? t('champ.hubLive')
+          : live?.qualified
+            ? t('champ.postQualTitle')
             : t('champ.hubNewSeries')
-        const kicker = live ? t('champ.hubLive') : meta.season2Unlocked[b] && s1?.done ? 'S2' : 'S1'
         return { live, sub, kicker }
       }
 
@@ -2699,7 +2807,6 @@ export class Menu {
         this.champBranch = liveBranches[0]
       }
 
-      // 4 stejné svislé dlaždice v řadě (Auto → Moto → Monster → FS)
       const hubTone = this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone
       const branchTiles = branches
         .map((b) => {
@@ -2732,8 +2839,340 @@ export class Menu {
         btn.addEventListener('click', () => {
           const b = btn.dataset.champBranch as VehicleBranch
           if (!b) return
-          openBranch(b)
+          this.champBranch = b
+          const active = getActiveCareerForBranch(b)
+          if (active) {
+            this.champCareer = active
+            this.champLeague = active.league
+            this.champSeason = active.season
+            // Rozehrané / zamčené → Cena (pokračovat / zrušit), ne bounce zpět.
+            if (active.setupComplete) {
+              this.screen = 'champCena'
+            } else if (active.qualified && !active.nameChosen) {
+              this.screen = 'champPostQual'
+            } else if (active.qualified && !active.leagueChosen) {
+              this.screen = 'champCena'
+            } else if (active.qualified && !active.seriesChosen) {
+              this.screen = 'champDiff'
+            } else {
+              this.screen = 'champStarter'
+            }
+            this.render()
+            return
+          }
+          this.champSeason = 1
+          this.champLeague = 'baby'
+          this.screen = 'champStarter'
+          this.render()
         })
+      })
+      return
+    }
+
+    if (this.screen === 'champName') {
+      const career =
+        this.champCareer ?? getActiveCareerForBranch(this.champBranch)
+      this.champCareer = career
+      if (!career || !career.qualified) {
+        this.screen = 'champHub'
+        this.render()
+        return
+      }
+      // Po potvrzení obtížnosti jméno nejde měnit.
+      if (career.setupComplete || (career.seriesChosen && career.leagueChosen)) {
+        this.screen = 'champCena'
+        this.render()
+        return
+      }
+      if (!this.champNameDraft) this.champNameDraft = career.playerName ?? ''
+      const briefArt = champBriefArt(
+        career.branch,
+        this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone,
+      )
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home champ-name-screen">
+          <header class="gta-home-hero champ-name-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline gta-tagline--slot" aria-hidden="true">&nbsp;</p>
+          </header>
+          <div class="champ-name-stage" style="--tile:url('${briefArt.featured}')">
+            <p class="champ-name-kicker">${t(`menu.branch.${career.branch}`)} · ${t('champ.postQualTitle')}</p>
+            <h2 class="champ-name-title">${t('champ.nameTitle')}</h2>
+            <label class="champ-name-field">
+              <input type="text" class="champ-name-input" maxlength="24" data-champ-name value="${this.escape(this.champNameDraft)}" autocomplete="nickname" spellcheck="false" placeholder="${t('champ.namePlaceholder')}" />
+            </label>
+          </div>
+          ${this.champOkNavRow('data-champ-name-ok', { okLabel: t('menu.next') })}
+        </div>
+      `
+      this.bindMuteBar()
+      const nameInput = this.root.querySelector<HTMLInputElement>('[data-champ-name]')
+      nameInput?.focus()
+      nameInput?.select()
+      nameInput?.addEventListener('input', () => {
+        this.champNameDraft = nameInput.value
+      })
+      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.screen = 'champPostQual'
+        this.render()
+      })
+      const commitName = () => {
+        if (!this.champCareer) return
+        try {
+          assignChampPlayerName(this.champCareer, this.champNameDraft)
+          if (!this.champPickLeague) this.champPickLeague = null
+          this.screen = 'champCena'
+          this.render()
+        } catch {
+          nameInput?.focus()
+        }
+      }
+      this.root.querySelector('[data-champ-name-ok]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        commitName()
+      })
+      nameInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commitName()
+        }
+      })
+      return
+    }
+
+    if (this.screen === 'champCena') {
+      const b = this.champBranch
+      const briefArt = champBriefArt(b, this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone)
+      const draft =
+        (this.champCareer && this.champCareer.branch === b
+          ? this.champCareer
+          : null) ?? getActiveCareerForBranch(b)
+      this.champCareer = draft
+      // Zamčeno po OK obtížnosti / u rozehrané kariéry — jen pokračovat nebo zrušit.
+      const locked = Boolean(
+        draft && (draft.setupComplete || (draft.seriesChosen && draft.leagueChosen && draft.nameChosen)),
+      )
+      const postQualPick = Boolean(
+        draft && draft.qualified && draft.nameChosen && !draft.seriesChosen && !draft.setupComplete,
+      )
+
+      if (locked && draft) {
+        this.champLeague = draft.league
+        this.champSeason = draft.season
+        const live = draft
+        this.root.innerHTML = `
+          ${wm}
+          ${this.muteBar()}
+          <div class="menu-shell menu-home gta-home">
+            <header class="gta-home-hero">
+              ${brandLockupHtml({ size: 'menu' })}
+              <p class="gta-tagline">${this.escape(live.playerName || t(`menu.branch.${b}`))} · ${t(`champ.league.${live.league}`)} · S${live.season}</p>
+            </header>
+            <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-locked" aria-label="${t('champ.cenaTitle')}">
+              <button type="button" class="gta-tile gta-tile-live" data-champ-continue style="--tile:url('${briefArt.league}')">
+                <span class="gta-tile-kicker">${t('champ.hubLive')}</span>
+                <strong class="gta-tile-label">${t('champ.continue')}</strong>
+                <span class="gta-tile-sub">${championshipProgressLabel(live)} · ${live.points}b · ${t(`diff.${live.difficulty}`)}</span>
+              </button>
+              <button type="button" class="gta-tile" data-champ-cancel-cup style="--tile:url('${briefArt.series}')">
+                <span class="gta-tile-kicker">${t('champ.restartCareer')}</span>
+                <strong class="gta-tile-label">${t('champ.cancelCup')}</strong>
+                <span class="gta-tile-sub">${t('champ.cancelCupHint')}</span>
+              </button>
+            </div>
+            ${this.backRow('champHub', 'flow')}
+          </div>
+        `
+        this.bindMuteBar()
+        this.bindBack('champHub')
+        this.root.querySelector('[data-champ-continue]')?.addEventListener('click', () => {
+          this.screen = 'champBrief'
+          this.render()
+        })
+        this.root.querySelector('[data-champ-cancel-cup]')?.addEventListener('click', () => {
+          this.showMenuConfirm(t('champ.restartCareerConfirm'), () => {
+            wipeBranchCareers(b)
+            this.champCareer = null
+            this.champPickLeague = null
+            this.champPickDiff = null
+            this.champNameDraft = ''
+            this.champSeason = 1
+            this.champLeague = 'baby'
+            this.screen = 'champStarter'
+            this.render()
+          })
+        })
+        return
+      }
+
+      if (!draft) {
+        this.screen = 'champHub'
+        this.render()
+        return
+      }
+      if (!draft.nameChosen) {
+        this.screen = 'champName'
+        this.render()
+        return
+      }
+      if (!postQualPick) {
+        // Už zamčené / rozjeté — pokračovat, nikdy bounce na hub.
+        if (draft.seriesChosen || draft.setupComplete) {
+          draft.setupComplete = true
+          draft.seriesChosen = true
+          draft.leagueChosen = true
+          draft.nameChosen = true
+          saveCareer(draft)
+          this.render()
+          return
+        }
+        this.screen = 'champDiff'
+        this.render()
+        return
+      }
+
+      const cenaTiles = CHAMP_LEAGUES.map((league) => {
+        const active = this.champPickLeague === league
+        return `<button type="button" class="gta-tile ${active ? 'gta-tile-live gta-tile-picked' : ''}" data-champ-cena="${league}" aria-pressed="${active ? 'true' : 'false'}" style="--tile:url('${champCenaArt(league)}')">
+          <span class="gta-tile-kicker">${LEAGUE_LAPS[league]} ${t('champ.lapUnit')}</span>
+          <strong class="gta-tile-label">${t(`champ.league.${league}`)}</strong>
+          <span class="gta-tile-sub">${active ? t('champ.pickSelected') : `${LEAGUE_LAPS[league]} ${t('champ.lapUnit')}`}</span>
+        </button>`
+      }).join('')
+
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline">${t(`menu.branch.${b}`)} · ${t('champ.cenaTitle')} · ${t('champ.postQualCena')}</p>
+          </header>
+          <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-cena" aria-label="${t('champ.cenaTitle')}">
+            ${cenaTiles}
+          </div>
+          ${this.champOkNavRow('data-champ-cena-ok', { okLabel: t('menu.next') })}
+        </div>
+      `
+      this.bindMuteBar()
+      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.screen = 'champName'
+        this.render()
+      })
+      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cena]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const league = btn.dataset.champCena as ChampLeague
+          if (!CHAMP_LEAGUES.includes(league)) return
+          if (this.champPickLeague === league) return
+          this.champPickLeague = league
+          // Bez full re-render — jen aktivní dlaždice (arty se znovu nenačítají).
+          this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cena]').forEach((b) => {
+            const on = b.dataset.champCena === league
+            b.classList.toggle('gta-tile-live', on)
+            b.classList.toggle('gta-tile-picked', on)
+            b.setAttribute('aria-pressed', on ? 'true' : 'false')
+            const sub = b.querySelector('.gta-tile-sub')
+            if (sub) {
+              const L = b.dataset.champCena as ChampLeague
+              sub.textContent = on
+                ? t('champ.pickSelected')
+                : `${LEAGUE_LAPS[L]} ${t('champ.lapUnit')}`
+            }
+          })
+        })
+      })
+      this.root.querySelector('[data-champ-cena-ok]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        if (!this.champCareer || !this.champPickLeague) return
+        try {
+          this.champCareer = assignChampLeague(this.champCareer, this.champPickLeague)
+          this.champLeague = this.champPickLeague
+          this.champSeason = this.champCareer.season
+          if (!this.champPickDiff) this.champPickDiff = this.champCareer.difficulty
+          this.beginChampSeriesDraft(this.champCareer)
+          this.screen = 'champDiff'
+          this.render()
+        } catch {
+          /* ignore */
+        }
+      })
+      return
+    }
+
+    if (this.screen === 'champDiff') {
+      const career =
+        this.champCareer ?? getCareer(this.champBranch, this.champLeague, this.champSeason)
+      this.champCareer = career
+      if (!career || !career.qualified || !career.nameChosen || !career.leagueChosen) {
+        this.screen = !career?.nameChosen ? 'champName' : career?.qualified ? 'champCena' : 'champHub'
+        this.render()
+        return
+      }
+      if (career.setupComplete || career.seriesChosen) {
+        this.screen = 'champBrief'
+        this.render()
+        return
+      }
+      this.beginChampSeriesDraft(career)
+      if (!this.champPickDiff) this.champPickDiff = career.difficulty
+      const diffTiles = DIFFICULTIES.map((d) => {
+        const active = d.id === this.champPickDiff
+        return `<button type="button" class="gta-tile ${active ? 'gta-tile-live gta-tile-picked' : ''}" data-champ-diff-tile="${d.id}" aria-pressed="${active ? 'true' : 'false'}" style="--tile:url('${difficultyArt(d.id)}')">
+          <span class="gta-tile-kicker">${t('champ.difficulty')}</span>
+          <strong class="gta-tile-label">${t(`diff.${d.id}`)}</strong>
+          <span class="gta-tile-sub">${active ? t('champ.pickSelectedOk') : t('champ.diffNextSeasonHint')}</span>
+        </button>`
+      }).join('')
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline">${t(`menu.branch.${career.branch}`)} · ${t(`champ.league.${career.league}`)} · ${t('champ.difficulty')}</p>
+          </header>
+          <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-cena gta-tiles-champ-diff" aria-label="${t('champ.difficulty')}">
+            ${diffTiles}
+          </div>
+          ${this.champOkNavRow('data-champ-diff-ok', { hideBack: true })}
+        </div>
+      `
+      this.bindMuteBar()
+      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-diff-tile]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.champDiffTile as DifficultyId
+          if (!DIFFICULTIES.some((d) => d.id === id)) return
+          if (this.champPickDiff === id) return
+          this.champPickDiff = id
+          // Bez full re-render — jen aktivní dlaždice.
+          this.root.querySelectorAll<HTMLButtonElement>('[data-champ-diff-tile]').forEach((b) => {
+            const on = b.dataset.champDiffTile === id
+            b.classList.toggle('gta-tile-live', on)
+            b.classList.toggle('gta-tile-picked', on)
+            b.setAttribute('aria-pressed', on ? 'true' : 'false')
+            const sub = b.querySelector('.gta-tile-sub')
+            if (sub) {
+              sub.textContent = on ? t('champ.pickSelectedOk') : t('champ.diffNextSeasonHint')
+            }
+          })
+        })
+      })
+      this.root.querySelector('[data-champ-diff-ok]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        if (!this.champCareer || !this.champPickDiff) return
+        this.champCareer.difficulty = this.champPickDiff
+        this.selectedDifficulty = this.champPickDiff
+        this.champCareer.seriesChosen = true
+        this.commitChampSeriesDraft()
+        markChampSetupComplete(this.champCareer)
+        this.champPickDiff = null
+        this.champPickLeague = null
+        this.screen = 'champBrief'
+        this.render()
       })
       return
     }
@@ -2813,7 +3252,7 @@ export class Menu {
             this.champSeason,
             this.selectedDifficulty,
             k,
-            this.champLeaguePref,
+            this.champLeague,
             this.champPoolPref,
           )
           ensureChampStartCash(career)
@@ -2835,23 +3274,40 @@ export class Menu {
 
     if (this.screen === 'champBrief') {
       // Vždy ze save — ať sedí migrace cash 45k / art (ne starý in-memory career).
-      const career = getCareer(this.champBranch, this.champSeason) ?? this.champCareer
+      const career = getCareer(this.champBranch, this.champLeague, this.champSeason) ?? this.champCareer
       this.champCareer = career
       if (!career) {
-        this.screen = 'champHub'
+        this.screen = 'champCena'
         this.render()
         return
       }
+      this.champLeague = career.league
       if (career.done) {
         this.showChampionshipTrophy(career)
         return
       }
-      if (needsChampPostQualSetup(career)) {
+      if (career.qualified && !career.setupComplete && !career.nameChosen) {
         this.screen = 'champPostQual'
-        this.leagueAccordionOpen = career.league
-        this.seriesAccordionOpen = 'diff'
         this.render()
         return
+      }
+      if (career.qualified && !career.nameChosen) {
+        this.screen = 'champName'
+        this.render()
+        return
+      }
+      if (career.qualified && !career.leagueChosen) {
+        this.screen = 'champCena'
+        this.render()
+        return
+      }
+      if (career.qualified && !career.seriesChosen) {
+        this.screen = 'champDiff'
+        this.render()
+        return
+      }
+      if (needsChampPostQualSetup(career)) {
+        markChampSetupComplete(career)
       }
       this.ensureChampLeagueDefaults(career)
       const brief = champBriefArt(
@@ -2861,7 +3317,7 @@ export class Menu {
       const qualifying = isChampQualifying(career)
       const roundMeta = qualifying
         ? null
-        : championshipRoundMeta(career.round, career.league, career.trackPool)
+        : championshipRoundMeta(career.round, career.league, career.trackPool, career.season)
       const trackId = championshipTrackId(career)
       const track = trackId ? TRACKS.find((tr) => tr.id === trackId) : null
       const trackLabel = track ? this.trackName(track) : '—'
@@ -2872,15 +3328,10 @@ export class Menu {
           : t('champ.dirForward')
       const progress = championshipProgressLabel(career)
       const leagueLabel = t(`champ.league.${career.league}`)
-      const raceKicker = qualifying
-        ? isChampFsQual(career)
-          ? t('champ.qualKickerFs')
-          : t('champ.qualKicker')
-        : t('champ.briefRace')
+      const nameBit = career.playerName ? `${this.escape(career.playerName)} · ` : ''
+      const raceKicker = qualifying ? t('champ.qualKicker') : t('champ.briefRace')
       const raceSub = qualifying
-        ? isChampFsQual(career)
-          ? `${this.escape(trackLabel)} · 1:00 · ${t('champ.qualFsTricks')} · ${this.vehicleLabel(career.vehicle)}`
-          : `${this.escape(trackLabel)} · 1 ${t('menu.onlineLaps').toLowerCase()} · ${this.vehicleLabel(career.vehicle)}`
+        ? `${this.escape(trackLabel)} · 1 ${t('menu.onlineLaps').toLowerCase()} · ${this.vehicleLabel(career.vehicle)}`
         : `${this.escape(trackLabel)} · ${dir} · ${this.vehicleLabel(career.vehicle)}`
       this.root.innerHTML = `
         ${wm}
@@ -2888,28 +3339,224 @@ export class Menu {
         <div class="menu-shell menu-home gta-home">
           <header class="gta-home-hero">
             ${brandLockupHtml({ size: 'menu' })}
-            <p class="gta-tagline">${t(`menu.branch.${career.branch}`)} · S${career.season} · ${progress} · ${leagueLabel}</p>
+            <p class="gta-tagline">${nameBit}${t(`menu.branch.${career.branch}`)} · ${leagueLabel} · S${career.season} · ${progress}</p>
           </header>
-          <div class="gta-tiles gta-tiles-home3 gta-tiles-champ-brief">
+          <div class="gta-tiles gta-tiles-home3 gta-tiles-champ-brief gta-tiles-champ-brief-4">
             <button type="button" class="gta-tile gta-tile-hero" data-champ-jet style="--tile:url('${brief.jet}')">
               <span class="gta-tile-kicker">${raceKicker}</span>
               <strong class="gta-tile-label">${t('menu.jet')}</strong>
               <span class="gta-tile-sub">${raceSub}</span>
             </button>
-            <button type="button" class="gta-tile gta-tile-setup" data-champ-pit style="--tile:url('${champPitArt(career.branch)}')">
+            <button type="button" class="gta-tile gta-tile-setup" data-champ-pit style="--tile:url('${champPitArt(career.vehicle, career.branch)}')">
               <span class="gta-tile-kicker">${t('champ.cash')}</span>
               <strong class="gta-tile-label">${t('champ.pit')}</strong>
               <span class="gta-tile-sub">${this.formatChampCash(career.cash)} · ${this.vehicleLabel(career.vehicle)}</span>
             </button>
-            <button type="button" class="gta-tile gta-tile-setup" data-champ-series style="--tile:url('${brief.series}')" ${qualifying ? 'disabled' : ''}>
-              <span class="gta-tile-kicker">${t('champ.points')}</span>
-              <strong class="gta-tile-label">${t('champ.seriesTile')}</strong>
-              <span class="gta-tile-sub">${progress} · ${career.points}b · ${t(`diff.${career.difficulty}`)}</span>
+            <button type="button" class="gta-tile gta-tile-setup" data-champ-standings style="--tile:url('${brief.standings}')" ${qualifying ? 'disabled' : ''}>
+              <span class="gta-tile-kicker">${career.points}b</span>
+              <strong class="gta-tile-label">${t('champ.standingsTile')}</strong>
+              <span class="gta-tile-sub">${progress} · ${t(`diff.${career.difficulty}`)}</span>
             </button>
-            <button type="button" class="gta-tile gta-tile-setup" data-champ-go-league style="--tile:url('${brief.league}')" ${qualifying ? 'disabled' : ''}>
-              <span class="gta-tile-kicker">${t('champ.leagueTitle')}</span>
-              <strong class="gta-tile-label">${leagueLabel}</strong>
-              <span class="gta-tile-sub">${t(`champ.pool.${career.trackPool}`)}</span>
+            <button type="button" class="gta-tile gta-tile-setup" data-champ-season style="--tile:url('${brief.season}')" ${qualifying ? 'disabled' : ''}>
+              <span class="gta-tile-kicker">S${career.season}</span>
+              <strong class="gta-tile-label">${t('champ.seasonTile')}</strong>
+              <span class="gta-tile-sub">${t('champ.seasonTileSub')}</span>
+            </button>
+          </div>
+          ${this.backRow('champCena', 'flow')}
+        </div>
+      `
+      this.bindMuteBar()
+      this.bindBack('champCena')
+      this.root.querySelector('[data-champ-jet]')?.addEventListener('click', () => this.startChampionshipRace())
+      this.root.querySelector('[data-champ-pit]')?.addEventListener('click', () => {
+        this.resetPitCart(career)
+        this.screen = 'champPit'
+        this.render()
+      })
+      this.root.querySelector('[data-champ-standings]')?.addEventListener('click', () => {
+        this.screen = 'champStandings'
+        this.render()
+      })
+      this.root.querySelector('[data-champ-season]')?.addEventListener('click', () => {
+        this.screen = 'champSeason'
+        this.render()
+      })
+      return
+    }
+
+    if (this.screen === 'champSeason') {
+      const career = getCareer(this.champBranch, this.champLeague, this.champSeason) ?? this.champCareer
+      this.champCareer = career
+      if (!career) {
+        this.screen = 'champCena'
+        this.render()
+        return
+      }
+      const totalRounds = championshipTotalRounds(career.league, career.trackPool, career.season)
+      if (this.champCalPreviewRound < 0 || this.champCalPreviewRound >= totalRounds) {
+        this.champCalPreviewRound = Math.min(Math.max(0, career.round), Math.max(0, totalRounds - 1))
+      }
+      const previewMeta = championshipRoundMeta(
+        this.champCalPreviewRound,
+        career.league,
+        career.trackPool,
+        career.season,
+      )
+      const previewTr = previewMeta
+        ? TRACKS.find((x) => x.id === previewMeta.trackId) ?? null
+        : null
+      const previewRes = career.results[this.champCalPreviewRound]
+      const rewardChips = [1, 2, 3, 4]
+        .map((p) => {
+          const cash = placeCash(p, career.difficulty)
+          const pts = roundPoints(career.branch, p, 0)
+          return `<span class="champ-reward-chip">P${p} · ${pts}b · ${this.formatChampCash(cash)}</span>`
+        })
+        .join('')
+      const listHtml = Array.from({ length: totalRounds }, (_, i) => {
+        const meta = championshipRoundMeta(i, career.league, career.trackPool, career.season)
+        if (!meta) return ''
+        const tr = TRACKS.find((x) => x.id === meta.trackId)
+        if (!tr) return ''
+        const name = this.trackName(tr)
+        const dir = meta.reverse ? t('champ.dirReverse') : t('champ.dirForward')
+        const res = career.results[i]
+        const current = !career.done && i === career.round
+        const done = i < career.round || career.done
+        const active = i === this.champCalPreviewRound
+        const status = res
+          ? `P${res.place} · ${res.pts}b`
+          : current
+            ? t('champ.standingsNext')
+            : done
+              ? '—'
+              : dir
+        const cls = [
+          'track-card',
+          'track-card-lite',
+          'champ-cal-track-card',
+          active ? 'active' : '',
+          current ? 'is-current' : '',
+          done && !current ? 'is-done' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+        return `<button type="button" class="${cls}" data-champ-cal-round="${i}">
+          <span class="champ-cal-card-map" aria-hidden="true">${trackPreviewHtml(tr, meta.reverse)}</span>
+          <span class="champ-cal-card-text">
+            <strong>${meta.indexLabel} · ${this.escape(name)}</strong>
+            <span>${status}</span>
+          </span>
+        </button>`
+      }).join('')
+      const previewPane = previewTr && previewMeta
+        ? `<div class="tracks-preview-pane champ-cal-preview">
+            ${trackPreviewHtml(previewTr, previewMeta.reverse)}
+            <div class="track-preview-meta">
+              <strong>${previewMeta.indexLabel} · ${this.escape(this.trackName(previewTr))}</strong>
+              <span>${this.escape(this.trackBlurb(previewTr))}</span>
+            </div>
+            <p class="tune-rules">${t('champ.calDirLocked')}: ${
+              previewMeta.reverse ? t('champ.dirReverse') : t('champ.dirForward')
+            }</p>
+            <p class="tune-help">${
+              previewRes
+                ? `P${previewRes.place} · ${previewRes.pts}b · ${this.formatChampCash(previewRes.cashEarned)}`
+                : !career.done && this.champCalPreviewRound === career.round
+                  ? t('champ.standingsNext')
+                  : t('champ.calBrowseHint')
+            }</p>
+          </div>`
+        : ''
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home menu-champ-cal">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline">${t('champ.calendar')} · S${career.season} · ${t(`champ.league.${career.league}`)}</p>
+          </header>
+          <div class="gta-home-scroll menu-panel-body champ-cal-body" style="--tile:url('${champSeasonArt()}')">
+            <div class="champ-reward-strip" aria-label="${t('champ.seasonRewardsHint')}">${rewardChips}</div>
+            <div class="tracks-layout">
+              <div class="tracks-list champ-cal-list-scroll">${listHtml}</div>
+              ${previewPane}
+            </div>
+          </div>
+          ${this.champOkNavRow('data-champ-season-ok')}
+        </div>
+      `
+      this.bindMuteBar()
+      this.root.querySelector('[data-champ-season-ok]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.screen = 'champBrief'
+        this.render()
+      })
+      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.screen = 'champBrief'
+        this.render()
+      })
+      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cal-round]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.champCalRound)
+          if (!Number.isFinite(idx)) return
+          const scroll = this.savePanelScroll()
+          this.champCalPreviewRound = idx
+          this.render()
+          this.restorePanelScroll(scroll)
+        })
+      })
+      return
+    }
+
+    if (this.screen === 'champPostQual') {
+      const b = this.champBranch
+      const briefArt = champBriefArt(b, this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone)
+      const career =
+        (this.champCareer && this.champCareer.branch === b
+          ? this.champCareer
+          : null) ?? getActiveCareerForBranch(b)
+      this.champCareer = career
+      if (!career || !career.qualified) {
+        this.screen = 'champHub'
+        this.render()
+        return
+      }
+      if (career.setupComplete) {
+        this.screen = 'champCena'
+        this.render()
+        return
+      }
+      if (career.nameChosen) {
+        this.screen = career.leagueChosen
+          ? career.seriesChosen
+            ? 'champBrief'
+            : 'champDiff'
+          : 'champCena'
+        this.render()
+        return
+      }
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home">
+          <header class="gta-home-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline">${t(`menu.branch.${b}`)} · ${t('champ.postQualTitle')}</p>
+          </header>
+          <p class="tune-help champ-diff-banner" style="text-align:center;margin:0 12px 10px">${t('champ.postQualHint')}</p>
+          <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-locked" aria-label="${t('champ.postQualTitle')}">
+            <button type="button" class="gta-tile gta-tile-live" data-postqual-continue style="--tile:url('${briefArt.jet}')">
+              <span class="gta-tile-kicker">${t('champ.postQualTitle')}</span>
+              <strong class="gta-tile-label">${t('champ.postQualContinue')}</strong>
+              <span class="gta-tile-sub">${t('champ.postQualContinueSub')}</span>
+            </button>
+            <button type="button" class="gta-tile" data-postqual-cancel style="--tile:url('${briefArt.series}')">
+              <span class="gta-tile-kicker">${t('champ.restartCareer')}</span>
+              <strong class="gta-tile-label">${t('champ.cancelCup')}</strong>
+              <span class="gta-tile-sub">${t('champ.cancelCupHint')}</span>
             </button>
           </div>
           ${this.backRow('champHub', 'flow')}
@@ -2917,108 +3564,21 @@ export class Menu {
       `
       this.bindMuteBar()
       this.bindBack('champHub')
-      this.root.querySelector('[data-champ-jet]')?.addEventListener('click', () => this.startChampionshipRace())
-      this.root.querySelector('[data-champ-pit]')?.addEventListener('click', () => {
-        this.resetPitCart(career)
-        this.screen = 'champPit'
+      this.root.querySelector('[data-postqual-continue]')?.addEventListener('click', () => {
+        this.champNameDraft = career.playerName ?? ''
+        this.screen = 'champName'
         this.render()
       })
-      this.root.querySelector('[data-champ-series]')?.addEventListener('click', () => {
-        this.screen = 'champSeries'
-        this.render()
-      })
-      this.root.querySelector('[data-champ-go-league]')?.addEventListener('click', () => {
-        this.leagueAccordionOpen = career.league
-        this.screen = 'champLeague'
-        this.render()
-      })
-      return
-    }
-
-    if (this.screen === 'champPostQual') {
-      const stored = getCareer(this.champBranch, this.champSeason)
-      const career =
-        (this.champLeagueDraft || this.champSeriesDraft) && this.champCareer
-          ? this.champCareer
-          : (stored ?? this.champCareer)
-      this.champCareer = career
-      if (!career || !needsChampPostQualSetup(career)) {
-        this.screen = career ? 'champBrief' : 'champHub'
-        this.render()
-        return
-      }
-      this.ensureChampLeagueDefaults(career)
-      this.beginChampLeagueDraft(career)
-      this.beginChampSeriesDraft(career)
-      if (this.leagueAccordionOpen == null) this.leagueAccordionOpen = career.league
-      const diffBody = `
-        <div class="tracks-list diff-list champ-postqual-diff">
-          ${DIFFICULTIES.map((d) => {
-            const active = d.id === career.difficulty ? 'active' : ''
-            return `<button type="button" class="track-card track-card-photo diff-card ${active}" data-champ-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
-              <strong>${t(`diff.${d.id}`)}</strong>
-            </button>`
-          }).join('')}
-        </div>`
-      this.root.innerHTML = `
-        ${wm}
-        ${this.muteBar()}
-        <div class="menu-shell menu-home gta-home">
-          <header class="gta-home-hero">
-            ${brandLockupHtml({ size: 'menu' })}
-            <p class="gta-tagline">${t('champ.postQualTitle')} · ${t(`menu.branch.${career.branch}`)} · S${career.season}</p>
-          </header>
-          <div class="gta-home-scroll champ-pit-body menu-panel-body">
-            <p class="tune-help">${t('champ.postQualHint')}</p>
-            <div class="champ-postqual-grid">
-              <section class="champ-postqual-col">
-                <p class="atm-scene-title">${t('champ.leagueTitle')}</p>
-                <div class="champ-league-list">${this.leagueAccordionHtml(career)}</div>
-                <p class="tune-help">${t(`champ.league.${career.league}`)} · ${t(`champ.pool.${career.trackPool}`)} · ${LEAGUE_LAPS[career.league]} ${t('champ.lapUnit')}</p>
-              </section>
-              <section class="champ-postqual-col">
-                <p class="atm-scene-title">${t('champ.seriesTile')}</p>
-                ${diffBody}
-              </section>
-            </div>
-          </div>
-          ${this.champOkNavRow('data-champ-postqual-ok')}
-        </div>
-      `
-      this.bindMuteBar()
-      this.root.querySelector('[data-champ-postqual-ok]')?.addEventListener('click', () => {
-        this.audioApi?.playClick?.()
-        if (!this.champCareer) return
-        this.champCareer.leagueChosen = true
-        this.champCareer.seriesChosen = true
-        this.champLeaguePref = this.champCareer.league
-        this.champPoolPref = this.champCareer.trackPool
-        this.selectedDifficulty = this.champCareer.difficulty
-        this.commitChampLeagueDraft()
-        this.commitChampSeriesDraft()
-        markChampSetupComplete(this.champCareer)
-        this.screen = 'champBrief'
-        this.render()
-      })
-      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
-        this.audioApi?.playClick?.()
-        this.revertChampLeagueDraft(this.champCareer)
-        this.revertChampSeriesDraft(this.champCareer)
-        if (this.champCareer) {
-          discardIncompleteCareer(this.champCareer.branch, this.champCareer.season)
+      this.root.querySelector('[data-postqual-cancel]')?.addEventListener('click', () => {
+        this.showMenuConfirm(t('champ.restartCareerConfirm'), () => {
+          wipeBranchCareers(b)
           this.champCareer = null
-        }
-        this.screen = 'champHub'
-        this.render()
-      })
-      this.bindLeagueAccordion(career)
-      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-diff]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          if (!this.champCareer) return
-          const id = btn.dataset.champDiff as DifficultyId
-          if (!DIFFICULTIES.some((d) => d.id === id)) return
-          this.champCareer.difficulty = id
-          this.selectedDifficulty = id
+          this.champPickLeague = null
+          this.champPickDiff = null
+          this.champNameDraft = ''
+          this.champSeason = 1
+          this.champLeague = 'baby'
+          this.screen = 'champStarter'
           this.render()
         })
       })
@@ -3026,228 +3586,74 @@ export class Menu {
     }
 
     if (this.screen === 'champLeague') {
-      // Při aktivním draftu držet paměť (getCareer by přepsal neuložené volby).
-      const stored = getCareer(this.champBranch, this.champSeason)
-      const career =
-        this.champLeagueDraft && this.champCareer
-          ? this.champCareer
-          : (stored ?? this.champCareer)
-      this.champCareer = career
-      if (!career) {
-        this.screen = 'champHub'
-        this.render()
-        return
-      }
-      this.ensureChampLeagueDefaults(career)
-      this.beginChampLeagueDraft(career)
-      if (this.leagueAccordionOpen == null) this.leagueAccordionOpen = career.league
-      const scheduleLocked = career.round > 0
-      const postQual = needsChampPostQualSetup(career) && !career.leagueChosen
-      this.root.innerHTML = `
-        ${wm}
-        ${this.muteBar()}
-        <div class="menu-shell menu-home gta-home">
-          <header class="gta-home-hero">
-            ${brandLockupHtml({ size: 'menu' })}
-            <p class="gta-tagline">${t('champ.leagueTitle')} · S${career.season} · ${championshipProgressLabel(career)}</p>
-          </header>
-          <div class="gta-home-scroll champ-pit-body menu-panel-body">
-            <p class="atm-scene-title">${t('champ.leagueTitle')}</p>
-            ${
-              scheduleLocked
-                ? `<p class="tune-help">${t('champ.leagueLocked')}</p>`
-                : `<p class="tune-help">${t('champ.leagueHint')}</p>`
-            }
-            <div class="champ-league-list">${this.leagueAccordionHtml(career)}</div>
-            <p class="tune-help" style="margin-top:12px">${t(`champ.league.${career.league}`)} · ${t(`champ.pool.${career.trackPool}`)} · ${LEAGUE_LAPS[career.league]} ${t('champ.lapUnit')}</p>
-            ${
-              career.setupComplete
-                ? `<div class="champ-restart-row">
-              <button type="button" class="btn-ghost" data-champ-restart-season>${t('champ.restartSeason')}</button>
-              <button type="button" class="btn-ghost" data-champ-restart-career>${t('champ.restartCareer')}</button>
-            </div>`
-                : ''
-            }
-          </div>
-          ${this.champOkNavRow('data-champ-league-ok')}
-        </div>
-      `
-      this.bindMuteBar()
-      this.root.querySelector('[data-champ-league-ok]')?.addEventListener('click', () => {
-        this.audioApi?.playClick?.()
-        if (!this.champCareer) return
-        this.champCareer.leagueChosen = true
-        this.champLeaguePref = this.champCareer.league
-        this.champPoolPref = this.champCareer.trackPool
-        this.commitChampLeagueDraft()
-        saveCareer(this.champCareer)
-        this.screen = this.champCareer.seriesChosen ? 'champBrief' : 'champSeries'
-        this.render()
-      })
-      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
-        this.audioApi?.playClick?.()
-        this.revertChampLeagueDraft(this.champCareer)
-        if (postQual) {
-          discardIncompleteCareer(career.branch, career.season)
-          this.champCareer = null
-          this.screen = 'champHub'
-        } else {
-          this.screen = 'champBrief'
-        }
-        this.render()
-      })
-      this.root.querySelector('[data-champ-restart-season]')?.addEventListener('click', () => {
-        if (!window.confirm(t('champ.restartSeasonConfirm'))) return
-        const season = career.season
-        const branch = career.branch
-        restartChampSeason(branch, season)
-        this.champCareer = null
-        this.champBranch = branch
-        this.champSeason = season
-        if (season === 2) {
-          try {
-            this.champCareer = startSeason2FromSnapshot(branch, this.selectedDifficulty)
-            this.screen = 'champLeague'
-            this.leagueAccordionOpen = this.champCareer.league
-          } catch {
-            this.screen = 'champHub'
-          }
-        } else {
-          this.screen = 'champStarter'
-        }
-        this.render()
-      })
-      this.root.querySelector('[data-champ-restart-career]')?.addEventListener('click', () => {
-        if (!window.confirm(t('champ.restartCareerConfirm'))) return
-        const branch = career.branch
-        restartChampCareer(branch)
-        this.champCareer = null
-        this.champBranch = branch
-        this.champSeason = 1
-        this.screen = 'champStarter'
-        this.render()
-      })
-      this.bindLeagueAccordion(career)
+      // Cena se nemění v sezóně — UI výběru zrušeno.
+      this.screen = 'champBrief'
+      this.render()
       return
     }
 
-    if (this.screen === 'champSeries') {
-      const stored = getCareer(this.champBranch, this.champSeason)
-      const career =
-        this.champSeriesDraft && this.champCareer
-          ? this.champCareer
-          : (stored ?? this.champCareer)
+    if (this.screen === 'champStandings') {
+      const career = getCareer(this.champBranch, this.champLeague, this.champSeason) ?? this.champCareer
       this.champCareer = career
       if (!career) {
-        this.screen = 'champHub'
+        this.screen = 'champCena'
         this.render()
         return
       }
-      this.beginChampSeriesDraft(career)
-      const totalRounds = championshipTotalRounds(career.league, career.trackPool)
-      const calRows = Array.from({ length: totalRounds }, (_, i) => {
-        const meta = championshipRoundMeta(i, career.league, career.trackPool)
-        if (!meta) return ''
-        const tr = TRACKS.find((x) => x.id === meta.trackId)
-        const name = tr ? this.trackName(tr) : meta.trackId
-        const dir = meta.reverse ? t('champ.dirReverse') : t('champ.dirForward')
-        const done = i < career.round || career.done
-        const current = !career.done && i === career.round
-        const res = career.results[i]
-        const placeBit = res ? `P${res.place}` : done ? '—' : ''
-        const cls = current ? 'is-current' : done ? 'is-done' : ''
-        return `<li class="champ-cal-row ${cls}">
-          <span class="champ-cal-idx">${meta.indexLabel}</span>
-          <span class="champ-cal-name">${this.escape(name)} · ${dir}</span>
-          <span class="champ-cal-place">${placeBit}</span>
-        </li>`
-      }).join('')
-      this.ensureChampLeagueDefaults(career)
-      if (this.seriesAccordionOpen == null) this.seriesAccordionOpen = 'diff'
-      const diffCards = DIFFICULTIES.map((d) => {
-        const active = d.id === career.difficulty ? 'active' : ''
-        return `<button type="button" class="track-card track-card-photo ${active}" data-champ-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
-          <strong>${t(`diff.${d.id}`)}</strong>
-        </button>`
-      }).join('')
-      const rivalsLine = career.rivals.map((k) => this.vehicleLabel(k)).join(' · ')
-      const seriesAcc = [
-        this.menuAccordionBlock({
-          id: 'diff',
-          open: this.seriesAccordionOpen,
-          title: t('champ.difficulty'),
-          meta: t(`diff.${career.difficulty}`),
-          active: true,
-          body: `<div class="dir-grid">${diffCards}</div>`,
-        }),
-        this.menuAccordionBlock({
-          id: 'calendar',
-          open: this.seriesAccordionOpen,
-          title: t('champ.calendar'),
-          meta: championshipProgressLabel(career),
-          body: `<ul class="champ-cal-list">${calRows}</ul>`,
-        }),
-        this.menuAccordionBlock({
-          id: 'rivals',
-          open: this.seriesAccordionOpen,
-          title: t('champ.rivalsLine'),
-          meta: `${career.points}b · ${this.formatKc(career.cash)}`,
-          body: `<p class="tune-help">${rivalsLine}</p>
-            <p class="tune-help">${t('champ.points')}: ${career.points} · ${t('champ.cash')}: ${this.formatChampCash(career.cash)}</p>`,
-        }),
-      ].join('')
+      const dp = career.driverPoints ?? [career.points, 0, 0, 0]
+      const entries = [
+        { name: career.playerName || t('champ.nameTitle'), pts: dp[0]!, me: true },
+        { name: CHAMP_RIVAL_NAMES[0], pts: dp[1]!, me: false },
+        { name: CHAMP_RIVAL_NAMES[1], pts: dp[2]!, me: false },
+        { name: CHAMP_RIVAL_NAMES[2], pts: dp[3]!, me: false },
+      ].sort((a, b) => b.pts - a.pts || (a.me === b.me ? 0 : a.me ? -1 : 1))
+      const rows = entries
+        .map(
+          (e, i) => `<li class="champ-f1-row ${e.me ? 'is-me' : ''}">
+          <span class="champ-f1-pos">${i + 1}</span>
+          <span class="champ-f1-name">${this.escape(e.name)}</span>
+          <span class="champ-f1-pts">${e.pts}</span>
+        </li>`,
+        )
+        .join('')
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
         <div class="menu-shell menu-home gta-home">
           <header class="gta-home-hero">
             ${brandLockupHtml({ size: 'menu' })}
-            <p class="gta-tagline">${t('champ.seriesTile')} · S${career.season} · ${championshipProgressLabel(career)} · ${t(`champ.league.${career.league}`)}</p>
+            <p class="gta-tagline">${t('champ.standingsTile')} · S${career.season}</p>
           </header>
-          <div class="gta-home-scroll champ-pit-body menu-panel-body">
-            <div class="menu-accordion">${seriesAcc}</div>
+          <div class="gta-home-scroll champ-pit-body menu-panel-body champ-standings-body" style="--tile:url('${champStandingsArt()}')">
+            <p class="tune-help">${t('champ.standingsHint')}</p>
+            <ol class="champ-f1-standings">${rows}</ol>
           </div>
-          ${this.champOkNavRow('data-champ-series-ok')}
+          ${this.champOkNavRow('data-champ-standings-ok')}
         </div>
       `
-      const postQualSeries = needsChampPostQualSetup(career) && !career.seriesChosen
       this.bindMuteBar()
-      this.root.querySelector('[data-champ-series-ok]')?.addEventListener('click', () => {
+      this.root.querySelector('[data-champ-standings-ok]')?.addEventListener('click', () => {
         this.audioApi?.playClick?.()
-        if (!this.champCareer) return
-        this.champCareer.seriesChosen = true
-        this.selectedDifficulty = this.champCareer.difficulty
-        this.commitChampSeriesDraft()
-        markChampSetupComplete(this.champCareer)
         this.screen = 'champBrief'
         this.render()
       })
       this.root.querySelector('[data-back]')?.addEventListener('click', () => {
         this.audioApi?.playClick?.()
-        this.revertChampSeriesDraft(this.champCareer)
-        this.screen = postQualSeries ? 'champLeague' : 'champBrief'
+        this.screen = 'champBrief'
         this.render()
-      })
-      this.bindMenuAccordionToggle((id) => {
-        const next = id as 'diff' | 'calendar' | 'rivals'
-        this.seriesAccordionOpen = this.seriesAccordionOpen === next ? null : next
-      })
-      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-diff]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          if (!this.champCareer) return
-          const id = btn.dataset.champDiff as DifficultyId
-          if (!DIFFICULTIES.some((d) => d.id === id)) return
-          // Jen draft v paměti — uloží až OK
-          this.champCareer.difficulty = id
-          this.selectedDifficulty = id
-          this.render()
-        })
       })
       return
     }
 
+    if (this.screen === 'champSeries') {
+      // Starý accordion → dlaždice jako Cena.
+      this.screen = 'champDiff'
+      this.render()
+      return
+    }
+
     if (this.screen === 'champPit') {
-      const career = getCareer(this.champBranch, this.champSeason) ?? this.champCareer
+      const career = getCareer(this.champBranch, this.champLeague, this.champSeason) ?? this.champCareer
       this.champCareer = career
       if (!career) {
         this.screen = 'champHub'
@@ -3382,9 +3788,21 @@ export class Menu {
                   <strong>${this.vehicleLabel(previewKind)}</strong>
                   <span>${previewOwned ? t('champ.shopOwned') : t('champ.shopPreview')}</span>
                 </div>
+                ${
+                  vehicleHasRider(previewKind)
+                    ? this.paintRowHtml(
+                        'rider',
+                        t('menu.riderPick'),
+                        this.selectedRider,
+                        NEON_COLOR_CHOICES,
+                        true,
+                        { stepPlus: true },
+                      )
+                    : ''
+                }
               </div>
               <div class="champ-pit-body menu-panel-body">
-                <div class="menu-accordion">${pitAcc}</div>
+                <div class="menu-accordion menu-accordion-stack">${pitAcc}</div>
                 <div class="champ-cart" data-champ-cart style="margin-top:14px">
                   <p class="atm-scene-title">${t('champ.cartTitle')}</p>
                   <div data-cart-lines>${cartLines}</div>
@@ -3422,6 +3840,7 @@ export class Menu {
         this.vehiclePreview = new VehiclePreview(canvas)
         this.vehiclePreview.setVehicle(previewKind, this.currentLook())
       }
+      this.bindPaintPickers()
       this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cart-buy]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation()
@@ -3532,11 +3951,13 @@ export class Menu {
       }
       const consolation = Boolean(career.consolation)
       const tier = consolation ? 4 : seasonPodiumRank(career)
-      const meta = loadChampMeta()
-      const s2 = meta.season2Unlocked[career.branch]
+      const nextSeason = info.nextSeason
+      const nextCareer =
+        nextSeason != null ? getCareer(career.branch, career.league, nextSeason) : null
+      const conquered = Boolean(info.conquered)
       const cup = champBriefArt()
-      const celebrate = !consolation && tier <= 2
-      const sprayN = celebrate ? (tier === 1 ? 28 : tier === 2 ? 16 : 0) : 0
+      const celebrate = !consolation && (conquered || tier <= 2)
+      const sprayN = celebrate ? (conquered || tier === 1 ? 28 : tier === 2 ? 16 : 0) : 0
       const spray = sprayN
         ? `<div class="trophy-spray" aria-hidden="true">${Array.from({ length: sprayN }, (_, i) => {
             const ang = (i / sprayN) * Math.PI * 2
@@ -3560,6 +3981,22 @@ export class Menu {
           </tr>`
         })
         .join('')
+      const title = consolation
+        ? t('champ.consolationTitle')
+        : conquered
+          ? t('champ.conquerTitle')
+          : t('champ.trophyCup')
+      const blurb = consolation
+        ? t('champ.consolationBlurb')
+        : conquered
+          ? t('champ.conquerBody')
+          : t(`champ.podium.${tier}`)
+      const nextBtn =
+        nextCareer && !nextCareer.done
+          ? `<button type="button" class="btn-ghost menu-tune-btn" data-champ-next-season>${t('champ.nextSeason')}</button>`
+          : consolation
+            ? `<button type="button" class="btn-ghost menu-tune-btn" data-champ-restart>${t('champ.againS1')}</button>`
+            : ''
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -3569,7 +4006,7 @@ export class Menu {
             <p class="gta-tagline">${t(`menu.branch.${career.branch}`)} · S${career.season} · ${t(`champ.league.${career.league}`)}</p>
           </header>
           <div class="gta-home-scroll">
-            <div class="champ-trophy champ-trophy--tier${tier}${celebrate ? ' champ-trophy--celebrate' : ''}${consolation ? ' champ-trophy--consolation' : ''}">
+            <div class="champ-trophy champ-trophy--tier${tier}${celebrate ? ' champ-trophy--celebrate' : ''}${consolation ? ' champ-trophy--consolation' : ''}${conquered ? ' champ-trophy--conquer' : ''}">
               <div class="champ-trophy-hero" style="--tile:url('${cup.cup}')">
                 ${spray}
                 ${
@@ -3586,12 +4023,12 @@ export class Menu {
                 </div>`
                 }
                 <div class="champ-trophy-hero-copy">
-                  <span class="gta-tile-kicker">${consolation ? t('champ.consolationKicker') : t('champ.trophyParade')}</span>
-                  ${consolation ? '' : `<span class="trophy-tier-badge">T${tier}</span>`}
-                  <strong class="champ-trophy-title">${consolation ? t('champ.consolationTitle') : t('champ.trophyCup')}</strong>
-                  <p class="champ-trophy-tier">${consolation ? t('champ.consolationBlurb') : t(`champ.podium.${tier}`)}</p>
+                  <span class="gta-tile-kicker">${consolation ? t('champ.consolationKicker') : conquered ? t('diff.superHard') : t('champ.trophyParade')}</span>
+                  ${consolation || conquered ? '' : `<span class="trophy-tier-badge">T${tier}</span>`}
+                  <strong class="champ-trophy-title">${title}</strong>
+                  <p class="champ-trophy-tier">${blurb}</p>
                   ${
-                    celebrate
+                    celebrate && !conquered
                       ? `<p class="champ-trophy-champagne">${t('champ.trophyChampagne')}</p>`
                       : ''
                   }
@@ -3635,13 +4072,13 @@ export class Menu {
                 </table>
               </div>
               <div class="champ-trophy-actions">
+                ${nextBtn}
                 ${
-                  career.season === 1 && s2
-                    ? `<button type="button" class="btn-ghost menu-tune-btn" data-champ-s2>${t('champ.nextSeason')}</button>`
-                    : `<button type="button" class="btn-ghost menu-tune-btn" data-champ-restart>${t('champ.againS1')}</button>`
+                  conquered
+                    ? `<button type="button" class="menu-start" data-champ-home>${t('champ.conquerMenu')}</button>`
+                    : `<button type="button" class="btn-ghost" data-champ-restart>${t('champ.classesTile')}</button>
+                <button type="button" class="btn-ghost" data-champ-home>${t('champ.home')}</button>`
                 }
-                <button type="button" class="btn-ghost" data-champ-restart>${t('champ.classesTile')}</button>
-                <button type="button" class="btn-ghost" data-champ-home>${t('champ.home')}</button>
               </div>
             </div>
           </div>
@@ -3656,12 +4093,15 @@ export class Menu {
         this.screen = 'home'
         this.render()
       })
-      this.root.querySelector('[data-champ-s2]')?.addEventListener('click', () => {
+      this.root.querySelector('[data-champ-next-season]')?.addEventListener('click', () => {
         this.champSeasonCompleteInfo = null
         this.champTrophyCareerKey = ''
         this.champBranch = career.branch
-        this.champSeason = 2
-        this.screen = 'champHub'
+        this.champLeague = career.league
+        if (nextSeason == null || !nextCareer) return
+        this.champSeason = nextSeason
+        this.champCareer = nextCareer
+        this.screen = 'champBrief'
         this.render()
       })
       this.root.querySelector('[data-champ-restart]')?.addEventListener('click', () => {
@@ -3820,14 +4260,23 @@ export class Menu {
     selected: number,
     choices: readonly number[],
     allowNone: boolean,
+    step?: { stepMinus?: boolean; stepPlus?: boolean },
   ): string {
+    const minus = step?.stepMinus
+      ? `<button type="button" class="paint-step-btn" data-paint-step="${kind}" data-paint-dir="-1" aria-label="-">−</button>`
+      : ''
+    const plus = step?.stepPlus
+      ? `<button type="button" class="paint-step-btn" data-paint-step="${kind}" data-paint-dir="1" aria-label="+">+</button>`
+      : ''
     return `<p class="tune-rules">${label}</p>
-      <div class="color-grid">
+      <div class="color-grid ${step ? 'color-grid--step' : ''}">
+        ${minus}
         ${allowNone ? this.colorSwatchHtml(kind, COLOR_NONE, selected) : ''}
         ${choices.map((c) => this.colorSwatchHtml(kind, c, selected)).join('')}
         <label class="color-rgb" title="${t('menu.colorRgb')}">
           <input type="color" id="${kind}-rgb" value="${selected < 0 ? '#c62828' : '#' + selected.toString(16).padStart(6, '0')}" />
         </label>
+        ${plus}
       </div>`
   }
 
@@ -3912,6 +4361,34 @@ export class Menu {
         sync()
       })
     }
+    this.root.querySelectorAll<HTMLButtonElement>('[data-paint-step]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.paintStep as 'color' | 'neon' | 'wheel' | 'rider' | 'helm'
+        const dir = Number(btn.dataset.paintDir) || 1
+        const slot = slots.find((s) => s.key === key)
+        if (!slot) return
+        const choices =
+          key === 'color' ? [...PLAYER_COLOR_CHOICES] : [...NEON_COLOR_CHOICES]
+        const pool = key === 'color' || key === 'neon' || key === 'wheel' || key === 'rider' || key === 'helm'
+          ? [COLOR_NONE, ...choices]
+          : choices
+        const cur = slot.get()
+        let idx = pool.indexOf(cur)
+        if (idx < 0) idx = 0
+        const next = pool[(idx + dir + pool.length) % pool.length]!
+        slot.set(next)
+        if (this.vehiclePreview) {
+          slot.apply(next)
+          this.root.querySelectorAll<HTMLButtonElement>(`[data-${slot.key}]`).forEach((b) => {
+            b.classList.toggle('active', Number(b.dataset[slot.key]) === next)
+          })
+          const rgb = this.root.querySelector<HTMLInputElement>(`#${slot.key}-rgb`)
+          if (rgb && next >= 0) rgb.value = '#' + next.toString(16).padStart(6, '0')
+        } else {
+          this.render()
+        }
+      })
+    })
   }
 
   private emitStart(mode: 'host' | 'join'): void {
@@ -3997,7 +4474,7 @@ export class Menu {
   }
 
   private commitTracksDraft(): void {
-    // Dočti rozepsaná kola z inputu (OK bez blur by jinak neuložil change)
+    // Dočti kola z číselníku (OK bez blur by jinak neuložil)
     const input = this.root.querySelector<HTMLInputElement>('[data-track-laps-input]')
     if (input) this.raceApi?.set({ laps: clampRaceLaps(input.value) })
     this.draftTracks = null
@@ -4157,11 +4634,7 @@ export class Menu {
     const career = this.champCareer
     if (!career || career.done) return
     if (needsChampPostQualSetup(career)) {
-      this.screen = 'champPostQual'
-      this.leagueAccordionOpen = career.league
-      this.seriesAccordionOpen = 'diff'
-      this.render()
-      return
+      markChampSetupComplete(career)
     }
     ensureChampRivalMidSpike(career)
     this.champCareer = career
@@ -4194,7 +4667,7 @@ export class Menu {
       difficulty: career.difficulty,
       laps,
       timeLimitMs: fsQual ? CHAMP_FS_QUAL_MS : undefined,
-      championship: { branch: career.branch, season: career.season },
+      championship: { branch: career.branch, season: career.season, league: career.league },
     })
   }
 
@@ -4446,6 +4919,9 @@ export class Menu {
         const next = btn.dataset.track || TRACKS[0].id
         if (next === this.selectedTrackId) return
         const scroll = this.savePanelScroll()
+        // Kola drží napříč výběrem tratí v tomto menu.
+        const lapsInput = this.root.querySelector<HTMLInputElement>('[data-track-laps-input]')
+        if (lapsInput) this.raceApi?.set({ laps: clampRaceLaps(lapsInput.value) })
         this.selectedTrackId = next
         this.render()
         this.restorePanelScroll(scroll)
@@ -4944,7 +5420,7 @@ export class Menu {
       career.trackPool = 'half'
       changed = true
     }
-    this.champLeaguePref = career.league
+    this.champLeague = career.league
     this.champPoolPref = career.trackPool
     if (changed) saveCareer(career)
   }
@@ -4982,38 +5458,6 @@ export class Menu {
     })
   }
 
-  /** Accordion lig: rozklik → poloviční / plný (směry). Meta = kola na okruhu. */
-  private leagueAccordionHtml(career: ChampCareer): string {
-    const scheduleLocked = career.round > 0
-    return (['baby', 'small', 'grand'] as ChampLeague[])
-      .map((L) => {
-        const active = L === career.league
-        const isOpen = this.leagueAccordionOpen === L
-        const poolInner = (['half', 'all'] as ChampTrackPool[])
-          .map((p) => {
-            const pActive = p === career.trackPool && active ? 'active' : ''
-            return `<button type="button" class="track-card ${pActive}" data-champ-pool="${p}" data-champ-pool-for="${L}" ${scheduleLocked ? 'disabled' : ''}>
-              <strong>${t(`champ.pool.${p}`)}</strong>
-            </button>`
-          })
-          .join('')
-        return `<div class="champ-league-block ${active ? 'is-active' : ''} ${isOpen ? 'is-open' : ''}${scheduleLocked ? ' is-locked' : ''}">
-          <button type="button" class="track-card ${active ? 'active' : ''}" data-champ-league="${L}" aria-expanded="${isOpen ? 'true' : 'false'}">
-            <span class="champ-league-head">
-              <strong>${t(`champ.league.${L}`)}</strong>
-              <span class="champ-league-meta">${LEAGUE_LAPS[L]} ${t('champ.lapUnit')}</span>
-            </span>
-            <span class="champ-league-chevron" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
-          </button>
-          <div class="champ-league-pool">
-            <p class="atm-scene-title">${t('champ.poolTitle')}</p>
-            <div class="dir-grid">${poolInner}</div>
-          </div>
-        </div>`
-      })
-      .join('')
-  }
-
   /** Číselník kol 1–69 (quick race / host / lobby). */
   private bindLapStepper(opts: {
     get: () => number
@@ -5043,27 +5487,6 @@ export class Menu {
     })
   }
 
-  private beginChampLeagueDraft(career: ChampCareer): void {
-    if (this.champLeagueDraft) return
-    this.champLeagueDraft = { league: career.league, trackPool: career.trackPool }
-  }
-
-  private commitChampLeagueDraft(): void {
-    this.champLeagueDraft = null
-  }
-
-  private revertChampLeagueDraft(career: ChampCareer | null): void {
-    const d = this.champLeagueDraft
-    if (d && career) {
-      career.league = d.league
-      career.trackPool = d.trackPool
-      this.champLeaguePref = d.league
-      this.champPoolPref = d.trackPool
-      this.champCareer = career
-    }
-    this.champLeagueDraft = null
-  }
-
   private beginChampSeriesDraft(career: ChampCareer): void {
     if (this.champSeriesDraft) return
     this.champSeriesDraft = { difficulty: career.difficulty }
@@ -5083,41 +5506,6 @@ export class Menu {
     this.champSeriesDraft = null
   }
 
-  private bindLeagueAccordion(career: ChampCareer): void {
-    this.root.querySelectorAll<HTMLButtonElement>('[data-champ-league]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const league = btn.dataset.champLeague as ChampLeague
-        if (league !== 'baby' && league !== 'small' && league !== 'grand') return
-        // Stejná otevřená → sbalit; jiná → rozbalit (+ draft výběr, uloží až OK)
-        if (this.leagueAccordionOpen === league) {
-          this.leagueAccordionOpen = null
-        } else {
-          this.leagueAccordionOpen = league
-          if (career.round === 0) {
-            const leagueChanged = career.league !== league
-            career.league = league
-            if (leagueChanged || (career.trackPool !== 'half' && career.trackPool !== 'all')) {
-              career.trackPool = 'half'
-            }
-          }
-        }
-        this.render()
-      })
-    })
-    this.root.querySelectorAll<HTMLButtonElement>('[data-champ-pool]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (career.round > 0) return
-        const pool = btn.dataset.champPool as ChampTrackPool
-        const forLeague = btn.dataset.champPoolFor as ChampLeague
-        if (pool !== 'half' && pool !== 'all') return
-        if (forLeague !== 'baby' && forLeague !== 'small' && forLeague !== 'grand') return
-        career.league = forLeague
-        career.trackPool = pool
-        this.leagueAccordionOpen = forLeague
-        this.render()
-      })
-    })
-  }
 }
 
 function fmtMs(ms: number): string {

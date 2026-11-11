@@ -177,43 +177,12 @@ export class Vehicle {
   }
 
   private attachExhaustTrails(): void {
-    for (const p of this.exhaustPorts()) {
-      const trail = new THREE.Mesh(
-        new THREE.ConeGeometry(0.07, 0.85, 5, 1, true),
-        new THREE.MeshBasicMaterial({
-          color: 0x9a9aa0,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          fog: true,
-        }),
-      )
-      trail.rotation.x = Math.PI / 2
-      trail.position.set(p.x, p.y, p.z - 0.35)
-      trail.userData.exhaustTrail = true
-      trail.visible = false
-      this.mesh.add(trail)
-    }
+    // Kouř z výfuku vypnutý — vizuál jen mesh výfuku, bez trailů.
+    void this.exhaustPorts
   }
 
-  private syncExhaustVisual(throttle: number): void {
-    const spd = Math.abs(this.physics.speed)
-    const amount = Math.min(1, Math.max(0, throttle) * 0.65 + Math.min(1, spd / 55) * 0.45)
-    this.mesh.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh) || !obj.userData.exhaustTrail) return
-      const mat = obj.material
-      if (!(mat instanceof THREE.MeshBasicMaterial)) return
-      if (amount < 0.06) {
-        obj.visible = false
-        mat.opacity = 0
-        return
-      }
-      obj.visible = true
-      const len = 0.55 + amount * 1.35
-      obj.scale.set(0.7 + amount * 0.6, len, 0.7 + amount * 0.6)
-      mat.opacity = 0.12 + amount * 0.28
-      mat.color.setHex(amount > 0.55 ? 0xb0b0b8 : 0x7a7a82)
-    })
+  private syncExhaustVisual(_throttle: number): void {
+    /* no exhaust smoke */
   }
 
   getLook(): VehicleLook {

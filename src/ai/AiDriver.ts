@@ -35,9 +35,9 @@ const SHIFT_HOLD_FRAC = 0.055
  * startFrac: podíl cruise na GO (0=stojí, 1=hned cruise)
  * accelBlend: jak agresivně dohání target při akceleraci
  */
-type LaunchFeel = { durationSec: number; startFrac: number; accelBlend: number }
+export type LaunchFeel = { durationSec: number; startFrac: number; accelBlend: number }
 
-function launchFeelFor(kind: VehicleKind): LaunchFeel {
+export function launchFeelFor(kind: VehicleKind): LaunchFeel {
   switch (kind) {
     case 'formula':
       return { durationSec: 1.35, startFrac: 0.22, accelBlend: 2.4 }
@@ -121,6 +121,7 @@ export class AiDriver {
     } else {
       this.railDist = Math.max(0, Math.min(len * 0.02, startT * len))
     }
+    // Přirozený náběh ze stání (launchFeel).
     this.launch = 0
     this.pace = 0
     this.paceDebt = 0

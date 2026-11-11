@@ -784,6 +784,14 @@ html.portrait-blocked #app {
   margin-top: 16px;
 }
 
+.finish-cta-preferred {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--menu-accent, #c4a574) 70%, white);
+}
+
+.champ-standings-list {
+  max-height: min(52vh, 480px);
+}
+
 /* ——— Finish: stejná karta jako ESC pauza; místění mění accent silně ——— */
 .overlay-finish.pause-card {
   position: relative;
@@ -1166,6 +1174,48 @@ html.portrait-blocked #app {
   opacity: 0.9;
   margin-bottom: 4px;
   color: var(--pause-gold);
+}
+
+.pause-esc-steps {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pause-esc-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.6rem;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(247, 241, 234, 0.55);
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.pause-esc-chip.is-on.is-1 {
+  color: #1a1208;
+  border-color: rgba(232, 197, 106, 0.95);
+  background: linear-gradient(180deg, #f0d78a, #c9a24a);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 0 16px rgba(232, 197, 106, 0.35);
+}
+
+.pause-esc-chip.is-on.is-2 {
+  color: #fff8f0;
+  border-color: rgba(224, 92, 62, 0.95);
+  background: linear-gradient(180deg, #e07a4a, #b33a28);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 0 18px rgba(224, 92, 62, 0.4);
 }
 
 .pause-card h2,
@@ -2774,7 +2824,7 @@ html.portrait-blocked #app {
   --menu-shell: rgba(16, 14, 12, 0.42);
   --menu-text: #e8eef2;
   --menu-light: 1;
-  --menu-photo: url('/menu/bg-klecany.jpg');
+  --menu-photo: url('/menu/bg-klecany.webp');
   background:
     linear-gradient(115deg, var(--menu-bg-a), var(--menu-bg-b)),
     radial-gradient(ellipse at 15% 10%, var(--menu-glow-a), transparent 42%),
@@ -2797,7 +2847,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #8eb4d0;
   --menu-shell: rgba(16, 14, 12, 0.4);
   --menu-text: #e8eef2;
-  --menu-photo: url('/menu/bg-klecany.jpg');
+  --menu-photo: url('/menu/bg-klecany.webp');
   --menu-light: 1.08;
 }
 
@@ -2810,7 +2860,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #8fbc6a;
   --menu-shell: rgba(12, 16, 12, 0.72);
   --menu-text: #f2f5e8;
-  --menu-photo: url('/menu/bg-cesko.jpg');
+  --menu-photo: url('/menu/bg-cesko.webp');
 }
 
 #menu[data-tone='neon'] {
@@ -2822,7 +2872,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #2de2e6;
   --menu-shell: rgba(10, 8, 14, 0.42);
   --menu-text: #f7f1ea;
-  --menu-photo: url('/menu/bg-neon.jpg');
+  --menu-photo: url('/menu/bg-neon.webp');
 }
 
 #menu[data-tone='ember'] {
@@ -2834,7 +2884,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #f59e0b;
   --menu-shell: rgba(26, 16, 12, 0.78);
   --menu-text: #f8efe6;
-  --menu-photo: url('/menu/bg-ember.jpg');
+  --menu-photo: url('/menu/bg-ember.webp');
 }
 
 #menu[data-tone='ice'] {
@@ -2846,7 +2896,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #a5f3fc;
   --menu-shell: rgba(10, 22, 30, 0.78);
   --menu-text: #e0f2fe;
-  --menu-photo: url('/menu/bg-ice.jpg');
+  --menu-photo: url('/menu/bg-ice.webp');
 }
 
 #menu[data-tone='moss'] {
@@ -2858,7 +2908,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #34d399;
   --menu-shell: rgba(10, 20, 14, 0.8);
   --menu-text: #ecfdf5;
-  --menu-photo: url('/menu/bg-moss.jpg');
+  --menu-photo: url('/menu/bg-moss.webp');
 }
 
 #menu[data-tone='asphalt'] {
@@ -2870,7 +2920,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #2de2e6;
   --menu-shell: rgba(8, 10, 16, 0.48);
   --menu-text: #f4f7fb;
-  --menu-photo: url('/menu/bg-asphalt.jpg');
+  --menu-photo: url('/menu/bg-asphalt.webp');
 }
 
 #menu[data-tone='calendar'] {
@@ -2882,7 +2932,7 @@ html.portrait-blocked #app {
   --menu-accent-2: #ff6b8a;
   --menu-shell: rgba(24, 14, 14, 0.62);
   --menu-text: #fff4ec;
-  --menu-photo: url('/menu/bg-calendar.jpg');
+  --menu-photo: url('/menu/bg-calendar.webp');
 }
 
 #menu[data-light='dim'] {
@@ -3530,6 +3580,223 @@ button.menu-start:disabled {
   margin-top: 10px;
 }
 
+/* Pit + Obtížnost: rozklikávací pole pod sebou na plnou šířku */
+.menu-accordion.menu-accordion-stack {
+  grid-template-columns: 1fr;
+  width: 100%;
+}
+
+.gta-tiles-champ-brief-2 {
+  /* Stejný footprint jako 1 hero + 3 spodní → hero + 2 stejně široké */
+  grid-template-columns: 1fr 1fr !important;
+}
+
+.gta-tiles-champ-brief-2 .gta-tile-hero {
+  grid-column: 1 / -1;
+}
+
+.gta-tiles-champ-brief-4 {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.gta-tiles-champ-brief-4 .gta-tile-hero {
+  grid-column: 1 / -1;
+}
+
+.menu-text-input {
+  width: 100%;
+  max-width: 28rem;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+}
+
+.gta-tiles-champ-locked {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.gta-tile-picked {
+  outline: 2px solid rgba(232, 197, 106, 0.95);
+  outline-offset: -2px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    inset 0 0 40px rgba(232, 197, 106, 0.12);
+}
+
+.champ-name-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.champ-name-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 14px;
+  margin: 0 clamp(12px, 3vw, 28px);
+  padding: clamp(28px, 6vh, 56px) clamp(18px, 4vw, 40px);
+  border-radius: 18px;
+  border: 1px solid rgba(232, 197, 106, 0.28);
+  overflow: hidden;
+  background:
+    linear-gradient(165deg, rgba(18, 14, 12, 0.72), rgba(8, 8, 10, 0.88)),
+    var(--tile) center / cover no-repeat;
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 230, 170, 0.12);
+}
+
+.champ-name-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(232, 197, 106, 0.22), transparent 55%),
+    linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+}
+
+.champ-name-kicker,
+.champ-name-title,
+.champ-name-blurb,
+.champ-name-field,
+.champ-name-foot {
+  position: relative;
+  z-index: 1;
+}
+
+.champ-name-kicker {
+  margin: 0;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: clamp(13px, 1.6vw, 16px);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #e8c56a;
+  opacity: 0.92;
+}
+
+.champ-name-title {
+  margin: 0;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-weight: 600;
+  font-size: clamp(42px, 8vw, 84px);
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #f7f1ea;
+  text-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+.champ-name-blurb {
+  margin: 0;
+  max-width: 34ch;
+  font-size: clamp(15px, 2vw, 18px);
+  line-height: 1.45;
+  color: rgba(247, 241, 234, 0.88);
+}
+
+.champ-name-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 28rem);
+  margin-top: 8px;
+}
+
+.champ-name-label {
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(232, 197, 106, 0.9);
+}
+
+.champ-name-input {
+  width: 100%;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(232, 197, 106, 0.45);
+  background: rgba(0, 0, 0, 0.45);
+  color: #f7f1ea;
+  font-family: "Barlow Condensed", "Instrument Sans", sans-serif;
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  outline: none;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 230, 170, 0.1);
+}
+
+.champ-name-input::placeholder {
+  color: rgba(247, 241, 234, 0.28);
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+.champ-name-input:focus {
+  border-color: rgba(240, 215, 138, 0.95);
+  box-shadow:
+    0 0 0 2px rgba(232, 197, 106, 0.35),
+    0 16px 36px rgba(0, 0, 0, 0.4);
+}
+
+.champ-name-foot {
+  margin: 4px 0 0;
+  max-width: 40ch;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(247, 241, 234, 0.62);
+}
+
+@media (max-width: 700px) {
+  .gta-tiles-champ-locked {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .champ-name-stage {
+    margin: 0 8px;
+    padding: 24px 16px;
+  }
+}
+
+.gta-tiles-champ-cena {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+/* Stejný footprint jako Cena — jen 5 sloupců (lehká → těžká). */
+.gta-tiles-champ-diff {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 700px) {
+  .gta-tiles-champ-cena {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+  }
+
+  .gta-tiles-champ-diff {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+  }
+}
+
 .champ-postqual-col {
   min-width: 0;
 }
@@ -3563,7 +3830,28 @@ button.menu-start:disabled {
   gap: 10px;
 }
 
-/* Číselník kol (1–69) — quick race / multiplayer */
+/* Číselník kol (1–69) — quick race setup / multiplayer */
+.race-setup-laps {
+  margin: 8px 16px 0;
+  text-align: center;
+}
+
+.race-setup-laps-na {
+  margin: 8px 16px 0;
+  text-align: center;
+  opacity: 0.75;
+}
+
+/* Počet kol hned pod náhledem mapy (menu tratí) */
+.track-laps-label {
+  margin: 6px 0 0;
+  text-align: center;
+}
+
+.track-laps-stepper {
+  margin: 6px 0 4px;
+}
+
 .lap-stepper {
   display: flex;
   align-items: center;
@@ -4221,6 +4509,188 @@ button.menu-start:disabled {
   .champ-pit-stage {
     position: static;
   }
+}
+
+.menu-confirm-card .menu-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.menu-confirm-card .menu-confirm-actions .btn-ghost,
+.menu-confirm-card .menu-confirm-actions .menu-start,
+.scooter-modal-card .menu-start,
+.scooter-modal-card .btn-ghost {
+  min-width: 7rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.champ-cal-body,
+.champ-standings-body {
+  position: relative;
+  isolation: isolate;
+}
+
+.champ-cal-body::before,
+.champ-standings-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(8, 10, 14, 0.72), rgba(8, 10, 14, 0.88)),
+    var(--tile) center / cover no-repeat;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.champ-f1-standings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.champ-f1-row {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.champ-f1-row.is-me {
+  border-color: rgba(232, 197, 106, 0.55);
+  background: rgba(232, 197, 106, 0.12);
+}
+
+.champ-f1-pos {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.champ-f1-name {
+  font-weight: 600;
+}
+
+.champ-f1-pts {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.color-grid--step {
+  align-items: center;
+}
+
+.paint-step-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f7f1ea;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.paint-step-btn:hover {
+  border-color: rgba(232, 197, 106, 0.7);
+}
+
+.champ-reward-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.champ-reward-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 197, 106, 0.28);
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(247, 241, 234, 0.88);
+}
+
+.menu-champ-cal .champ-cal-list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.champ-cal-track-card {
+  display: grid !important;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  min-height: 78px;
+  padding: 8px 10px !important;
+}
+
+.champ-cal-track-card.is-done {
+  opacity: 0.55;
+}
+
+.champ-cal-track-card.is-current {
+  border-color: rgba(255, 210, 120, 0.55);
+}
+
+.champ-cal-card-map {
+  display: block;
+  height: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.champ-cal-card-map .track-preview-stage {
+  height: 100%;
+  min-height: 0;
+}
+
+.champ-cal-card-map .track-preview-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.champ-cal-card-map .track-map-legend {
+  display: none;
+}
+
+.champ-cal-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.champ-cal-card-text strong {
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.champ-cal-card-text span {
+  font-size: 0.82rem;
+  opacity: 0.78;
 }
 
 .champ-cal-list {

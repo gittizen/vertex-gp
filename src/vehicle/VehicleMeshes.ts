@@ -703,51 +703,51 @@ function createMonsterTruck(color: number, neon = 0x7a8fa8): THREE.Group {
   frame.position.set(0, 1.05, 0.05)
   g.add(frame)
 
-  // Karoserie jako krátké auto (menší „korba“)
-  const tub = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.55, 1.65), body)
-  tub.position.set(0, 1.72, -0.05)
+  // Karoserie jako krátké auto (užší než rozchod obřích kol)
+  const tub = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.36, 1.25), body)
+  tub.position.set(0, 1.62, -0.05)
   paint(tub)
   g.add(tub)
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.2, 1.15), body.clone())
-  hood.position.set(0, 1.92, 1.15)
-  hood.rotation.x = 0.18
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.14, 0.88), body.clone())
+  hood.position.set(0, 1.74, 0.95)
+  hood.rotation.x = 0.16
   paint(hood)
   g.add(hood)
-  const snout = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.38, 0.55), body.clone())
-  snout.position.set(0, 1.58, 1.72)
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.26, 0.42), body.clone())
+  snout.position.set(0, 1.48, 1.45)
   paint(snout)
   g.add(snout)
 
-  // Kabina víc dopředu, nižší
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.72, 0.95), glass)
-  cabin.position.set(0, 2.28, 0.28)
+  // Malá kabina — úzká kabina uprostřed, ne přes obří kola
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.36, 0.52), glass)
+  cabin.position.set(0, 1.98, 0.18)
   g.add(cabin)
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.09, 0.85), body.clone())
-  roof.position.set(0, 2.68, 0.22)
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.06, 0.46), body.clone())
+  roof.position.set(0, 2.18, 0.15)
   paint(roof)
   g.add(roof)
 
   // Roll cage nad kabinou
   for (const sx of [-1, 1] as const) {
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.95, 6), chrome)
-    bar.position.set(0.68 * sx, 2.35, -0.35)
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.55, 6), chrome)
+    bar.position.set(0.4 * sx, 2.05, -0.18)
     g.add(bar)
   }
-  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.04, 6, 12, Math.PI), chrome)
+  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.03, 6, 12, Math.PI), chrome)
   hoop.rotation.x = Math.PI / 2
   hoop.rotation.z = Math.PI / 2
-  hoop.position.set(0, 2.62, -0.35)
+  hoop.position.set(0, 2.18, -0.18)
   g.add(hoop)
 
-  // Blatníky nad koly
+  // Krátké „eyebrow“ blatníky — jen stříška nad pneumatikou, ne přes celý disk
   for (const [sx, sz] of [
     [-1, 1.35],
     [1, 1.35],
     [-1, -1.45],
     [1, -1.45],
   ] as const) {
-    const fender = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.16, 0.95), body.clone())
-    fender.position.set(1.28 * sx, 1.78, sz)
+    const fender = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.32), body.clone())
+    fender.position.set(1.05 * sx, 2.05, sz)
     paint(fender)
     g.add(fender)
   }
@@ -763,17 +763,17 @@ function createMonsterTruck(color: number, neon = 0x7a8fa8): THREE.Group {
   }
 
   // Krátký bed / spoiler vzadu (ne velká traktorová korba)
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.28, 0.7), dark)
-  bed.position.set(0, 1.78, -1.15)
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.22, 0.58), dark)
+  bed.position.set(0, 1.68, -1.0)
   g.add(bed)
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 0.18), body.clone())
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 0.14), body.clone())
   paint(lip)
-  lip.position.set(0, 1.98, -1.45)
+  lip.position.set(0, 1.84, -1.25)
   g.add(lip)
 
   for (const sx of [-1, 1] as const) {
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.85, 6), chrome)
-    stack.position.set(0.82 * sx, 2.05, -0.72)
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.7, 6), chrome)
+    stack.position.set(0.68 * sx, 1.92, -0.62)
     g.add(stack)
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.42, 6), chrome)
     pipe.rotation.x = Math.PI / 2
@@ -2147,11 +2147,13 @@ function createNakedBike(color: number, neon = 0x7a8fa8): THREE.Group {
   const engine = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.34, 0.5), chrome)
   engine.position.set(0, 0.5, 0.05)
   g.add(engine)
-  const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.7, 8), chrome)
-  exhaust.rotation.z = Math.PI / 2
-  exhaust.rotation.y = 0.15
-  exhaust.position.set(0.22, 0.42, -0.35)
-  g.add(exhaust)
+  // Boční výfuky podél rámu dozadu (osa Z), jako Harley — ne tyč do strany.
+  for (const sx of [-1, 1] as const) {
+    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.048, 0.95, 7), chrome)
+    exhaust.rotation.x = Math.PI / 2
+    exhaust.position.set(0.28 * sx, 0.36, -0.32)
+    g.add(exhaust)
+  }
 
   const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.78, 5), chrome)
   fork.rotation.x = 0.32
@@ -2459,11 +2461,13 @@ function createEnduro(color: number, neon = 0x7a8fa8): THREE.Group {
   engine.position.set(0, 0.58, 0.02)
   g.add(engine)
 
-  const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.75, 8), chrome)
-  exhaust.rotation.z = Math.PI / 2
-  exhaust.rotation.y = 0.2
-  exhaust.position.set(0.24, 0.5, -0.4)
-  g.add(exhaust)
+  // Boční výfuky podél rámu dozadu (osa Z) — ne tyč do strany.
+  for (const sx of [-1, 1] as const) {
+    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.05, 0.9, 7), chrome)
+    exhaust.rotation.x = Math.PI / 2
+    exhaust.position.set(0.26 * sx, 0.42, -0.38)
+    g.add(exhaust)
+  }
 
   // Vysoké blatníky
   const fFender = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.55), body.clone())

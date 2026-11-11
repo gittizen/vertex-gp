@@ -1,8 +1,7 @@
 /**
- * Build playable static sites for archives into ./site/
- * GH Pages base: /vertex-gp/<ver>/  (repo slug zůstává kvůli starým archivům)
- * Hub karty: nejnovější první → nejstarší poslední.
- * Staré refy se nepřepisují — jen se z nich znovu sestaví stejný archiv + přidá aktuální.
+ * Build playable static archives into ./site/
+ * GH Pages base: /vertex-gp/<ver>/
+ * Public hub: 0.3 (current) → 0.2 → 0.1
  */
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -14,64 +13,29 @@ const ROOT = path.resolve(__dirname, '..')
 const SITE = path.join(ROOT, 'site')
 const WORK = path.join(ROOT, '.worktrees')
 
-/** Pořadí: nejnovější → nejstarší (hub i build log). */
+/** Newest first. */
 const VERSIONS = [
   {
-    id: '0.8',
-    ref: 'HEAD',
-    base: '/vertex-gp/0.8/',
-    title: '0.8 — setup + šampionát',
-    blurb: 'Závod setup, šampionát, FS polish, Do Klecánek default, Netlify.',
-    current: true,
-  },
-  {
-    id: '0.7',
-    ref: 'v0.7.0',
-    base: '/vertex-gp/0.7/',
-    title: '0.7 — KlecMania',
-    blurb: 'KlecMania + Space drift brzda, mute, bike boost, Tarantino Klecany.',
-  },
-  {
-    id: '0.6',
-    ref: 'v0.6.0',
-    base: '/vertex-gp/0.6/',
-    title: '0.6 — UX + zvuk',
-    blurb: 'Jet CTA, dock Zpět, engine SFX, landscape-first.',
-  },
-  {
-    id: '0.5',
-    ref: '0.5',
-    base: '/vertex-gp/0.5/',
-    title: '0.5 — AI + demo polish',
-    blurb: 'Live tempo AI, náhodní soupeři, kalendář, lidské docs.',
-  },
-  {
-    id: '0.4',
-    ref: '0.4',
-    base: '/vertex-gp/0.4/',
-    title: '0.4 — reálnější svět',
-    blurb: 'Okolí silnice, terén, unikátní mapy, stíny bez děr.',
-  },
-  {
     id: '0.3',
-    ref: '0.3',
+    ref: 'HEAD',
     base: '/vertex-gp/0.3/',
-    title: '0.3 — mobil + polish',
-    blurb: 'Dotyk, Netlify, pace learning, šampionát, archivy verzí.',
+    title: 'KlecMania',
+    blurb: 'Career, race setup, standings, WebP menu.',
+    current: true,
   },
   {
     id: '0.2',
     ref: '0.2',
     base: '/vertex-gp/0.2/',
-    title: '0.2 — Klec GP',
-    blurb: 'Značka Klecany, freestyle/Plácek, atmosféry, online hub.',
+    title: 'Klec GP',
+    blurb: 'Klecany brand, freestyle, atmospheres.',
   },
   {
     id: '0.1',
     ref: '0.1',
     base: '/vertex-gp/0.1/',
-    title: '0.1 — Vertex GP',
-    blurb: 'Začátek: engine, tratě z dat, AI, online WS, tuning.',
+    title: 'Vertex GP',
+    blurb: 'First engine: tracks, AI, online WS.',
   },
 ]
 
@@ -106,130 +70,135 @@ function copyScreenshot(versionId) {
 }
 
 function writeHub() {
-  const cards = VERSIONS.map((v) => {
+  const rows = VERSIONS.map((v) => {
     const shot = copyScreenshot(v.id)
+    const badge = v.current ? ' <span class="badge">current</span>' : ''
     const img = shot
-      ? `<img class="shot" src="${shot}" alt="Gameplay ${v.id}" loading="lazy" />`
-      : `<div class="shot shot-empty">bez screenshotu</div>`
-    return `    <a class="card" href="./${v.id}/">
-      ${img}
-      <span class="ver">${v.id}</span>
-      <strong>${v.title}</strong>
-      <p>${v.blurb}</p>
-      <span class="play">Hrát →</span>
-    </a>`
+      ? `<img class="shot" src="${shot}" alt="${v.id}" loading="lazy" width="320" height="180" />`
+      : ''
+    return `      <tr>
+        <td><a href="./${v.id}/"><code>${v.id}</code></a>${badge}</td>
+        <td><strong>${v.title}</strong><br /><span class="muted">${v.blurb}</span></td>
+        <td class="shot-cell">${img}<a class="btn" href="./${v.id}/">Play</a></td>
+      </tr>`
   }).join('\n')
 
   const html = `<!doctype html>
-<html lang="cs">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>KlecMania · verze</title>
+  <title>gittizen / vertex-gp</title>
   <style>
     :root {
-      --bg0: #0a0c10;
-      --bg1: #12161e;
-      --ink: #e8edf5;
-      --muted: #9aa6b8;
-      --line: #2a3344;
-      --accent: #e6b422;
-      --blood: #c8102e;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --link: #2f81f7;
+      --green: #3fb950;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100vh;
-      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
-      color: var(--ink);
-      background:
-        radial-gradient(900px 420px at 12% -10%, #1a2436 0%, transparent 55%),
-        radial-gradient(700px 380px at 90% 0%, #2a1810 0%, transparent 50%),
-        linear-gradient(180deg, var(--bg1), var(--bg0));
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background: var(--bg);
     }
-    main {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 3rem 1.25rem 4rem;
-    }
-    h1 {
-      font-size: clamp(1.8rem, 4vw, 2.6rem);
-      letter-spacing: 0.04em;
-      margin: 0 0 0.4rem;
-    }
-    .sub { color: var(--muted); margin: 0 0 2rem; max-width: 42rem; line-height: 1.5; }
-    .grid {
-      display: grid;
-      gap: 1rem;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    }
-    .card {
-      display: flex;
-      flex-direction: column;
-      gap: 0.45rem;
-      padding: 0;
-      overflow: hidden;
-      border: 1px solid var(--line);
-      background: rgba(14, 18, 26, 0.72);
-      color: inherit;
-      text-decoration: none;
-      transition: border-color 0.15s, transform 0.15s;
-    }
-    .card:hover { border-color: var(--accent); transform: translateY(-2px); }
-    .shot {
-      display: block;
+    main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
+    header { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .repo { color: var(--muted); font-size: 14px; margin: 0 0 6px; }
+    .repo a { color: var(--link); text-decoration: none; }
+    .repo a:hover { text-decoration: underline; }
+    h1 { font-size: 28px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.02em; }
+    .about { color: var(--muted); margin: 0; max-width: 40rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+    .meta a { color: var(--link); text-decoration: none; }
+    .meta a:hover { text-decoration: underline; }
+    table {
       width: 100%;
-      aspect-ratio: 16 / 9;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; background: #010409; }
+    tr:last-child td { border-bottom: 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    td a { color: var(--link); text-decoration: none; }
+    td a:hover { text-decoration: underline; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 8px;
+      border-radius: 2em;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--green);
+      vertical-align: middle;
+    }
+    .shot-cell { white-space: nowrap; }
+    .shot {
+      display: inline-block;
+      width: 120px;
+      height: 68px;
       object-fit: cover;
-      background: #0e1218;
-      border-bottom: 1px solid var(--line);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      margin-right: 10px;
+      vertical-align: middle;
+      background: #010409;
     }
-    .shot-empty {
-      display: grid;
-      place-items: center;
-      color: var(--muted);
-      font-size: 0.85rem;
+    .btn {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: var(--text) !important;
+      font-weight: 600;
+      font-size: 12px;
+      text-decoration: none !important;
+      vertical-align: middle;
     }
-    .card .ver, .card strong, .card p, .card .play {
-      padding-left: 1.15rem;
-      padding-right: 1.15rem;
-    }
-    .card .ver { padding-top: 0.9rem; }
-    .card .play { padding-bottom: 1.15rem; }
-    .ver {
-      font-size: 0.75rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--accent);
-    }
-    .card p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.45; flex: 1; }
-    .play { margin-top: 0.35rem; font-size: 0.9rem; color: var(--ink); }
-    .note {
-      margin-top: 2rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 0.9rem;
-      line-height: 1.5;
-    }
-    .note a { color: var(--accent); }
+    .btn:hover { background: #30363d; border-color: #8b949e; }
+    footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
+    footer a { color: var(--link); }
   </style>
 </head>
 <body>
   <main>
-    <h1>KlecMania</h1>
-    <p class="sub">Hratelné archivy — nejnovější nahoře, nejstarší dole. Příběh změn je ve VERSIONS.md v repu. Aktuální: <strong>0.8</strong> na Netlify i Pages.</p>
-    <div class="grid">
-${cards}
-    </div>
-    <p class="note">
-      Aktuální produkce (Netlify):
-      <a href="https://klecmania.netlify.app/">klecmania.netlify.app</a>
-      · zdroj:
-      <a href="https://github.com/gittizen/KlecMania">gittizen/KlecMania</a>
-      · hub URL (historicky):
-      <a href="https://gittizen.github.io/vertex-gp/">gittizen.github.io/vertex-gp</a>
-    </p>
+    <header>
+      <p class="repo"><a href="https://github.com/gittizen">gittizen</a> / <a href="https://github.com/gittizen/vertex-gp"><strong>vertex-gp</strong></a></p>
+      <h1>KlecMania</h1>
+      <p class="about">Browser racing around Klecany. Playable version archives for this repo.</p>
+      <p class="meta">
+        <span>Author <a href="https://github.com/gittizen">@gittizen</a></span>
+        <span>Prod <a href="https://klecmania.netlify.app/">Netlify</a></span>
+        <span>Source <a href="https://github.com/gittizen/vertex-gp">GitHub</a></span>
+      </p>
+    </header>
+    <table>
+      <thead>
+        <tr><th>Version</th><th>Notes</th><th>Play</th></tr>
+      </thead>
+      <tbody>
+${rows}
+      </tbody>
+    </table>
+    <footer>
+      Public hub ships <strong>0.1 → 0.3</strong> only. Older experiment tags remain in git history.
+    </footer>
   </main>
 </body>
 </html>
