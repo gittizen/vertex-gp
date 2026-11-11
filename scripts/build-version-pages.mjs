@@ -1,7 +1,8 @@
 /**
  * Build playable static archives into ./site/
  * GH Pages base: /vertex-gp/<ver>/
- * Public hub: 0.3 (current) → 0.2 → 0.1
+ * Public hub: 0.3 (current) → 0.0.2 → 0.0.1
+ * (git branch refs 0.1 / 0.2 zůstávají; public ID je přečíslené)
  */
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -13,7 +14,7 @@ const ROOT = path.resolve(__dirname, '..')
 const SITE = path.join(ROOT, 'site')
 const WORK = path.join(ROOT, '.worktrees')
 
-/** Newest first. */
+/** Newest first. `ref` = git; `id` = public folder / URL. */
 const VERSIONS = [
   {
     id: '0.3',
@@ -24,18 +25,21 @@ const VERSIONS = [
     current: true,
   },
   {
-    id: '0.2',
+    id: '0.0.2',
     ref: '0.2',
-    base: '/vertex-gp/0.2/',
+    base: '/vertex-gp/0.0.2/',
     title: 'Klec GP',
     blurb: 'Klecany brand, freestyle, atmospheres.',
+    /** screenshot / notes folder (legacy name kept on disk) */
+    notesDir: '0.2',
   },
   {
-    id: '0.1',
+    id: '0.0.1',
     ref: '0.1',
-    base: '/vertex-gp/0.1/',
+    base: '/vertex-gp/0.0.1/',
     title: 'Vertex GP',
     blurb: 'First engine: tracks, AI, online WS.',
+    notesDir: '0.1',
   },
 ]
 
@@ -53,25 +57,26 @@ function copyDir(src, dest) {
   fs.cpSync(src, dest, { recursive: true })
 }
 
-function copyScreenshot(versionId) {
-  const srcWebp = path.join(ROOT, 'versions', versionId, 'screenshot.webp')
-  const srcPng = path.join(ROOT, 'versions', versionId, 'screenshot.png')
+function copyScreenshot(v) {
+  const notes = v.notesDir || v.id
+  const srcWebp = path.join(ROOT, 'versions', notes, 'screenshot.webp')
+  const srcPng = path.join(ROOT, 'versions', notes, 'screenshot.png')
   const destDir = path.join(SITE, 'shots')
   fs.mkdirSync(destDir, { recursive: true })
   if (fs.existsSync(srcWebp)) {
-    fs.copyFileSync(srcWebp, path.join(destDir, `${versionId}.webp`))
-    return `./shots/${versionId}.webp`
+    fs.copyFileSync(srcWebp, path.join(destDir, `${v.id}.webp`))
+    return `./shots/${v.id}.webp`
   }
   if (fs.existsSync(srcPng)) {
-    fs.copyFileSync(srcPng, path.join(destDir, `${versionId}.png`))
-    return `./shots/${versionId}.png`
+    fs.copyFileSync(srcPng, path.join(destDir, `${v.id}.png`))
+    return `./shots/${v.id}.png`
   }
   return null
 }
 
 function writeHub() {
   const rows = VERSIONS.map((v) => {
-    const shot = copyScreenshot(v.id)
+    const shot = copyScreenshot(v)
     const badge = v.current ? ' <span class="badge">current</span>' : ''
     const img = shot
       ? `<img class="shot" src="${shot}" alt="${v.id}" loading="lazy" width="320" height="180" />`
@@ -197,7 +202,8 @@ ${rows}
       </tbody>
     </table>
     <footer>
-      Public hub ships <strong>0.1 → 0.3</strong> only. Older experiment tags remain in git history.
+      Current release is <strong>0.3</strong>. Earlier public builds are labeled <strong>0.0.1</strong> / <strong>0.0.2</strong>.
+      Extra notes under <code>versions/</code> stay in the repo; experiment tags remain in git history.
     </footer>
   </main>
 </body>
@@ -218,10 +224,12 @@ function patchHistoricalTree(dir, version) {
     )
   }
 
+  // Public id may already be full (0.0.1); don't append another ".0".
+  const pkgVer = /^\d+\.\d+\.\d+$/.test(version.id) ? version.id : `${version.id}.0`
   const pkgPath = path.join(dir, 'package.json')
   if (fs.existsSync(pkgPath)) {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-    pkg.version = `${version.id}.0`
+    pkg.version = pkgVer
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
   }
 
@@ -229,7 +237,7 @@ function patchHistoricalTree(dir, version) {
   if (fs.existsSync(gv)) {
     fs.writeFileSync(
       gv,
-      `/** Distribuční verze hry (UI + package). */\nexport const GAME_VERSION = '${version.id}.0'\nexport const GAME_VERSION_SHORT = '${version.id}'\n`,
+      `/** Distribuční verze hry (UI + package). */\nexport const GAME_VERSION = '${pkgVer}'\nexport const GAME_VERSION_SHORT = '${version.id}'\n`,
       'utf8',
     )
   } else {

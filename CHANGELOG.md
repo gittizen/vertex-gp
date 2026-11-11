@@ -7,9 +7,10 @@
 - Menu perf: WebP tiles (~45→13 MB), fewer full `innerHTML` picks, preview DPR + dispose.
 - Esc pause color chips; pit rider `+` / solo `±`.
 
-## Earlier
+## Earlier (public labels)
 
-- **0.2** — Klec GP brand, freestyle, atmospheres (see git tag / branch `0.2`).
-- **0.1** — Vertex GP foundation (branch `0.1`).
+- **0.0.2** — Klec GP (git branch `0.2`).
+- **0.0.1** — Vertex GP (git branch `0.1`).
 
-Full notes for intermediate experiments: git history / old tags (`v0.4.0`…`v0.8.0`).
+Local `versions/` folders and older tags (`v0.4.0`…`v0.8.0`) are kept; hub playables are **0.0.1 / 0.0.2 / 0.3**.
+

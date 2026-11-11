@@ -30,7 +30,7 @@ jobs:
           git branch -f 0.1 6f21368 || git branch 0.1 6f21368
           git branch -f 0.2 54d764a || git branch 0.2 54d764a
       - run: npm ci
-      - name: Build version pages (0.3 current → 0.2 → 0.1)
+      - name: Build version pages (0.3 current → 0.0.2 → 0.0.1)
         run: node scripts/build-version-pages.mjs
       - uses: actions/upload-pages-artifact@v3
         with:

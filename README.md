@@ -11,9 +11,9 @@ Built by [@gittizen](https://github.com/gittizen) · **16+**
 | **Version hub** | [gittizen.github.io/vertex-gp](https://gittizen.github.io/vertex-gp/) |
 
 ```text
-0.3  KlecMania — career, setup, WebP menu   ← current
-0.2  Klec GP — brand / freestyle
-0.1  Vertex GP — engine start
+0.3    KlecMania — career, setup, WebP menu   ← current
+0.0.2  Klec GP — brand / freestyle
+0.0.1  Vertex GP — engine start
 ```
 
 ## Stack
@@ -32,7 +32,7 @@ Client only: `npm run dev` → http://127.0.0.1:5173/
 ## Repo layout
 
 - `src/` — game
-- `versions/` — short notes per archive
+- `versions/` — notes + screenshots (all kept, including older folders)
 - `VERSIONS.md` — version story
 - `CHANGELOG.md` — release notes
 
