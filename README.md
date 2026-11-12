@@ -12,8 +12,8 @@ Built by [@gittizen](https://github.com/gittizen) · **16+**
 
 ```text
 0.3    KlecMania — career, setup, WebP menu   ← current
-0.0.2  Klec GP — brand / freestyle
-0.0.1  Vertex GP — engine start
+0.2  Klec GP — brand / freestyle
+0.1  Vertex GP — engine start
 ```
 
 ## Stack
