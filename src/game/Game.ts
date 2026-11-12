@@ -51,12 +51,14 @@ import {
   isChampFsQual,
   needsChampPostQualSetup,
   defaultChampStartOrder,
+  generateQuickRaceAiNames,
+  champRivalName,
   type ChampGridSlot,
   type ChampLeague,
   CHAMP_FS_QUAL_MS,
 } from '../race/Championship'
 import { clampRaceLaps } from '../render/RaceSettings'
-import { roundPoints } from '../race/ChampEconomy'
+import { champPlacePoints, freestyleChampPoints } from '../race/ChampEconomy'
 import { champTuningToSolo } from '../tuning/PlayerTuning'
 import type { VehicleBranch } from '../vehicle/VehicleLook'
 import {
@@ -109,11 +111,11 @@ import { aiProfileForKind, aiSpeedMultForVehicle, profileForKind } from '../vehi
 import { freestyleRaceScore } from '../freestyle/FreestyleTricks'
 import { submitRaceRecord } from '../freestyle/Records'
 
-const AI_NAMES = [
-  { name: 'Nikola Beran', team: 'Klec', color: 0xc62828 },
-  { name: 'Petra Holá', team: 'Nord', color: 0x1565c0 },
-  { name: 'Marek Diviš', team: 'Stratos', color: 0x2e7d32 },
-]
+const AI_TEAMS = [
+  { team: 'Klec', color: 0xc62828 },
+  { team: 'Nord', color: 0x1565c0 },
+  { team: 'Stratos', color: 0x2e7d32 },
+] as const
 
 const PLAYER_COLORS = [0xc62828, 0x1565c0, 0x2e7d32, 0xef6c00]
 
@@ -151,6 +153,8 @@ export class Game {
   private mpRaceEnded = false
   /** Salt pro AI barvy (nový každý solo závod). */
   private aiLookSalt = (Math.random() * 1e9) | 0
+  /** Jména AI pro aktuální quick/MP závod (náhodná). */
+  private quickAiNames: [string, string, string] = generateQuickRaceAiNames()
   /** net playerId → vehicle index */
   private netSlots = new Map<string, number>()
   private remoteState = new Map<string, CarStateMsg>()
@@ -278,10 +282,14 @@ export class Game {
       if (this.mode !== 'race' || this.multiplayer) return
       if (this.race.phase === 'finished') return
       this.clearPause()
-      // Šamp: DNF / postup kola jako poslední → brief (bez finish karty)
+      // Šamp: Garáž (kolo se nepočítá). Kval: ven na hub (bez Garáže).
       if (this.activeChampionship) {
         const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
         if (career && !career.done) abandonRound(career)
+        if (career && !career.qualified) {
+          this.openChampHubFromQualLeave()
+          return
+        }
         this.openMenu()
         return
       }
@@ -396,9 +404,9 @@ export class Game {
             }
           : {
               id: `ai${i}`,
-              name: AI_NAMES[i - 1].name,
-              team: AI_NAMES[i - 1].team,
-              color: AI_NAMES[i - 1].color,
+              name: this.quickAiNames[i - 1]!,
+              team: AI_TEAMS[i - 1]!.team,
+              color: AI_TEAMS[i - 1]!.color,
               isPlayer: false,
               isBot: true,
             }
@@ -484,6 +492,40 @@ export class Game {
     this.entry.hide()
     this.input.setMobileHud(false)
     this.menu.showHome()
+    this.hud.update(this.player, this.race, this.cams, false)
+    this.hud.setMirrorFrame(false)
+    this.audio.setActive(false)
+    this.audio.unlock()
+    this.audio.setMusic(true)
+  }
+
+  /** Odchod z kvalifikace — hub (pokračovat/zrušit), ne Garáž. */
+  private openChampHubFromQualLeave(): void {
+    const champ = this.activeChampionship
+    this.clearPause()
+    this.input.setTabBoostHeld(false)
+    this.input.setEbrakeHeld(false)
+    this.escWasDown = true
+    this.ignoreEscUntilRelease = true
+    this.mode = 'menu'
+    this.multiplayer = false
+    this.net.disconnect()
+    this.unsubNet?.()
+    this.unsubNet = null
+    this.menu.setLobby(null, '', false)
+    for (const v of this.vehicles) {
+      v.mesh.visible = false
+      v.physics.speed = 0
+    }
+    this.entry.hide()
+    this.input.setMobileHud(false)
+    if (champ) {
+      this.raceSettings.reverse = peekPersistedReverse()
+      this.menu.showChampionshipBrief(champ.branch, champ.league, champ.season)
+    } else {
+      this.activeChampionship = null
+      this.menu.showHome()
+    }
     this.hud.update(this.player, this.race, this.cams, false)
     this.hud.setMirrorFrame(false)
     this.audio.setActive(false)
@@ -598,11 +640,21 @@ export class Game {
   }
 
   private syncPauseHud(): void {
+    let champQual = false
+    if (this.activeChampionship) {
+      const career = getCareer(
+        this.activeChampionship.branch,
+        this.activeChampionship.league,
+        this.activeChampionship.season,
+      )
+      champQual = Boolean(career && !career.qualified)
+    }
     this.hud.setPaused(true, {
       kind: this.player.kind,
       immortal: !!this.player.immortal,
       allowImmortal: !this.multiplayer,
       championship: Boolean(this.activeChampionship),
+      championshipQual: champQual,
       multiplayer: this.multiplayer,
       escQuitCount: this.escQuitCount,
     })
@@ -858,6 +910,7 @@ export class Game {
     this.multiplayer = false
     this.mpRaceEnded = false
     this.recordsSaved = false
+    // Kariéra: barvy AI z rivalLookSalt (kval → celá sezóna). Quick: nový salt každý závod.
     this.aiLookSalt = (Math.random() * 1e9) | 0
     // Freestyle závod zrušen — triky zůstávají u skate/kola
     if (this.raceSettings.freestyle) {
@@ -875,11 +928,18 @@ export class Game {
     // Solo soutěže zrušeny — vždy klasický závod s AI
     this.activeCompetition = 'none'
     saveCompetitionSettings({ id: 'none' })
-    if (!opts?.keepTrack && this.activeChampionship) {
-      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
-      const champTrack = career ? championshipTrackId(career) : null
-      if (champTrack) trackId = champTrack
-      if (career) {
+    if (this.activeChampionship) {
+      const career = getCareer(
+        this.activeChampionship.branch,
+        this.activeChampionship.league,
+        this.activeChampionship.season,
+      )
+      if (career && typeof career.rivalLookSalt === 'number') {
+        this.aiLookSalt = career.rivalLookSalt | 0
+      }
+      if (!opts?.keepTrack && career) {
+        const champTrack = championshipTrackId(career)
+        if (champTrack) trackId = champTrack
         // Jen pro tento závod — neukládat, ať kariéra nepřepíše default quick/MP.
         this.raceSettings.reverse = championshipReverse(career)
       }
@@ -1066,20 +1126,30 @@ export class Game {
     const v = this.player ?? this.vehicles[this.localSlot]
     const board = v?.isBoardKind() ?? false
     const portrait = window.matchMedia('(orientation: portrait)').matches
+    const joy = this.controlFeel.mobileScheme === 'joystick'
+    // Portrait FS pady · joystick: triky vždy (vpravo u boostu)
     const padKind = v?.kind === 'bike' || v?.kind === 'rocketBike' ? 'bike' : 'skate'
-    this.input.setMobileFsPad(!!board && portrait, padKind)
+    this.input.setMobileFsPad(!!board && (portrait || joy), padKind)
   }
 
   private applyAiDifficulty(): void {
     let diff = this.lastDifficulty
+    let form = 1
     if (this.activeChampionship) {
-      const career = getCareer(this.activeChampionship.branch, this.activeChampionship.league, this.activeChampionship.season)
+      const career = getCareer(
+        this.activeChampionship.branch,
+        this.activeChampionship.league,
+        this.activeChampionship.season,
+      )
       if (career && !career.done) {
+        const qualifying = !career.qualified
         const ramp = championshipAiSpeedFactor(
           career.round,
-          career.season,
           championshipTotalRounds(career.league, career.trackPool, career.season),
+          qualifying,
         )
+        form = ramp
+        // Ramp jen ≤ 1× zvolené úrovně — nikdy nad nastavený speedScale.
         diff = {
           ...this.lastDifficulty,
           speedScale: Math.max(0.2, this.lastDifficulty.speedScale * ramp),
@@ -1088,7 +1158,9 @@ export class Game {
     }
     for (let i = 0; i < this.vehicles.length; i++) {
       const brain = this.ai.get(this.vehicles[i])
-      brain?.setDifficulty(diff)
+      if (!brain) continue
+      brain.setDifficulty(diff)
+      brain.setSeasonForm(form)
     }
   }
 
@@ -1109,6 +1181,14 @@ export class Game {
     this.remoteState.clear()
     // localSlot nastaví loadTrack podle champ startOrder (default 0).
     this.localSlot = 0
+    this.quickAiNames = generateQuickRaceAiNames()
+    const champ = this.activeChampionship
+      ? getCareer(
+          this.activeChampionship.branch,
+          this.activeChampionship.league,
+          this.activeChampionship.season,
+        )
+      : null
     for (let i = 0; i < 4; i++) {
       this.vehicles[i].immortal = false
       if (i === 0) {
@@ -1119,8 +1199,11 @@ export class Game {
       } else {
         this.vehicles[i].info.isPlayer = false
         this.vehicles[i].info.isBot = true
-        this.vehicles[i].info.name = AI_NAMES[i - 1]!.name
-        this.vehicles[i].info.team = AI_NAMES[i - 1]!.team
+        const rivalIdx = (i - 1) as 0 | 1 | 2
+        this.vehicles[i].info.name = champ
+          ? champRivalName(champ, rivalIdx)
+          : this.quickAiNames[rivalIdx]!
+        this.vehicles[i].info.team = AI_TEAMS[rivalIdx]!.team
         this.vehicles[i].applyLook(this.aiLook(i))
       }
     }
@@ -1149,6 +1232,22 @@ export class Game {
     return places
   }
 
+  private champRivalTrickPts(
+    startOrder: ChampGridSlot[] | undefined,
+  ): [number, number, number] {
+    const order = startOrder ?? defaultChampStartOrder()
+    const tricks: [number, number, number] = [0, 0, 0]
+    for (let grid = 0; grid < 4; grid++) {
+      const slot = order[grid]
+      if (slot === 'player' || slot === undefined) continue
+      const rivalIdx = Number(slot) as 0 | 1 | 2
+      const v = this.vehicles[grid]
+      if (!v) continue
+      tricks[rivalIdx] = Math.max(0, Math.round(v.trickPoints))
+    }
+    return tricks
+  }
+
   private setupGridMultiplayer(order: string[], room: NetRoom): void {
     this.netSlots.clear()
     this.remoteState.clear()
@@ -1173,9 +1272,9 @@ export class Game {
         this.vehicles[i].info.isPlayer = netId === this.net.playerId
         this.vehicles[i].info.isBot = false
       } else if (this.menu.wantsLobbyFillAi()) {
-        const ai = AI_NAMES[i % AI_NAMES.length]
-        this.vehicles[i].info.name = ai.name
-        this.vehicles[i].info.team = ai.team
+        const aiIdx = i % 3
+        this.vehicles[i].info.name = this.quickAiNames[aiIdx]!
+        this.vehicles[i].info.team = AI_TEAMS[aiIdx]!.team
         this.vehicles[i].applyLook(this.aiLook(i))
         this.vehicles[i].info.isPlayer = false
         this.vehicles[i].info.isBot = true
@@ -1287,9 +1386,18 @@ export class Game {
         v.applyLook(this.aiLook(i))
         v.info.isPlayer = false
         v.info.isBot = true
-        const aiName = AI_NAMES[(i < this.localSlot ? i : i - 1) % AI_NAMES.length]!
-        v.info.name = aiName.name
-        v.info.team = aiName.team
+        const aiIdx = (i < this.localSlot ? i : i - 1) % 3
+        const champ = this.activeChampionship
+          ? getCareer(
+              this.activeChampionship.branch,
+              this.activeChampionship.league,
+              this.activeChampionship.season,
+            )
+          : null
+        v.info.name = champ
+          ? champRivalName(champ, aiIdx as 0 | 1 | 2)
+          : this.quickAiNames[aiIdx]!
+        v.info.team = AI_TEAMS[aiIdx]!.team
       }
     }
     if (this.localSlot !== 0) {
@@ -1875,26 +1983,53 @@ export class Game {
             const wasQual = !career.qualified
             const wasFsQual = isChampFsQual(career)
             const rivalPlaces = this.champRivalPlaces(career.startOrder)
+            const rivalTrickPts = this.champRivalTrickPts(career.startOrder)
             const { career: updated, advanced } = recordRoundFinish(career, {
               place,
               trickPts: this.player.trickPoints,
               rivalPlaces,
+              rivalTrickPts,
             })
-            // Kvalifikace: GRATULUJI vsuvka → jméno (bez výsledkové karty).
+            // Kvalifikace: GRATULUJI overlay přes finish → pak jméno.
             if (wasQual) {
               this.lastChampAdvanced = null
-              this.hud.setChampionshipResult(null)
+              this.hud.setChampionshipResult({
+                points: updated.points,
+                progress: championshipProgressLabel(updated),
+                done: false,
+                lastPts: 0,
+                qual: true,
+                fsQual: wasFsQual,
+                place,
+                advanced: true,
+              })
               this.menu.armQualCongrats()
-              queueMicrotask(() => this.openMenu())
             } else {
               this.lastChampAdvanced = advanced
+              const lastPts = advanced
+                ? updated.branch === 'freestyle'
+                  ? freestyleChampPoints([
+                      { place, trickPts: this.player.trickPoints },
+                      {
+                        place: rivalPlaces[0],
+                        trickPts: rivalTrickPts[0],
+                      },
+                      {
+                        place: rivalPlaces[1],
+                        trickPts: rivalTrickPts[1],
+                      },
+                      {
+                        place: rivalPlaces[2],
+                        trickPts: rivalTrickPts[2],
+                      },
+                    ])[0]!
+                  : champPlacePoints(place)
+                : 0
               this.hud.setChampionshipResult({
                 points: updated.points,
                 progress: championshipProgressLabel(updated),
                 done: updated.done,
-                lastPts: advanced
-                  ? roundPoints(updated.branch, place, this.player.trickPoints)
-                  : 0,
+                lastPts,
                 qual: false,
                 fsQual: wasFsQual,
                 place,

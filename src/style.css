@@ -1351,15 +1351,34 @@ html.portrait-blocked #app {
 }
 
 /*
- * Dock panel: scrolluje tělo, Zpět zůstává dole v černém poli (jako Zvuk).
+ * Dock panel (trať / vozidlo / MP / nastavení…): stejný footprint jako .gta-home,
+ * ať Esc lišta lícuje s Domů / Setup — jen posun metrik, bez nového stylu.
  */
 .menu-panel.menu-panel-dock {
-  height: min(88vh, 720px);
-  max-height: min(88vh, 720px);
-  min-height: min(64vh, 560px);
-  width: min(1120px, 96vw);
+  --gta-shell-w: min(1080px, 96vw);
+  --gta-shell-h: min(780px, calc(100dvh - 56px));
+  --gta-pad-y: 28px;
+  --gta-pad-x: 28px;
+  --gta-pad-b: 16px;
+  --gta-footer-h: 72px;
+
+  width: var(--gta-shell-w);
+  height: var(--gta-shell-h);
+  min-height: var(--gta-shell-h);
+  max-height: var(--gta-shell-h);
+  padding: var(--gta-pad-y) var(--gta-pad-x) var(--gta-pad-b);
   box-sizing: border-box;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#menu:has(.menu-panel-dock) {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .menu-panel-body {
@@ -1377,36 +1396,32 @@ html.portrait-blocked #app {
   display: none;
 }
 
-.menu-panel-dock > .menu-nav-back {
+.menu-panel-dock > .menu-nav-back,
+.menu-panel-dock > .menu-nav-back--flow {
   flex-shrink: 0;
   width: 100%;
   max-width: none;
-  margin: 0;
-  padding: 12px 4px 2px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 0 0 12px 12px;
-}
-
-.menu-panel-dock > .menu-nav-back--flow {
-  margin-top: 0;
+  margin-top: 10px;
   margin-bottom: 0;
-}
-
-@media (orientation: landscape) {
-  .menu-panel.menu-panel-dock {
-    height: min(90vh, 640px);
-    max-height: min(90vh, 640px);
-    min-height: min(70vh, 520px);
-  }
+  padding-top: 12px;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  height: var(--gta-footer-h, 72px);
+  min-height: var(--gta-footer-h, 72px);
+  max-height: var(--gta-footer-h, 72px);
+  box-sizing: border-box;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: 0 0 14px 14px;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
   .menu-panel.menu-panel-dock {
-    height: 94vh;
-    max-height: 94vh;
-    min-height: 0;
-    width: min(96vw, 1100px);
+    --gta-shell-h: min(94vh, calc(100dvh - 40px));
+    --gta-pad-y: 16px;
+    --gta-pad-x: 18px;
+    --gta-pad-b: 12px;
+    --gta-footer-h: 64px;
   }
 }
 
@@ -3861,6 +3876,16 @@ button.menu-start:disabled {
   grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
 }
 
+/* 5 úzkých dlaždic — kicker musí vejít (např. „JAKO KVALIFIKACE“). */
+.gta-tiles-champ-diff .gta-tile-kicker {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 @media (max-width: 700px) {
   .gta-tiles-champ-cena {
     grid-template-columns: 1fr !important;
@@ -4704,6 +4729,23 @@ button.menu-start:disabled {
   border-color: rgba(232, 197, 106, 0.7);
 }
 
+/* ± u tuningu (výkon / brzdy / …) — stejné chipy jako u barev */
+.tune-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.tune-step-row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tune-row--step .tune-step-row .paint-step-btn {
+  flex-shrink: 0;
+}
+
 .champ-reward-strip {
   display: flex;
   flex-wrap: wrap;
@@ -5135,6 +5177,7 @@ summary:focus-visible {
   }
 }
 
+/* Krátký landscape (vč. PC okna): jen kompaktnější tokeny, grid beze změny. */
 @media (orientation: landscape) and (max-height: 520px) {
   .gta-home {
     --gta-shell-h: min(94vh, calc(100dvh - 40px));
@@ -5150,6 +5193,53 @@ summary:focus-visible {
 
   .gta-home .gta-tile-hero {
     min-height: 0;
+  }
+
+  .gta-home > .gta-tiles {
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding-bottom: 8px;
+  }
+}
+
+/*
+ * Jen telefon landscape (úzký viewport): fr grid → tenký pás.
+ * PC (široké okno) sem nepadá i při nízké výšce.
+ */
+@media (orientation: landscape) and (max-width: 900px) and (max-height: 520px) {
+  .gta-home {
+    --gta-pad-y: 12px;
+    --gta-pad-x: 16px;
+    --gta-pad-b: 10px;
+    --gta-hero-mb: 8px;
+    --gta-footer-h: 56px;
+  }
+
+  .gta-home > .gta-tiles {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gta-tiles-gap);
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding-bottom: 8px;
+  }
+
+  .gta-home > .gta-tiles .gta-tile,
+  .gta-home > .gta-tiles .gta-tile-hero,
+  .gta-home > .gta-tiles .gta-tile-setup {
+    flex: 0 0 auto;
+    min-height: 76px;
+    height: auto;
+  }
+
+  .gta-home > .gta-tiles .gta-tile-hero {
+    min-height: 100px;
   }
 }
 

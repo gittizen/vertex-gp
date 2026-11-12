@@ -26,8 +26,10 @@ export type PauseHelp = {
   kind: VehicleKind
   immortal?: boolean
   allowImmortal?: boolean
-  /** Šampionát: ukázat i „Zrušit závod“. Rychlý závod = jen odstoupit. */
+  /** Šampionát: Garáž (kolo se nepočítá). */
   championship?: boolean
+  /** Kvalifikace — bez Garáže (ještě není setup). */
+  championshipQual?: boolean
   /** Multiplayer — bez odstoupení / zrušení solo flow. */
   multiplayer?: boolean
   /** Počet Esc ve pauze (1–3); 3 = odejít. */
@@ -452,10 +454,8 @@ export class Hud {
       immortalEl.hidden = !player.immortal
     }
 
-    const boosting =
-      (player.isMonsterFamily() && player.turboAmount > 0.25) ||
-      player.pushAmount > 0.2 ||
-      player.tabBoostAmount > 0.25
+    // Zlaté T jen při Shift (push / shiftBoost) — ne plyn / turbo / Tab.
+    const boosting = player.pushAmount > 0.2
     this.root.classList.toggle('hud-boost', boosting)
     this.root.classList.toggle('hud-fallen', player.fallen)
 
@@ -681,29 +681,28 @@ export class Hud {
               ? ` · drift ${scoreBit.driftPts}`
               : ''
       this.shareText = `KlecMania · ${this.trackName} · P${place} · ${timeStr}${extra}`
-      const champHomeBtn = `<button type="button" class="btn-ghost" id="btn-champ-home">${t('hud.champHome')}</button>`
+      const garageBtn = `<button type="button" class="btn-ghost" id="btn-champ-home">${t('pause.garage')}</button>`
       const menuBtn = `<button type="button" class="btn-ghost" id="btn-menu">${t('hud.menu')}</button>`
       const retryPreferred = `<button type="button" class="menu-start finish-cta-preferred" id="btn-restart">${t('hud.again')}</button>`
       const retryGhost = `<button type="button" class="btn-ghost" id="btn-restart">${t('hud.again')}</button>`
       const nextPreferred = `<button type="button" class="menu-start finish-cta-preferred" id="btn-champ-next">${t('hud.champNext')}</button>`
       const advancedOk = champ?.advanced !== false
+      // Kariéra finish: bez tlačítka „Kariéra“ — Garáž = brief (Jet/Pit/žebříček).
       const actions = this.onlineRace
         ? `<button type="button" class="menu-start" id="btn-menu">${t('menu.onlineAfterRace')}</button>`
         : champ?.qual
           ? `<button type="button" class="menu-start finish-cta-preferred" id="btn-champ-next">${t('hud.champQualContinue')}</button>
-            ${menuBtn}`
+            ${garageBtn}`
           : champ && !champ.done
             ? advancedOk
               ? `${nextPreferred}
             ${retryGhost}
-            ${champHomeBtn}
-            ${menuBtn}`
+            ${garageBtn}`
               : `${retryPreferred}
-            ${champHomeBtn}
-            ${menuBtn}`
+            ${garageBtn}`
             : champ?.done
               ? `${retryGhost}
-            ${champHomeBtn}
+            ${garageBtn}
             <button type="button" class="menu-start finish-cta-preferred" id="btn-menu">${t('hud.champDone')}</button>`
               : `${retryPreferred}
             ${menuBtn}`
@@ -821,19 +820,17 @@ export class Hud {
         <p class="bind-row-hint pause-action-hint">${t('pause.immortalHint')}</p>`
       : ''
 
-    // Rychlý závod: jen odstoupit. Šamp: odstoupit + zrušit. MP: bez solo exitů.
+    // Rychlý závod: ven. Kariéra (po kvalu): Garáž. Kvalifikace: bez Garáže.
     let exitBlock = ''
-    if (!mp) {
+    if (!mp && !help.championshipQual) {
       const retireHint = champ ? t('pause.retireHintChamp') : t('pause.retireHintSolo')
       exitBlock = `
         <button type="button" class="btn-ghost pause-exit-btn" id="btn-retire">${t('pause.retire')}</button>
-        <p class="bind-row-hint pause-action-hint">${retireHint}</p>
-        ${
-          champ
-            ? `<button type="button" class="btn-ghost pause-exit-btn" id="btn-menu">${t('pause.cancelRace')}</button>
-        <p class="bind-row-hint pause-action-hint">${t('pause.cancelHint')}</p>`
-            : ''
-        }`
+        <p class="bind-row-hint pause-action-hint">${retireHint}</p>`
+    } else if (!mp && help.championshipQual) {
+      exitBlock = `
+        <button type="button" class="btn-ghost pause-exit-btn" id="btn-retire">${t('pause.qualLeave')}</button>
+        <p class="bind-row-hint pause-action-hint">${t('pause.qualLeaveHint')}</p>`
     }
 
     const escSteps = `
@@ -865,9 +862,9 @@ export class Hud {
   }
 }
 
-/** Jen ovládání, které daný peklostroj skutečně používá. */
+/** Ovládání v pauza-kartě — Shift vždy (i když vůz nepřeřazuje). */
 function pauseActionsFor(kind: VehicleKind): BindAction[] {
-  const actions: BindAction[] = ['throttle', 'brake', 'steerLeft', 'steerRight']
+  const actions: BindAction[] = ['throttle', 'brake', 'steerLeft', 'steerRight', 'shiftUp', 'shiftDown']
   if (isFsBoardKind(kind)) {
     actions.push('push', 'tab')
   } else if (
@@ -880,8 +877,6 @@ function pauseActionsFor(kind: VehicleKind): BindAction[] {
     actions.push('push', 'tab')
   } else if (kind === 'moto' || kind === 'harley' || kind === 'kroska' || kind === 'naked' || kind === 'enduro') {
     actions.push('push')
-  } else if (kind !== 'scooter') {
-    actions.push('ebrake')
   }
   actions.push('camera', 'restart')
   return actions

@@ -13,9 +13,14 @@ import {
   listUnlockOrder,
   starterVehicles,
   buyVehicle,
-  canBuy,
   applyTuningUpgrade,
   completeSeasonAndPrepareNext,
+  ensureChampGarage,
+  getChampVehicleLook,
+  getChampVehicleTuning,
+  selectChampVehicle,
+  setChampVehicleLook,
+  champPaintCartCost,
   seasonPodiumRank,
   ensureChampRivalMidSpike,
   isChampQualifying,
@@ -27,7 +32,7 @@ import {
   assignChampPlayerName,
   getActiveCareerForBranch,
   wipeBranchCareers,
-  CHAMP_RIVAL_NAMES,
+  champRivalName,
   CHAMP_LEAGUES,
   LEAGUE_LAPS,
   CHAMP_FS_QUAL_MS,
@@ -38,8 +43,8 @@ import {
 } from '../race/Championship'
 import {
   CHAMP_START_CASH,
+  champPlacePoints,
   placeCash,
-  roundPoints,
   tuningUpgradeCost,
   vehicleBuyPrice,
 } from '../race/ChampEconomy'
@@ -151,7 +156,12 @@ import {
   type TrickBindingsMap,
 } from '../input/TrickBindings'
 import { freestyleList } from '../freestyle/FreestyleTricks'
-import { allRecords, recordsFor, shareLocalRecordsWithWorld } from '../freestyle/Records'
+import {
+  allRecords,
+  isScrubbedLeaderboardName,
+  recordsFor,
+  shareLocalRecordsWithWorld,
+} from '../freestyle/Records'
 import { fetchCloudRecords, type CloudRecordRow } from '../freestyle/CloudRecords'
 import { formatTime } from '../race/RaceManager'
 import { SCOOTER_INSULT_MAX, scooterInsult } from './scooterInsults'
@@ -380,11 +390,16 @@ export class Menu {
   /** Jednorázová vsuvka GRATULUJI po kvalifikaci (před jménem). */
   private qualCongratsPending = false
   private qualCongratsTimer: number | null = null
+  private qualCongratsSkipKey: ((e: Event) => void) | null = null
+  private qualCongratsSkipPtr: ((e: Event) => void) | null = null
   /** Náhled vozidla v pit stopu (i zamčené z ceníku). */
   private champPitPreview: VehicleKind | null = null
   /** Pit košík: draft tuningu + případný nákup vozu (až po Potvrdit). */
   private pitCartTune: PlayerTuningValues | null = null
-  private pitCartBuy: VehicleKind | null = null
+  /** Pit košík: libovolná neowněná auta (ne jen „další“ v pořadí). */
+  private pitCartBuys: VehicleKind[] = []
+  /** Draft barev v pitu (commit přes košík). */
+  private pitCartLook: VehicleLook | null = null
   /** Preferovaný pool (F / F+R) při startu nové sezóny. */
   private champPoolPref: ChampTrackPool = 'half'
   /** Draft série (obtížnost) — OK uloží, Esc/Zpět vrátí. */
@@ -579,21 +594,20 @@ export class Menu {
     this.champSeason = season
     this.champCareer = getCareer(branch, league, season) ?? getActiveCareerForBranch(branch)
     const career = this.champCareer
-    // Po kvalifikaci: GRATULUJI → jméno → Cena → obtížnost → brief.
-    if (career && career.qualified && !career.setupComplete && !career.nameChosen) {
-      if (this.qualCongratsPending) {
-        this.screen = 'champQualCongrats'
-      } else {
-        this.screen = 'champName'
-      }
+    // Po kvalifikaci nejdřív GRATULUJI (S1 i S2+).
+    if (this.qualCongratsPending && career?.qualified) {
+      this.screen = 'champQualCongrats'
+    } else if (career && !career.qualified) {
+      // S1 draft → hub (nákup startéru). S2+: setup hotový → brief (Jet = kval).
+      this.screen = career.setupComplete ? 'champBrief' : 'champHub'
     } else if (career && career.qualified && !career.nameChosen) {
-      this.screen = 'champName'
+      // S1: jméno → Cena → obtížnost. S2+: jméno už je.
+      this.screen = 'champPostQual'
     } else if (career && career.qualified && !career.leagueChosen) {
       this.screen = 'champCena'
     } else if (career && career.qualified && !career.seriesChosen) {
       this.screen = 'champDiff'
     } else {
-      if (career && needsChampPostQualSetup(career)) markChampSetupComplete(career)
       this.screen = 'champBrief'
     }
     applyUiAtmosphere(this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE)
@@ -637,6 +651,14 @@ export class Menu {
     if (this.qualCongratsTimer != null) {
       window.clearTimeout(this.qualCongratsTimer)
       this.qualCongratsTimer = null
+    }
+    if (this.qualCongratsSkipKey) {
+      window.removeEventListener('keydown', this.qualCongratsSkipKey, true)
+      this.qualCongratsSkipKey = null
+    }
+    if (this.qualCongratsSkipPtr) {
+      window.removeEventListener('pointerdown', this.qualCongratsSkipPtr, true)
+      this.qualCongratsSkipPtr = null
     }
   }
 
@@ -1195,6 +1217,26 @@ export class Menu {
     })
   }
 
+  /** Jednoduchý alert (OK) — např. málo prašulí v košíku. */
+  private showMenuAlert(message: string): void {
+    this.root.querySelector('.menu-confirm-modal')?.remove()
+    this.root.insertAdjacentHTML(
+      'beforeend',
+      `<div class="scooter-modal menu-confirm-modal" role="dialog" aria-modal="true">
+        <div class="scooter-modal-card menu-confirm-card">
+          <p>${this.escape(message)}</p>
+          <div class="menu-confirm-actions">
+            <button type="button" class="menu-start" data-alert-ok>${t('menu.ok')}</button>
+          </div>
+        </div>
+      </div>`,
+    )
+    this.root.querySelector('[data-alert-ok]')?.addEventListener('click', () => {
+      this.audioApi?.playClick?.()
+      this.root.querySelector('.menu-confirm-modal')?.remove()
+    })
+  }
+
   private bindScooterModal(onDismiss?: () => void): void {
     this.root.querySelector('[data-scooter-ok]')?.addEventListener('click', () => {
       this.confirmScooterModal(onDismiss)
@@ -1203,6 +1245,10 @@ export class Menu {
 
   handleEscape(): 'stay' | 'to-entry' {
     if (!this.visible) return 'stay'
+    if (this.root.querySelector('.menu-confirm-modal')) {
+      this.root.querySelector('.menu-confirm-modal')?.remove()
+      return 'stay'
+    }
     if (this.scooterPopup) {
       this.scooterModalEsc += 1
       if (this.scooterModalEsc >= 2) this.dismissScooterModalBack()
@@ -1288,6 +1334,7 @@ export class Menu {
       return 'stay'
     }
     if (this.screen === 'champName') {
+      // Vždy pokračovat/zrušit — ne přesměrovat na Cenu/obtížnost.
       this.screen = 'champPostQual'
       this.render()
       return 'stay'
@@ -1820,7 +1867,10 @@ export class Menu {
                   <strong>${this.vehicleLabel(kind)}</strong>
                   <span>${t(`menu.branch.${vehicleBranch(kind)}`)}</span>
                 </div>
-                ${this.paintRowHtml('color', t('menu.colorPick'), this.selectedColor, PLAYER_COLOR_CHOICES, true)}
+                ${this.paintRowHtml('color', t('menu.colorPick'), this.selectedColor, PLAYER_COLOR_CHOICES, true, {
+                  stepMinus: true,
+                  stepPlus: true,
+                })}
                 <details class="vehicle-more" open>
                   <summary>${t('menu.vehicleMore')}</summary>
                   ${
@@ -1931,20 +1981,33 @@ export class Menu {
                 ${
                   freestyle
                     ? ''
-                    : this.paintRowHtml('neon', t('menu.neonPick'), this.selectedNeon, NEON_COLOR_CHOICES, true)
-                }
-                ${this.paintRowHtml('wheel', t('menu.wheelPick'), this.selectedWheel, NEON_COLOR_CHOICES, true)}
-                ${
-                  vehicleHasRider(kind)
-                    ? this.paintRowHtml('rider', t('menu.riderPick'), this.selectedRider, NEON_COLOR_CHOICES, true, {
+                    : this.paintRowHtml('neon', t('menu.neonPick'), this.selectedNeon, NEON_COLOR_CHOICES, true, {
                         stepMinus: true,
                         stepPlus: true,
                       })
+                }
+                ${this.paintRowHtml('wheel', t('menu.wheelPick'), this.selectedWheel, NEON_COLOR_CHOICES, true, {
+                  stepMinus: true,
+                  stepPlus: true,
+                })}
+                ${
+                  vehicleHasRider(kind)
+                    ? this.paintRowHtml(
+                        'rider',
+                        t('menu.riderPick'),
+                        this.selectedRider,
+                        PLAYER_COLOR_CHOICES,
+                        true,
+                        { stepMinus: true, stepPlus: true },
+                      )
                     : ''
                 }
                 ${
                   vehicleHasHelm(kind)
-                    ? this.paintRowHtml('helm', t('menu.helmPick'), this.selectedHelm, NEON_COLOR_CHOICES, true)
+                    ? this.paintRowHtml('helm', t('menu.helmPick'), this.selectedHelm, NEON_COLOR_CHOICES, true, {
+                        stepMinus: true,
+                        stepPlus: true,
+                      })
                     : ''
                 }
               </div>
@@ -2864,15 +2927,15 @@ export class Menu {
             this.champCareer = active
             this.champLeague = active.league
             this.champSeason = active.season
-            // Rozehrané / zamčené → Cena (pokračovat / zrušit), ne bounce zpět.
-            if (active.setupComplete) {
-              this.screen = 'champCena'
-            } else if (active.qualified && !active.nameChosen) {
+            // Rozehrané / zamčené → Cena (pokračovat / zrušit). Po kvalu → Cena/Diff znovu.
+            if (active.qualified && !active.nameChosen) {
               this.screen = 'champPostQual'
             } else if (active.qualified && !active.leagueChosen) {
               this.screen = 'champCena'
             } else if (active.qualified && !active.seriesChosen) {
               this.screen = 'champDiff'
+            } else if (active.setupComplete) {
+              this.screen = 'champCena'
             } else {
               this.screen = 'champStarter'
             }
@@ -2930,12 +2993,40 @@ export class Menu {
       }
       this.clearQualCongratsTimer()
       this.audioApi?.playFanfare?.()
-      this.qualCongratsTimer = window.setTimeout(() => {
-        this.qualCongratsTimer = null
+      const finishCongrats = () => {
+        if (this.screen !== 'champQualCongrats') return
+        this.clearQualCongratsTimer()
         this.qualCongratsPending = false
-        this.screen = 'champName'
+        const career =
+          this.champCareer ?? getActiveCareerForBranch(this.champBranch)
+        this.champCareer = career
+        // S1: jméno → Cena → obtížnost. S2+: jméno zůstává → Cena → obtížnost.
+        if (!career?.nameChosen) {
+          this.screen = 'champName'
+        } else if (!career.leagueChosen) {
+          this.champPickLeague = career.league
+          this.screen = 'champCena'
+        } else if (!career.seriesChosen) {
+          this.champPickDiff = career.difficulty
+          this.screen = 'champDiff'
+        } else {
+          this.screen = 'champBrief'
+        }
         this.render()
-      }, 5000)
+      }
+      this.qualCongratsTimer = window.setTimeout(finishCongrats, 4000)
+      this.qualCongratsSkipKey = (e: Event) => {
+        e.preventDefault()
+        e.stopPropagation()
+        finishCongrats()
+      }
+      this.qualCongratsSkipPtr = (e: Event) => {
+        e.preventDefault()
+        e.stopPropagation()
+        finishCongrats()
+      }
+      window.addEventListener('keydown', this.qualCongratsSkipKey, true)
+      window.addEventListener('pointerdown', this.qualCongratsSkipPtr, true)
       return
     }
 
@@ -2971,7 +3062,7 @@ export class Menu {
             <p class="champ-name-kicker">${t(`menu.branch.${career.branch}`)} · ${t('champ.postQualTitle')}</p>
             <h2 class="champ-name-title">${t('champ.nameTitle')}</h2>
             <label class="champ-name-field">
-              <input type="text" class="champ-name-input" maxlength="24" data-champ-name value="${this.escape(this.champNameDraft)}" autocomplete="nickname" spellcheck="false" placeholder="${t('champ.namePlaceholder')}" />
+              <input type="text" class="champ-name-input" maxlength="16" data-champ-name value="${this.escape(this.champNameDraft)}" autocomplete="nickname" spellcheck="false" placeholder="${t('champ.namePlaceholder')}" />
             </label>
           </div>
           ${this.champOkNavRow('data-champ-name-ok', { okLabel: t('menu.next') })}
@@ -3022,8 +3113,13 @@ export class Menu {
           : null) ?? getActiveCareerForBranch(b)
       this.champCareer = draft
       // Zamčeno po OK obtížnosti / u rozehrané kariéry — jen pokračovat nebo zrušit.
+      // Po kvalu (S1 i S2+) jsou league/series odemčené → výběr Ceny znovu.
       const locked = Boolean(
-        draft && (draft.setupComplete || (draft.seriesChosen && draft.leagueChosen && draft.nameChosen)),
+        draft &&
+          draft.setupComplete &&
+          draft.seriesChosen &&
+          draft.leagueChosen &&
+          draft.nameChosen,
       )
       const postQualPick = Boolean(
         draft && draft.qualified && draft.nameChosen && !draft.seriesChosen && !draft.setupComplete,
@@ -3104,6 +3200,7 @@ export class Menu {
         return
       }
 
+      if (!this.champPickLeague) this.champPickLeague = draft.league
       const cenaTiles = CHAMP_LEAGUES.map((league) => {
         const active = this.champPickLeague === league
         return `<button type="button" class="gta-tile ${active ? 'gta-tile-live gta-tile-picked' : ''}" data-champ-cena="${league}" aria-pressed="${active ? 'true' : 'false'}" style="--tile:url('${champCenaArt(league)}')">
@@ -3124,7 +3221,11 @@ export class Menu {
           <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-cena" aria-label="${t('champ.cenaTitle')}">
             ${cenaTiles}
           </div>
-          ${this.champOkNavRow('data-champ-cena-ok', { okLabel: t('menu.next') })}
+          ${this.champOkNavRow('data-champ-cena-ok', {
+            okLabel: t('menu.next'),
+            // S2+: jméno už je — zpět na výběr jména nemá smysl.
+            hideBack: Boolean(draft.playerName && draft.nameChosen && draft.season >= 2),
+          })}
         </div>
       `
       this.bindMuteBar()
@@ -3191,8 +3292,10 @@ export class Menu {
       if (!this.champPickDiff) this.champPickDiff = career.difficulty
       const diffTiles = DIFFICULTIES.map((d) => {
         const active = d.id === this.champPickDiff
+        const kicker =
+          d.id === 'normal' ? t('champ.diffSameAsQual') : t('champ.difficulty')
         return `<button type="button" class="gta-tile ${active ? 'gta-tile-live gta-tile-picked' : ''}" data-champ-diff-tile="${d.id}" aria-pressed="${active ? 'true' : 'false'}" style="--tile:url('${difficultyArt(d.id)}')">
-          <span class="gta-tile-kicker">${t('champ.difficulty')}</span>
+          <span class="gta-tile-kicker">${kicker}</span>
           <strong class="gta-tile-label">${t(`diff.${d.id}`)}</strong>
           <span class="gta-tile-sub">${active ? t('champ.pickSelectedOk') : t('champ.diffNextSeasonHint')}</span>
         </button>`
@@ -3208,10 +3311,17 @@ export class Menu {
           <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-cena gta-tiles-champ-diff" aria-label="${t('champ.difficulty')}">
             ${diffTiles}
           </div>
-          ${this.champOkNavRow('data-champ-diff-ok', { hideBack: true })}
+          ${this.champOkNavRow('data-champ-diff-ok', { okLabel: t('menu.ok') })}
         </div>
       `
       this.bindMuteBar()
+      this.root.querySelector('[data-back]')?.addEventListener('click', () => {
+        this.audioApi?.playClick?.()
+        this.revertChampSeriesDraft(career)
+        this.champPickDiff = null
+        this.screen = 'champCena'
+        this.render()
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-champ-diff-tile]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.dataset.champDiffTile as DifficultyId
@@ -3356,13 +3466,8 @@ export class Menu {
         this.showChampionshipTrophy(career)
         return
       }
-      if (career.qualified && !career.setupComplete && !career.nameChosen) {
-        this.screen = 'champPostQual'
-        this.render()
-        return
-      }
       if (career.qualified && !career.nameChosen) {
-        this.screen = 'champName'
+        this.screen = 'champPostQual'
         this.render()
         return
       }
@@ -3375,9 +3480,6 @@ export class Menu {
         this.screen = 'champDiff'
         this.render()
         return
-      }
-      if (needsChampPostQualSetup(career)) {
-        markChampSetupComplete(career)
       }
       this.ensureChampLeagueDefaults(career)
       const brief = champBriefArt(
@@ -3409,7 +3511,7 @@ export class Menu {
         <div class="menu-shell menu-home gta-home">
           <header class="gta-home-hero">
             ${brandLockupHtml({ size: 'menu' })}
-            <p class="gta-tagline">${nameBit}${t(`menu.branch.${career.branch}`)} · ${leagueLabel} · S${career.season} · ${progress}</p>
+            <p class="gta-tagline">${t('champ.garageTitle')} · ${nameBit}${t(`menu.branch.${career.branch}`)} · ${leagueLabel} · S${career.season} · ${progress}</p>
           </header>
           <div class="gta-tiles gta-tiles-home3 gta-tiles-champ-brief gta-tiles-champ-brief-4">
             <button type="button" class="gta-tile gta-tile-hero" data-champ-jet style="--tile:url('${brief.jet}')">
@@ -3479,8 +3581,8 @@ export class Menu {
       const previewRes = career.results[this.champCalPreviewRound]
       const rewardChips = [1, 2, 3, 4]
         .map((p) => {
-          const cash = placeCash(p, career.difficulty)
-          const pts = roundPoints(career.branch, p, 0)
+          const cash = placeCash(p)
+          const pts = champPlacePoints(p)
           return `<span class="champ-reward-chip">P${p} · ${pts}b · ${this.formatChampCash(cash)}</span>`
         })
         .join('')
@@ -3599,15 +3701,12 @@ export class Menu {
         this.render()
         return
       }
-      if (career.nameChosen) {
-        this.screen = career.leagueChosen
-          ? career.seriesChosen
-            ? 'champBrief'
-            : 'champDiff'
-          : 'champCena'
-        this.render()
-        return
-      }
+      // Zůstává pokračovat/zrušit i když jméno už bylo zvoleno (Zpět ze jména).
+      const continueGoesTo = !career.nameChosen
+        ? 'champName'
+        : !career.leagueChosen
+          ? 'champCena'
+          : 'champDiff'
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -3636,7 +3735,7 @@ export class Menu {
       this.bindBack('champHub')
       this.root.querySelector('[data-postqual-continue]')?.addEventListener('click', () => {
         this.champNameDraft = career.playerName ?? ''
-        this.screen = 'champName'
+        this.screen = continueGoesTo
         this.render()
       })
       this.root.querySelector('[data-postqual-cancel]')?.addEventListener('click', () => {
@@ -3673,9 +3772,9 @@ export class Menu {
       const dp = career.driverPoints ?? [career.points, 0, 0, 0]
       const entries = [
         { name: career.playerName || t('champ.nameTitle'), pts: dp[0]!, me: true },
-        { name: CHAMP_RIVAL_NAMES[0], pts: dp[1]!, me: false },
-        { name: CHAMP_RIVAL_NAMES[1], pts: dp[2]!, me: false },
-        { name: CHAMP_RIVAL_NAMES[2], pts: dp[3]!, me: false },
+        { name: champRivalName(career, 0), pts: dp[1]!, me: false },
+        { name: champRivalName(career, 1), pts: dp[2]!, me: false },
+        { name: champRivalName(career, 2), pts: dp[3]!, me: false },
       ].sort((a, b) => b.pts - a.pts || (a.me === b.me ? 0 : a.me ? -1 : 1))
       const rows = entries
         .map(
@@ -3730,11 +3829,12 @@ export class Menu {
         this.render()
         return
       }
-      if (!this.pitCartTune) this.resetPitCart(career)
-      const draftTune = this.pitCartTune ?? { ...career.tuning }
+      ensureChampGarage(career)
+      if (!this.pitCartTune || !this.pitCartLook) this.resetPitCart(career)
+      const draftTune = this.pitCartTune ?? getChampVehicleTuning(career)
+      if (!this.pitCartLook) this.pitCartLook = getChampVehicleLook(career)
       const order = listUnlockOrder(career.branch)
       const shopDisplay = sortKindsBySpeedDesc(order)
-      const nextLocked = order.find((k) => !career.unlocked.includes(k))
       const trapShop: VehicleKind[] =
         career.branch === 'freestyle' ? ['scooter', 'rocketScooter'] : []
       if (
@@ -3744,32 +3844,29 @@ export class Menu {
         this.champPitPreview = career.vehicle
       }
       const previewKind = this.champPitPreview
-      const cart = this.pitCartSummary(career, draftTune, this.pitCartBuy)
+      const cart = this.pitCartSummary(career, draftTune, this.pitCartBuys, this.pitCartLook)
       const shopRows = shopDisplay
         .map((k) => {
           const i = order.indexOf(k)
           const owned = career.unlocked.includes(k)
           const price = vehicleBuyPrice(career.branch, i, career.difficulty)
-          const isNext = nextLocked === k
-          const check = isNext ? canBuy(career, k) : null
           const previewOn = previewKind === k ? 'is-preview' : ''
-          const inCart = this.pitCartBuy === k
+          const inCart = this.pitCartBuys.includes(k)
           const priceLabel = owned
             ? t('champ.shopOwned')
             : price != null
               ? this.formatKc(price)
               : '—'
-          const state = owned ? 'is-owned' : isNext ? 'is-next' : 'is-locked'
-          const buyBtn =
-            isNext && check?.ok
-              ? `<button type="button" class="btn-ghost ${inCart ? 'active' : ''}" data-champ-cart-buy="${k}">${inCart ? t('champ.cartQueued') : t('champ.addToCart')}</button>`
-              : isNext && check?.reason === 'insufficient_cash'
-                ? `<span class="tune-help">${t('champ.cantAfford')}</span>`
-                : ''
+          const state = owned ? 'is-owned' : inCart ? 'is-next' : 'is-locked'
+          const buyBtn = owned
+            ? ''
+            : price == null
+              ? ''
+              : `<button type="button" class="btn-ghost ${inCart ? 'active' : ''}" data-champ-cart-buy="${k}">${inCart ? t('champ.cartQueued') : t('champ.addToCart')}</button>`
           return `<div class="champ-shop-row ${state} ${previewOn}" data-champ-preview="${k}" role="button" tabindex="0">
                   <div>
                     <strong>${this.vehicleLabel(k)}</strong>
-                    <span>${priceLabel}${isNext && !owned ? ` · ${t('champ.shopNext')}` : ''}${!owned ? ` · ${t('champ.shopPreview')}` : ''}</span>
+                    <span>${priceLabel}${!owned ? ` · ${t('champ.shopPreview')}` : ''}</span>
                   </div>
                   ${buyBtn}
                 </div>`
@@ -3778,7 +3875,7 @@ export class Menu {
       const trapRows = trapShop
         .map((k) => {
           const previewOn = previewKind === k ? 'is-preview' : ''
-          const inCart = this.pitCartBuy === k
+          const inCart = this.pitCartBuys.includes(k)
           return `<div class="champ-shop-row is-next ${previewOn}" data-champ-preview="${k}" role="button" tabindex="0">
                   <div>
                     <strong>${this.vehicleLabel(k)}</strong>
@@ -3802,9 +3899,13 @@ export class Menu {
             ? tuningUpgradeCost(val, career.difficulty, base, career.vehicle, career.branch)
             : 0
         const costBit = upCost > 0 ? ` · ${this.formatKc(upCost)}` : ''
-        return `<label class="tune-row">
+        return `<label class="tune-row tune-row--step">
           <span class="tune-label">${t(`menu.${key}`)} <span class="tune-val">${val}</span>${costBit}</span>
-          <input type="range" min="0" max="${CHAMP_TUNING_MAX}" step="1" value="${val}" data-champ-tune="${key}" />
+          <div class="tune-step-row">
+            <button type="button" class="paint-step-btn" data-champ-tune-step="${key}" data-tune-dir="-1" aria-label="-">−</button>
+            <input type="range" min="0" max="${CHAMP_TUNING_MAX}" step="1" value="${val}" data-champ-tune="${key}" />
+            <button type="button" class="paint-step-btn" data-champ-tune-step="${key}" data-tune-dir="1" aria-label="+">+</button>
+          </div>
         </label>`
       }).join('')
       const previewOwned = career.unlocked.includes(previewKind)
@@ -3815,12 +3916,16 @@ export class Menu {
               .map((l) => `<li>${this.escape(l)}</li>`)
               .join('')}</ul>`
       if (this.pitAccordionOpen == null) this.pitAccordionOpen = 'shop'
+      const shopMeta =
+        this.pitCartBuys.length > 0
+          ? `${this.pitCartBuys.length}`
+          : t('champ.shopOwned')
       const pitAcc = [
         this.menuAccordionBlock({
           id: 'shop',
           open: this.pitAccordionOpen,
           title: t('champ.shopTitle'),
-          meta: nextLocked ? this.vehicleLabel(nextLocked) : t('champ.shopOwned'),
+          meta: shopMeta,
           active: this.pitAccordionOpen === 'shop',
           body: catalog,
         }),
@@ -3858,15 +3963,55 @@ export class Menu {
                   <strong>${this.vehicleLabel(previewKind)}</strong>
                   <span>${previewOwned ? t('champ.shopOwned') : t('champ.shopPreview')}</span>
                 </div>
+                ${this.paintRowHtml(
+                  'color',
+                  t('menu.colorPick'),
+                  this.selectedColor,
+                  PLAYER_COLOR_CHOICES,
+                  true,
+                  { stepMinus: true, stepPlus: true },
+                )}
+                ${
+                  vehicleBranch(previewKind) === 'freestyle'
+                    ? ''
+                    : this.paintRowHtml(
+                        'neon',
+                        t('menu.neonPick'),
+                        this.selectedNeon,
+                        NEON_COLOR_CHOICES,
+                        true,
+                        { stepMinus: true, stepPlus: true },
+                      )
+                }
+                ${this.paintRowHtml(
+                  'wheel',
+                  t('menu.wheelPick'),
+                  this.selectedWheel,
+                  NEON_COLOR_CHOICES,
+                  true,
+                  { stepMinus: true, stepPlus: true },
+                )}
                 ${
                   vehicleHasRider(previewKind)
                     ? this.paintRowHtml(
                         'rider',
                         t('menu.riderPick'),
                         this.selectedRider,
+                        PLAYER_COLOR_CHOICES,
+                        true,
+                        { stepMinus: true, stepPlus: true },
+                      )
+                    : ''
+                }
+                ${
+                  vehicleHasHelm(previewKind)
+                    ? this.paintRowHtml(
+                        'helm',
+                        t('menu.helmPick'),
+                        this.selectedHelm,
                         NEON_COLOR_CHOICES,
                         true,
-                        { stepPlus: true },
+                        { stepMinus: true, stepPlus: true },
                       )
                     : ''
                 }
@@ -3879,8 +4024,8 @@ export class Menu {
                   <p class="champ-cart-total">${t('champ.cartTotal')}: <strong>${this.formatKc(cart.total)}</strong>
                     · ${t('champ.cartRemain')}: <strong>${this.formatChampCash(Math.max(0, career.cash - cart.total))}</strong></p>
                   <div class="champ-cart-actions">
-                    <button type="button" class="btn-ghost" data-champ-cart-confirm ${cart.total <= 0 || cart.total > career.cash ? 'disabled' : ''}>${t('champ.cartConfirm')}</button>
-                    <button type="button" class="btn-ghost" data-champ-cart-clear ${cart.total <= 0 && !this.pitCartBuy ? 'disabled' : ''}>${t('champ.cartClear')}</button>
+                    <button type="button" class="btn-ghost" data-champ-cart-confirm ${cart.total <= 0 ? 'disabled' : ''}>${t('champ.cartConfirm')}</button>
+                    <button type="button" class="btn-ghost" data-champ-cart-clear ${cart.total <= 0 && this.pitCartBuys.length === 0 ? 'disabled' : ''}>${t('champ.cartClear')}</button>
                   </div>
                 </div>
               </div>
@@ -3910,14 +4055,21 @@ export class Menu {
         this.vehiclePreview = new VehiclePreview(canvas)
         this.vehiclePreview.setVehicle(previewKind, this.currentLook())
       }
-      this.bindPaintPickers()
+      this.bindPaintPickers(() => {
+        if (!this.champCareer) return
+        // Barvy aktivního vozu → košík bez full re-render (žádný skok obrazovky).
+        this.pitCartLook = this.lookFromSelected(this.champCareer.vehicle)
+        this.refreshPitCartDom()
+      })
       this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cart-buy]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation()
           const k = btn.dataset.champCartBuy as VehicleKind
           if (!k) return
-          this.pitCartBuy = this.pitCartBuy === k ? null : k
-          this.render()
+          const i = this.pitCartBuys.indexOf(k)
+          if (i >= 0) this.pitCartBuys = this.pitCartBuys.filter((x) => x !== k)
+          else this.pitCartBuys = [...this.pitCartBuys, k]
+          this.refreshPitCartDom()
         })
       })
       this.root.querySelector('[data-champ-cart-confirm]')?.addEventListener('click', () => {
@@ -3953,56 +4105,48 @@ export class Menu {
           if (!this.champCareer) return
           const k = btn.dataset.champVeh as VehicleKind
           if (this.champCareer.unlocked.includes(k)) {
-            this.champCareer.vehicle = k
+            this.champCareer = selectChampVehicle(this.champCareer, k)
             this.champPitPreview = k
-            saveCareer(this.champCareer)
+            this.resetPitCart(this.champCareer)
             this.render()
           }
         })
       })
-      this.root.querySelectorAll<HTMLInputElement>('[data-champ-tune]').forEach((input) => {
-        const refreshCartUi = () => {
-          if (!this.champCareer || !this.pitCartTune) return
-          const key = input.dataset.champTune as keyof PlayerTuningValues
-          const target = Number(input.value)
-          if (!Number.isFinite(target)) return
-          const clamped = Math.max(0, Math.min(CHAMP_TUNING_MAX, Math.round(target)))
-          this.pitCartTune = { ...this.pitCartTune, [key]: clamped }
-          const label = input.parentElement?.querySelector('.tune-val')
-          if (label) label.textContent = String(clamped)
-          const base = this.champCareer.tuning[key]
-          const costBit =
-            clamped > base
-              ? ` · ${this.formatKc(tuningUpgradeCost(clamped, this.champCareer.difficulty, base, this.champCareer.vehicle, this.champCareer.branch))}`
-              : ''
-          const lab = input.parentElement?.querySelector('.tune-label')
-          if (lab) {
-            lab.innerHTML = `${t(`menu.${key}`)} <span class="tune-val">${clamped}</span>${costBit}`
-          }
-          const cartEl = this.root.querySelector('[data-champ-cart]')
-          if (!cartEl) return
-          const summary = this.pitCartSummary(this.champCareer, this.pitCartTune, this.pitCartBuy)
-          const linesHost = cartEl.querySelector('[data-cart-lines]')
-          if (linesHost) {
-            linesHost.innerHTML =
-              summary.lines.length === 0
-                ? `<p class="tune-help">${t('champ.cartEmpty')}</p>`
-                : `<ul class="champ-cart-lines">${summary.lines
-                    .map((l) => `<li>${this.escape(l)}</li>`)
-                    .join('')}</ul>`
-          }
-          const totalP = cartEl.querySelector('.champ-cart-total')
-          if (totalP) {
-            totalP.innerHTML = `${t('champ.cartTotal')}: <strong>${this.formatKc(summary.total)}</strong>
-                  · ${t('champ.cartRemain')}: <strong>${this.formatChampCash(Math.max(0, this.champCareer.cash - summary.total))}</strong>`
-          }
-          const conf = cartEl.querySelector<HTMLButtonElement>('[data-champ-cart-confirm]')
-          if (conf) conf.disabled = summary.total <= 0 || summary.total > this.champCareer.cash
-          const clear = cartEl.querySelector<HTMLButtonElement>('[data-champ-cart-clear]')
-          if (clear) clear.disabled = summary.total <= 0 && !this.pitCartBuy
+      const applyChampTuneValue = (key: keyof PlayerTuningValues, raw: number) => {
+        if (!this.champCareer || !this.pitCartTune) return
+        const clamped = Math.max(0, Math.min(CHAMP_TUNING_MAX, Math.round(raw)))
+        this.pitCartTune = { ...this.pitCartTune, [key]: clamped }
+        const input = this.root.querySelector<HTMLInputElement>(`input[data-champ-tune="${key}"]`)
+        if (input) input.value = String(clamped)
+        const row = input?.closest('.tune-row') ?? null
+        const base = this.champCareer.tuning[key]
+        const costBit =
+          clamped > base
+            ? ` · ${this.formatKc(tuningUpgradeCost(clamped, this.champCareer.difficulty, base, this.champCareer.vehicle, this.champCareer.branch))}`
+            : ''
+        const lab = row?.querySelector('.tune-label')
+        if (lab) {
+          lab.innerHTML = `${t(`menu.${key}`)} <span class="tune-val">${clamped}</span>${costBit}`
         }
-        input.addEventListener('input', refreshCartUi)
-        input.addEventListener('change', refreshCartUi)
+        this.refreshPitCartDom()
+      }
+      this.root.querySelectorAll<HTMLInputElement>('[data-champ-tune]').forEach((input) => {
+        const onTune = () => {
+          const key = input.dataset.champTune as keyof PlayerTuningValues
+          applyChampTuneValue(key, Number(input.value))
+        }
+        input.addEventListener('input', onTune)
+        input.addEventListener('change', onTune)
+      })
+      this.root.querySelectorAll<HTMLButtonElement>('[data-champ-tune-step]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (!this.pitCartTune) return
+          const key = btn.dataset.champTuneStep as keyof PlayerTuningValues
+          const dir = Number(btn.dataset.tuneDir) || 1
+          applyChampTuneValue(key, (this.pitCartTune[key] ?? 0) + dir)
+        })
       })
       this.bindMenuAccordionToggle((id) => {
         const next = id as 'shop' | 'garage' | 'tune'
@@ -4151,13 +4295,9 @@ export class Menu {
       this.root.querySelector('[data-champ-next-season]')?.addEventListener('click', () => {
         this.champSeasonCompleteInfo = null
         this.champTrophyCareerKey = ''
-        this.champBranch = career.branch
-        this.champLeague = career.league
         if (nextSeason == null || !nextCareer) return
-        this.champSeason = nextSeason
-        this.champCareer = nextCareer
-        this.screen = 'champBrief'
-        this.render()
+        // S2+ začíná kvalifikací → hub (ne Garáž).
+        this.showChampionshipBrief(career.branch, career.league, nextSeason)
       })
       return
     }
@@ -4315,19 +4455,22 @@ export class Menu {
     const plus = step?.stepPlus
       ? `<button type="button" class="paint-step-btn" data-paint-step="${kind}" data-paint-dir="1" aria-label="+">+</button>`
       : ''
+    // Kapátko = skutečná barva. COLOR_NONE → tmavý seed (ne falešná červená #c62828).
+    const rgbNum = selected >= 0 ? selected & 0xffffff : 0x1a1a1a
+    const rgbHex = '#' + rgbNum.toString(16).padStart(6, '0')
     return `<p class="tune-rules">${label}</p>
       <div class="color-grid ${step ? 'color-grid--step' : ''}">
         ${minus}
         ${allowNone ? this.colorSwatchHtml(kind, COLOR_NONE, selected) : ''}
         ${choices.map((c) => this.colorSwatchHtml(kind, c, selected)).join('')}
         <label class="color-rgb" title="${t('menu.colorRgb')}">
-          <input type="color" id="${kind}-rgb" value="${selected < 0 ? '#c62828' : '#' + selected.toString(16).padStart(6, '0')}" />
+          <input type="color" id="${kind}-rgb" value="${rgbHex}" />
         </label>
         ${plus}
       </div>`
   }
 
-  private bindPaintPickers(): void {
+  private bindPaintPickers(onChange?: () => void): void {
     const slots: Array<{
       key: 'color' | 'neon' | 'wheel' | 'rider' | 'helm'
       get: () => number
@@ -4369,7 +4512,7 @@ export class Menu {
           this.selectedRider = v
         },
         apply: (v) => this.vehiclePreview?.setRiderColor(v),
-        fallback: DEFAULT_VEHICLE_LOOK.rider,
+        fallback: PLAYER_COLOR_CHOICES[0]!,
       },
       {
         key: 'helm',
@@ -4395,8 +4538,10 @@ export class Menu {
           if (this.vehiclePreview) {
             slot.apply(v)
             sync()
+            onChange?.()
           } else {
-            this.render()
+            onChange?.()
+            if (!onChange) this.render()
           }
         })
       })
@@ -4406,6 +4551,7 @@ export class Menu {
         slot.set(v)
         slot.apply(v)
         sync()
+        onChange?.()
       })
     }
     this.root.querySelectorAll<HTMLButtonElement>('[data-paint-step]').forEach((btn) => {
@@ -4415,10 +4561,13 @@ export class Menu {
         const slot = slots.find((s) => s.key === key)
         if (!slot) return
         const choices =
-          key === 'color' ? [...PLAYER_COLOR_CHOICES] : [...NEON_COLOR_CHOICES]
-        const pool = key === 'color' || key === 'neon' || key === 'wheel' || key === 'rider' || key === 'helm'
-          ? [COLOR_NONE, ...choices]
-          : choices
+          key === 'color' || key === 'rider'
+            ? [...PLAYER_COLOR_CHOICES]
+            : [...NEON_COLOR_CHOICES]
+        const pool =
+          key === 'color' || key === 'neon' || key === 'wheel' || key === 'rider' || key === 'helm'
+            ? [COLOR_NONE, ...choices]
+            : choices
         const cur = slot.get()
         let idx = pool.indexOf(cur)
         if (idx < 0) idx = 0
@@ -4430,9 +4579,14 @@ export class Menu {
             b.classList.toggle('active', Number(b.dataset[slot.key]) === next)
           })
           const rgb = this.root.querySelector<HTMLInputElement>(`#${slot.key}-rgb`)
-          if (rgb && next >= 0) rgb.value = '#' + next.toString(16).padStart(6, '0')
+          if (rgb) {
+            const n = next >= 0 ? next & 0xffffff : 0x1a1a1a
+            rgb.value = '#' + n.toString(16).padStart(6, '0')
+          }
+          onChange?.()
         } else {
-          this.render()
+          onChange?.()
+          if (!onChange) this.render()
         }
       })
     })
@@ -4605,15 +4759,83 @@ export class Menu {
     this.startSolo()
   }
 
+  /** Aktualizuj košík v DOM bez full `render()` — bez skoku obrazovky. */
+  private refreshPitCartDom(): void {
+    if (!this.champCareer || !this.pitCartTune) return
+    const summary = this.pitCartSummary(
+      this.champCareer,
+      this.pitCartTune,
+      this.pitCartBuys,
+      this.pitCartLook,
+    )
+    const cartEl = this.root.querySelector('[data-champ-cart]')
+    if (cartEl) {
+      const linesHost = cartEl.querySelector('[data-cart-lines]')
+      if (linesHost) {
+        linesHost.innerHTML =
+          summary.lines.length === 0
+            ? `<p class="tune-help">${t('champ.cartEmpty')}</p>`
+            : `<ul class="champ-cart-lines">${summary.lines
+                .map((l) => `<li>${this.escape(l)}</li>`)
+                .join('')}</ul>`
+      }
+      const totalP = cartEl.querySelector('.champ-cart-total')
+      if (totalP) {
+        totalP.innerHTML = `${t('champ.cartTotal')}: <strong>${this.formatKc(summary.total)}</strong>
+                  · ${t('champ.cartRemain')}: <strong>${this.formatChampCash(Math.max(0, this.champCareer.cash - summary.total))}</strong>`
+      }
+      const conf = cartEl.querySelector<HTMLButtonElement>('[data-champ-cart-confirm]')
+      if (conf) conf.disabled = summary.total <= 0
+      const clear = cartEl.querySelector<HTMLButtonElement>('[data-champ-cart-clear]')
+      if (clear) clear.disabled = summary.total <= 0 && this.pitCartBuys.length === 0
+    }
+    this.root.querySelectorAll<HTMLButtonElement>('[data-champ-cart-buy]').forEach((btn) => {
+      const k = btn.dataset.champCartBuy as VehicleKind
+      const inCart = Boolean(k && this.pitCartBuys.includes(k))
+      btn.classList.toggle('active', inCart)
+      btn.textContent = inCart ? t('champ.cartQueued') : t('champ.addToCart')
+    })
+    this.root.querySelectorAll<HTMLElement>('.champ-shop-row').forEach((row) => {
+      const buy = row.querySelector<HTMLButtonElement>('[data-champ-cart-buy]')
+      if (!buy || row.classList.contains('is-owned')) return
+      const inCart = buy.classList.contains('active')
+      row.classList.toggle('is-next', inCart)
+      row.classList.toggle('is-locked', !inCart)
+    })
+  }
+
+  private applyLookToSelected(look: VehicleLook): void {
+    this.selectedColor = look.body
+    this.selectedNeon = look.neon
+    this.selectedWheel = look.wheel
+    this.selectedRider = look.rider
+    this.selectedHelm = look.helm
+  }
+
+  private lookFromSelected(kind: VehicleKind): VehicleLook {
+    const freestyle = vehicleBranch(kind) === 'freestyle'
+    return {
+      body: this.selectedColor,
+      neon: freestyle ? COLOR_NONE : this.selectedNeon,
+      wheel: this.selectedWheel,
+      rider: this.selectedRider,
+      helm: this.selectedHelm,
+    }
+  }
+
   private resetPitCart(career: ChampCareer): void {
-    this.pitCartTune = { ...career.tuning }
-    this.pitCartBuy = null
+    ensureChampGarage(career)
+    this.pitCartTune = getChampVehicleTuning(career)
+    this.pitCartLook = getChampVehicleLook(career)
+    this.pitCartBuys = []
+    this.applyLookToSelected(this.pitCartLook)
   }
 
   private pitCartSummary(
     career: ChampCareer,
     draft: PlayerTuningValues,
-    buy: VehicleKind | null,
+    buys: VehicleKind[],
+    draftLook: VehicleLook | null = this.pitCartLook,
   ): { lines: string[]; total: number } {
     const lines: string[] = []
     let total = 0
@@ -4626,18 +4848,28 @@ export class Menu {
         lines.push(`${t(`menu.${key}`)} ${from}→${to} · ${this.formatKc(cost)}`)
       }
     }
-    if (buy) {
+    if (draftLook) {
+      const committed = getChampVehicleLook(career, career.vehicle)
+      const paint = champPaintCartCost(career.vehicle, committed, draftLook)
+      if (paint.total > 0) {
+        total += paint.total
+        lines.push(
+          `${t('champ.paintCart')} ×${paint.slots.length} · ${this.formatKc(paint.total)}`,
+        )
+      }
+    }
+    const order = listUnlockOrder(career.branch)
+    for (const buy of buys) {
       if (isScooterTrapKind(buy)) {
         total += 15_000
         lines.push(`${this.vehicleLabel(buy)} · ${this.formatKc(15_000)}`)
-      } else {
-        const order = listUnlockOrder(career.branch)
-        const idx = order.indexOf(buy)
-        const price = idx >= 0 ? vehicleBuyPrice(career.branch, idx, career.difficulty) : null
-        if (price != null) {
-          total += price
-          lines.push(`${this.vehicleLabel(buy)} · ${this.formatKc(price)}`)
-        }
+        continue
+      }
+      const idx = order.indexOf(buy)
+      const price = idx >= 0 ? vehicleBuyPrice(career.branch, idx, career.difficulty) : null
+      if (price != null) {
+        total += price
+        lines.push(`${this.vehicleLabel(buy)} · ${this.formatKc(price)}`)
       }
     }
     return { lines, total }
@@ -4646,12 +4878,26 @@ export class Menu {
   private commitPitCart(): void {
     if (!this.champCareer || !this.pitCartTune) return
     // Koloběžka / raketová koloběžka v košíku = žádná platba, jen hláška
-    if (this.pitCartBuy && isScooterTrapKind(this.pitCartBuy)) {
-      this.selectedVehicle = this.pitCartBuy
+    const trap = this.pitCartBuys.find((k) => isScooterTrapKind(k))
+    if (trap) {
+      this.selectedVehicle = trap
       this.bumpScooterTrap()
       return
     }
+    const draftLook = this.pitCartLook ?? this.lookFromSelected(this.champCareer.vehicle)
+    const summary = this.pitCartSummary(
+      this.champCareer,
+      this.pitCartTune,
+      this.pitCartBuys,
+      draftLook,
+    )
+    if (summary.total <= 0) return
+    if (summary.total > this.champCareer.cash) {
+      this.showMenuAlert(t('champ.noCashPopup'))
+      return
+    }
     let career = this.champCareer
+    ensureChampGarage(career)
     // Nejdřív downgrady (zdarma), pak upgrady — šamp bez solo rozpočtu
     for (const key of TUNE_KEYS) {
       const from = career.tuning[key]
@@ -4667,9 +4913,25 @@ export class Menu {
         career = applyTuningUpgrade(career, key, to)
       }
     }
-    if (this.pitCartBuy) {
-      career = buyVehicle(career, this.pitCartBuy)
-      this.champPitPreview = this.pitCartBuy
+    // Barvy aktivního vozu (default slot zdarma už v champPaintCartCost).
+    const committed = getChampVehicleLook(career, career.vehicle)
+    const paint = champPaintCartCost(career.vehicle, committed, draftLook)
+    if (paint.total > 0 || paint.slots.length > 0 || draftLook) {
+      const anyChange =
+        draftLook.body !== committed.body ||
+        draftLook.neon !== committed.neon ||
+        draftLook.wheel !== committed.wheel ||
+        draftLook.rider !== committed.rider ||
+        draftLook.helm !== committed.helm
+      if (anyChange) {
+        career.cash -= paint.total
+        career = setChampVehicleLook(career, career.vehicle, draftLook)
+      }
+    }
+    for (const buy of this.pitCartBuys) {
+      career = buyVehicle(career, buy)
+      this.champPitPreview = buy
+      this.applyLookToSelected(getChampVehicleLook(career, buy))
     }
     saveCareer(career)
     this.champCareer = career
@@ -4680,8 +4942,13 @@ export class Menu {
   private startChampionshipRace(): void {
     const career = this.champCareer
     if (!career || career.done) return
+    // Po kvalu nejdřív Cena / obtížnost (S1 i jméno) — Jet nesmí setup přeskočit.
     if (needsChampPostQualSetup(career)) {
-      markChampSetupComplete(career)
+      if (!career.nameChosen) this.screen = 'champName'
+      else if (!career.leagueChosen) this.screen = 'champCena'
+      else this.screen = 'champDiff'
+      this.render()
+      return
     }
     ensureChampRivalMidSpike(career)
     this.champCareer = career
@@ -4696,7 +4963,9 @@ export class Menu {
       (isChampQualifying(career) ? championshipQualTrackId(career.branch) : null)
     if (!trackId) return
     // Směr kariéry nastaví Game.beginSoloRace (bez save) — quick/MP reverse zůstane.
-    const look = this.currentLook()
+    ensureChampGarage(career)
+    const look = getChampVehicleLook(career)
+    const tuning = getChampVehicleTuning(career)
     const fsQual = isChampFsQual(career)
     const qual = isChampQualifying(career)
     const laps = qual || fsQual ? 1 : championshipRaceLaps(career.league, trackId)
@@ -4709,8 +4978,8 @@ export class Menu {
       wheel: look.wheel,
       rider: look.rider,
       helm: look.helm,
-      tuning: champTuningToSolo(career.tuning),
-      name: this.playerName,
+      tuning: champTuningToSolo(tuning),
+      name: career.playerName || this.playerName,
       difficulty: career.difficulty,
       laps,
       timeLimitMs: fsQual ? CHAMP_FS_QUAL_MS : undefined,
@@ -4748,7 +5017,8 @@ export class Menu {
     const trackId = this.lbTrackId || undefined
     const board = this.recordsMode
     try {
-      this.worldRecords = await fetchCloudRecords({ trackId, board })
+      const rows = await fetchCloudRecords({ trackId, board })
+      this.worldRecords = rows.filter((r) => !isScrubbedLeaderboardName(r.player))
     } catch {
       this.worldRecords = []
     }
@@ -4977,19 +5247,30 @@ export class Menu {
   }
 
   private bindTuning(): void {
+    const applyTune = (key: keyof PlayerTuningValues, raw: number) => {
+      this.tuning = setTuningStat(this.tuning, key, raw)
+      this.syncSliders()
+      const stats = this.root.querySelector('#tune-stats')
+      if (stats) {
+        stats.innerHTML = statsBarsHtml(
+          this.selectedVehicle,
+          (k) => t(`menu.stat.${k}`),
+          this.tuning,
+        )
+      }
+    }
     this.root.querySelectorAll<HTMLInputElement>('input[data-tune]').forEach((input) => {
       input.addEventListener('input', () => {
         const key = input.dataset.tune as keyof PlayerTuningValues
-        this.tuning = setTuningStat(this.tuning, key, Number(input.value))
-        this.syncSliders()
-        const stats = this.root.querySelector('#tune-stats')
-        if (stats) {
-          stats.innerHTML = statsBarsHtml(
-            this.selectedVehicle,
-            (k) => t(`menu.stat.${k}`),
-            this.tuning,
-          )
-        }
+        applyTune(key, Number(input.value))
+      })
+    })
+    this.root.querySelectorAll<HTMLButtonElement>('[data-tune-step]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault()
+        const key = btn.dataset.tuneStep as keyof PlayerTuningValues
+        const dir = Number(btn.dataset.tuneDir) || 1
+        applyTune(key, this.tuning[key] + dir)
       })
     })
   }
@@ -5081,9 +5362,13 @@ export class Menu {
 
   private slider(key: keyof PlayerTuningValues, label: string, value: number): string {
     return `
-      <label class="tune-row">
+      <label class="tune-row tune-row--step">
         <span class="tune-label">${label} <span class="tune-val">${value}</span></span>
-        <input type="range" min="0" max="${TUNING_MAX}" step="1" value="${value}" data-tune="${key}" />
+        <div class="tune-step-row">
+          <button type="button" class="paint-step-btn" data-tune-step="${key}" data-tune-dir="-1" aria-label="-">−</button>
+          <input type="range" min="0" max="${TUNING_MAX}" step="1" value="${value}" data-tune="${key}" />
+          <button type="button" class="paint-step-btn" data-tune-step="${key}" data-tune-dir="1" aria-label="+">+</button>
+        </div>
         <p class="tune-help">${t(`menu.${key}.help`)}</p>
       </label>
     `

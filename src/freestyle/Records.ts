@@ -18,6 +18,17 @@ export function isBotPlayerName(name: string): boolean {
   return !n || BOT_NAMES.has(n)
 }
 
+/** Dev / autor — pryč ze všech žebříčků (Filip, Filip Khunt, …). */
+export function isScrubbedLeaderboardName(name: string): boolean {
+  const n = (name || '').trim().toLowerCase()
+  if (!n) return false
+  return n === 'filip' || n.startsWith('filip ')
+}
+
+function isHiddenLeaderboardName(name: string): boolean {
+  return isBotPlayerName(name) || isScrubbedLeaderboardName(name)
+}
+
 export type RecordEntry = {
   player: string
   trackId: string
@@ -45,12 +56,17 @@ function loadStore(): RecordsStore {
     if (!raw) return { entries: [] }
     const parsed = JSON.parse(raw) as RecordsStore
     const entries = Array.isArray(parsed.entries) ? parsed.entries : []
-    return {
-      entries: entries.map((e) => ({
+    const cleaned = entries
+      .map((e) => ({
         ...e,
         laps: Math.max(1, Math.min(69, Math.round(Number(e.laps) || 1))),
-      })),
+      }))
+      .filter((e) => !isHiddenLeaderboardName(e.player))
+    // Jednorázově vyčisti lokál od Filip / botů.
+    if (cleaned.length !== entries.length) {
+      saveStore({ entries: cleaned })
     }
+    return { entries: cleaned }
   } catch {
     return { entries: [] }
   }
@@ -87,8 +103,8 @@ export function submitRaceRecord(input: {
   immortal?: boolean
 }): RecordEntry | null {
   const player = (input.player || 'Hráč').trim().slice(0, 24)
-  // Boti / prázdné jméno — neukládat ani nesdílet
-  if (isBotPlayerName(player)) return null
+  // Boti / Filip / prázdné — neukládat ani nesdílet
+  if (isHiddenLeaderboardName(player)) return null
 
   const immortal = !!input.immortal
   const laps = Math.max(1, Math.min(69, Math.round(input.laps ?? 1)))
@@ -131,7 +147,7 @@ export function recordsFor(
   vehicle?: VehicleKind,
   board: RecordsBoard = 'race',
 ): RecordEntry[] {
-  let list = loadStore().entries.filter((e) => !isBotPlayerName(e.player))
+  let list = loadStore().entries.filter((e) => !isHiddenLeaderboardName(e.player))
   if (board === 'freestyle') list = list.filter((e) => isFsVehicle(e.vehicle))
   else list = list.filter((e) => !isFsVehicle(e.vehicle))
   if (trackId) list = list.filter((e) => e.trackId === trackId)
@@ -153,7 +169,7 @@ export function topRecords(limit = 20, board: RecordsBoard = 'race'): RecordEntr
 
 /** Všechny záznamy (pro export kalibrace / sync). */
 export function allRecords(): RecordEntry[] {
-  return loadStore().entries.filter((e) => !isBotPlayerName(e.player)).slice()
+  return loadStore().entries.filter((e) => !isHiddenLeaderboardName(e.player)).slice()
 }
 
 /** Pošli lokální rekordy do světa (bez botů). */

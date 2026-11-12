@@ -652,13 +652,27 @@ export class Input {
       if (status) status.textContent = t('mobile.tiltActive')
       this.tiltListener = (e: DeviceOrientationEvent) => {
         if (!this.mobileActive || !this.tiltEnabled) return
-        // Portrait: beta (předozadní náklon při držení na výšku) · landscape: gamma
+        // Portrait: beta · landscape: gamma. Při překlopení osa skočí — ignoruj skoky.
         const portrait = this.portraitScreen()
         const raw = portrait ? (e.beta ?? 0) : (e.gamma ?? 0)
-        if (this.tiltZeroGamma === null) this.tiltZeroGamma = raw
-        const delta = raw - this.tiltZeroGamma
+        if (this.tiltZeroGamma === null) {
+          this.tiltZeroGamma = raw
+          this.tiltSteer = 0
+          return
+        }
+        let delta = raw - this.tiltZeroGamma
+        // Wrap ±180 a odřízni náhlé skoky (flip / změna orientace).
+        if (delta > 180) delta -= 360
+        if (delta < -180) delta += 360
+        if (Math.abs(delta) > 55) {
+          this.tiltZeroGamma = raw
+          this.tiltSteer *= 0.35
+          return
+        }
         const sens = portrait ? 34 : 28
-        this.tiltSteer = clamp(-delta / sens, -1, 1)
+        const next = clamp(-delta / sens, -1, 1)
+        // Jemné tlumení — méně škubání
+        this.tiltSteer = this.tiltSteer * 0.55 + next * 0.45
       }
       window.addEventListener('deviceorientation', this.tiltListener)
     } catch {

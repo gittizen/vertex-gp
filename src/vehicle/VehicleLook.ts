@@ -32,9 +32,9 @@ export type VehicleLook = {
 export const DEFAULT_VEHICLE_LOOK: VehicleLook = {
   body: PAINT_COLOR_CHOICES[0]!,
   neon: PAINT_COLOR_CHOICES[7]!,
-  wheel: 0x1a1a1a,
-  rider: 0x1c2430,
-  helm: 0x2a2a32,
+  wheel: PAINT_COLOR_CHOICES[6]!, // černá — stejná paleta jako karoserie
+  rider: PAINT_COLOR_CHOICES[6]!, // panáček = stejný výběr barev jako vozidlo
+  helm: PAINT_COLOR_CHOICES[6]!,
 }
 
 export type VehicleBranch = 'freestyle' | 'auto' | 'moto' | 'monster'

@@ -99,6 +99,11 @@ export class AiDriver {
   private paceDebt = 0
   /** Vyhlazený náklon (zatáčka + výjezd) — nešpičkuje hned a nesrovná se okamžitě. */
   private leanSmooth = 0
+  /**
+   * Sezónní forma (kariérní ramp 0.9–1): pod 1 = méně agresivní, víc chyb.
+   * Nikdy nezvedá tempo nad `difficulty.speedScale` / hardCap vozidla.
+   */
+  private seasonForm = 1
   /** FS: kolik triků už v aktuálním kole / etapě. */
   private fsTricksThisLap = 0
   private fsLapIndex = -1
@@ -111,6 +116,11 @@ export class AiDriver {
 
   setDifficulty(d: DifficultyDef): void {
     this.difficulty = d
+  }
+
+  /** Kariérní ramp 0.9–1 (1 = plná úroveň). Quick race nechá 1. */
+  setSeasonForm(form: number): void {
+    this.seasonForm = Math.max(0.85, Math.min(1, form))
   }
 
   reset(track: Track, startT: number, vehicle: Vehicle): void {
@@ -129,6 +139,7 @@ export class AiDriver {
     this.fsTricksThisLap = 0
     this.fsLapIndex = -1
     this.fsTrickCd = 0
+    // seasonForm drží Game.applyAiDifficulty — nerestartovat na 1
     this.ready = true
     if (this.slot > 0) this.place(vehicle, track)
   }
@@ -185,13 +196,19 @@ export class AiDriver {
     cruise = Math.min(cruise, hardCap)
 
     const feel = launchFeelFor(vehicle.kind)
+    const form = this.seasonForm
+    // Nižší forma = delší náběh, menší startFrac, slabší accel (agresivita).
+    const launchDur = feel.durationSec * (1 + (1 - form) * 0.35)
+    const startFrac = feel.startFrac * (0.82 + 0.18 * form)
+    const accelBlend = feel.accelBlend * (0.78 + 0.22 * form)
     const prevLaunch = this.launch
-    this.launch = Math.min(1, this.launch + dt / Math.max(0.35, feel.durationSec))
+    this.launch = Math.min(1, this.launch + dt / Math.max(0.35, launchDur))
     // Ease-out náběh: pomalu ze startu, plný cruise až ke konci launch okna.
     // startFrac jen v rámci hardCap — AI nestartuje nad maxem vozidla.
     const launchEase = 1 - Math.pow(1 - this.launch, 2.15)
-    const cornerSlow = 1 - corner * 0.4
-    const launchFrac = Math.min(1, feel.startFrac + (1 - feel.startFrac) * launchEase)
+    // Nižší forma = víc brzdí do zatáčky (chyby / opatrnost).
+    const cornerSlow = 1 - corner * (0.4 + (1 - form) * 0.14)
+    const launchFrac = Math.min(1, startFrac + (1 - startFrac) * launchEase)
     let target = Math.min(hardCap, cruise * launchFrac) * Math.max(0.38, cornerSlow)
 
     // Ideální tempo (okamžitý cruise) vs reálný target → dluh vzdálenosti
@@ -200,10 +217,14 @@ export class AiDriver {
       this.paceDebt += Math.max(0, (ideal - target) * dt)
     }
     // Splácení: mírně nad cruise, dokud dluh nezmizí — průměrný čas ≈ targetPaceMs
-    // nikdy ale přes hardCap (pravidla peklostroje)
+    // nikdy ale přes hardCap (pravidla peklostroje). Nižší forma = pomalejší catch-up.
     if (this.paceDebt > 0.05 && this.launch >= 0.55) {
       const headroom = Math.max(0, hardCap - target)
-      const repay = Math.min(this.paceDebt * 0.55, cruise * 0.14, headroom)
+      const repay = Math.min(
+        this.paceDebt * (0.4 + 0.15 * form),
+        cruise * (0.1 + 0.04 * form),
+        headroom,
+      )
       target += repay
       this.paceDebt = Math.max(0, this.paceDebt - repay * dt)
     }
@@ -211,7 +232,7 @@ export class AiDriver {
     target = Math.min(target, hardCap)
 
     if (target >= this.pace) {
-      const blend = Math.min(1, feel.accelBlend * dt)
+      const blend = Math.min(1, accelBlend * dt)
       this.pace += (target - this.pace) * blend
     } else {
       const brakeBlend = Math.min(1, (4.2 + corner * 5) * dt)

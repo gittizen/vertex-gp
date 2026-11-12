@@ -21,7 +21,7 @@ const VERSIONS = [
     ref: 'HEAD',
     base: '/vertex-gp/0.3/',
     title: 'KlecMania',
-    blurb: 'Career, race setup, standings, WebP menu.',
+    blurb: '0.3.1 — career ramp, pit paints, rear-view fix.',
     current: true,
   },
   {

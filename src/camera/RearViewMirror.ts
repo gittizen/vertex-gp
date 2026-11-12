@@ -1,24 +1,51 @@
 import * as THREE from 'three'
 import type { Vehicle } from '../vehicle/Vehicle'
 
+/** Max vnitřní rozlišení zrcátka (extra full-scene pass). */
+const MIRROR_RT_W = 160
+const MIRROR_RT_H = 68
+
 /**
- * Funkční zpětné zrcátko — druhá kamera do scissor viewportu.
+ * Funkční zpětné zrcátko — low-res RT + upscale do scissor viewportu.
  * Default vypnuto (extra draw call).
+ *
+ * Horizontální flip = negace projectionMatrix[0] + dočasné CW frontFace
+ * (camera.scale.x = -1 by shodilo backface culling → prázdný obraz).
  */
 export class RearViewMirror {
   readonly camera: THREE.PerspectiveCamera
   private enabled = false
   private readonly look = new THREE.Vector3()
   private readonly size = new THREE.Vector2()
+  private playerMesh: THREE.Object3D | null = null
+  private readonly rt: THREE.WebGLRenderTarget
+  private readonly blitScene = new THREE.Scene()
+  private readonly blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  private readonly blitMat: THREE.MeshBasicMaterial
+  private frameSkip = 0
 
   constructor() {
-    this.camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.35, 220)
-    // Horizontální flip = skutečné zrcadlo
-    this.camera.scale.x = -1
+    this.camera = new THREE.PerspectiveCamera(55, MIRROR_RT_W / MIRROR_RT_H, 0.5, 220)
+    this.rt = new THREE.WebGLRenderTarget(MIRROR_RT_W, MIRROR_RT_H, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+    })
+    this.rt.texture.colorSpace = THREE.SRGBColorSpace
+    this.blitMat = new THREE.MeshBasicMaterial({
+      map: this.rt.texture,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.blitMat)
+    this.blitScene.add(quad)
   }
 
   setEnabled(on: boolean): void {
     this.enabled = on
+    if (!on) this.frameSkip = 0
   }
 
   isEnabled(): boolean {
@@ -27,39 +54,66 @@ export class RearViewMirror {
 
   update(vehicle: Vehicle): void {
     if (!this.enabled) return
+    this.playerMesh = vehicle.mesh
     const p = vehicle.physics
-    const fx = Math.sin(p.heading)
-    const fz = Math.cos(p.heading)
-    const y = vehicle.groundY + 1.35
-    // Mírně nad kabinou, kouká dozadu
-    this.camera.position.set(p.x + fx * 0.35, y, p.z + fz * 0.35)
-    this.look.set(p.x - fx * 18, y - 0.15, p.z - fz * 18)
+    const heading = Number.isFinite(p.heading) ? p.heading : 0
+    const fx = Math.sin(heading)
+    const fz = Math.cos(heading)
+    // Nad kabinou / střechou — kouká dozadu na trať a soupeře za autem
+    const y = Math.max(vehicle.groundY + 1.55, vehicle.mesh.position.y + 1.15)
+    this.camera.position.set(p.x + fx * 0.15, y, p.z + fz * 0.15)
+    this.look.set(p.x - fx * 28, y - 0.35, p.z - fz * 28)
     this.camera.up.set(0, 1, 0)
     this.camera.lookAt(this.look)
   }
 
   /** Vykreslí zrcátko do horního středu canvasu (po hlavním renderu). */
-  render(
-    renderer: THREE.WebGLRenderer,
-    scene: THREE.Scene,
-  ): void {
+  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene): void {
     if (!this.enabled) return
     renderer.getSize(this.size)
     const mw = Math.floor(Math.min(320, this.size.x * 0.28))
     const mh = Math.floor(mw * 0.42)
     const mx = Math.floor((this.size.x - mw) / 2)
+    // WebGL Y = odspodu — zarovnání s .hud-mirror (top ~3.5 %)
     const my = this.size.y - mh - Math.floor(this.size.y * 0.035)
 
-    this.camera.aspect = mw / Math.max(1, mh)
-    this.camera.updateProjectionMatrix()
+    // Každý 2. frame přerenderuj scénu do RT (upscale pořád každý frame)
+    this.frameSkip++
+    const refresh = this.frameSkip % 2 === 1
+    if (refresh) {
+      this.camera.aspect = MIRROR_RT_W / MIRROR_RT_H
+      this.camera.updateProjectionMatrix()
+      this.camera.projectionMatrix.elements[0] *= -1
 
+      const mesh = this.playerMesh
+      const prevVisible = mesh?.visible ?? true
+      if (mesh) mesh.visible = false
+
+      const gl = renderer.getContext()
+      const prevFrontFace = gl.getParameter(gl.FRONT_FACE) as number
+      const prevTarget = renderer.getRenderTarget()
+      const prevAutoClear = renderer.autoClear
+
+      renderer.setRenderTarget(this.rt)
+      renderer.autoClear = true
+      renderer.clear()
+      gl.frontFace(gl.CW)
+      renderer.render(scene, this.camera)
+      gl.frontFace(prevFrontFace === gl.CW ? gl.CW : gl.CCW)
+
+      renderer.setRenderTarget(prevTarget)
+      renderer.autoClear = prevAutoClear
+      if (mesh) mesh.visible = prevVisible
+    }
+
+    // Upscale low-res RT do HUD rámečku
     const prevAutoClear = renderer.autoClear
     renderer.autoClear = false
-    renderer.clearDepth()
     renderer.setScissorTest(true)
     renderer.setViewport(mx, my, mw, mh)
     renderer.setScissor(mx, my, mw, mh)
-    renderer.render(scene, this.camera)
+    renderer.clearDepth()
+    renderer.render(this.blitScene, this.blitCam)
     renderer.setScissorTest(false)
     renderer.setViewport(0, 0, this.size.x, this.size.y)
     renderer.autoClear = prevAutoClear

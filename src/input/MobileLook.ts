@@ -7,16 +7,23 @@ export function isMobileClient(): boolean {
   return touch && (coarse || ua || narrow)
 }
 
-/** Na telefonu oddálit look ~1.5× (PC = 1). */
+/** Na telefonu oddálit look ~1.5× (PC = 1). Portrait +15 % navíc. */
 export const MOBILE_LOOK_OUT = 1.5
+/** Portrait: 1.5 × 1.15 ≈ 1.725. Landscape beze změny. */
+export const MOBILE_LOOK_OUT_PORTRAIT = MOBILE_LOOK_OUT * 1.15
 
 export function mobileLookActive(): boolean {
   return isMobileClient()
 }
 
-/** Násobitel vzdálenosti kamery (1.5 na mobilu). */
+function mobilePortrait(): boolean {
+  return window.matchMedia('(orientation: portrait)').matches
+}
+
+/** Násobitel vzdálenosti kamery (portrait dál, landscape 1.5, PC 1). */
 export function mobileCamDist(): number {
-  return mobileLookActive() ? MOBILE_LOOK_OUT : 1
+  if (!mobileLookActive()) return 1
+  return mobilePortrait() ? MOBILE_LOOK_OUT_PORTRAIT : MOBILE_LOOK_OUT
 }
 
 /** UI zmenšení (1/1.5), ať text/HUD nejsou „v obličeji“. */

@@ -49,8 +49,8 @@ export const DEFAULT_CONTROL_FEEL: ControlFeelValues = {
 
 const CAM_FOLLOWS: CamFollow[] = ['soft', 'normal', 'tight']
 export const SKATE_STANCES: SkateStance[] = ['regular', 'goofy']
-/** Pořadí v UI: ťukání → náklon → volant → joystick. */
-export const MOBILE_DRIVE_SCHEMES: MobileDriveScheme[] = ['tap', 'tilt', 'pads', 'joystick']
+/** Pořadí v UI: ťukání → joystick → náklon → volant. */
+export const MOBILE_DRIVE_SCHEMES: MobileDriveScheme[] = ['tap', 'joystick', 'tilt', 'pads']
 
 function migrateMobileScheme(raw: unknown): MobileDriveScheme {
   // Jednorázově: staré defaulty → tap

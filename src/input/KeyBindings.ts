@@ -27,12 +27,13 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
   /** Řízení jen šipky — WASD je defaultně na triky. */
   throttle: ['ArrowUp', null],
   brake: ['ArrowDown', null],
-  push: ['ShiftLeft', 'ShiftRight'],
+  /** Default 1 klávesa — druhý slot jen když si ho hráč navolí. */
+  push: ['ShiftLeft', null],
   /** Boost / Tab akce — default jen Alt (ne Tab). */
-  tab: ['AltLeft', 'AltRight'],
+  tab: ['AltLeft', null],
   shiftUp: ['KeyE', null],
   shiftDown: ['KeyQ', null],
-  clutch: ['ControlLeft', 'ControlRight'],
+  clutch: ['ControlLeft', null],
   ebrake: ['Space', null],
   restart: ['KeyR', null],
   menu: ['Escape', null],
@@ -63,7 +64,29 @@ export function loadKeyBindings(): KeyBindingsMap {
       }
     }
     // Wheelie/boost vždy aspoň jeden Shift (když někdo smazal oba)
-    if (!out.push[0] && !out.push[1]) out.push = ['ShiftLeft', 'ShiftRight']
+    if (!out.push[0] && !out.push[1]) out.push = ['ShiftLeft', null]
+    // Jednorázově: default páry Left+Right → jen Left (Esc menu bez duplicit)
+    const oneKeyFlag = `${GAME_STORAGE_NS}.v09-bind-one-key`
+    if (!localStorage.getItem(oneKeyFlag)) {
+      try {
+        localStorage.setItem(oneKeyFlag, '1')
+      } catch {
+        /* ignore */
+      }
+      const stripPairTwin = (pair: KeyPair, left: string, right: string): KeyPair => {
+        if (pair[0] === left && pair[1] === right) return [left, null]
+        if (pair[0] === right && pair[1] === left) return [left, null]
+        return pair
+      }
+      out.push = stripPairTwin(out.push, 'ShiftLeft', 'ShiftRight')
+      out.tab = stripPairTwin(out.tab, 'AltLeft', 'AltRight')
+      out.clutch = stripPairTwin(out.clutch, 'ControlLeft', 'ControlRight')
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(out))
+      } catch {
+        /* ignore */
+      }
+    }
     // Jednorázově: starý Tab+Alt → jen Alt
     const tabFlag = `${GAME_STORAGE_NS}.v07-tab-alt-only`
     if (!localStorage.getItem(tabFlag)) {
@@ -73,7 +96,7 @@ export function loadKeyBindings(): KeyBindingsMap {
         /* ignore */
       }
       if (out.tab[0] === 'Tab' || out.tab[1] === 'Tab') {
-        out.tab = ['AltLeft', 'AltRight']
+        out.tab = ['AltLeft', null]
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(out))
         } catch {
@@ -111,7 +134,7 @@ export function loadKeyBindings(): KeyBindingsMap {
         /* ignore */
       }
     }
-    if (!out.tab[0] && !out.tab[1]) out.tab = ['AltLeft', 'AltRight']
+    if (!out.tab[0] && !out.tab[1]) out.tab = ['AltLeft', null]
     return out
   } catch {
     return cloneBindings(DEFAULT_BINDINGS)

@@ -1,6 +1,4 @@
 import type { DifficultyId } from '../ai/Difficulty'
-import { getDifficulty } from '../ai/Difficulty'
-import { freestyleRaceScore, placePoints } from '../freestyle/FreestyleTricks'
 import type { PlayerTuningValues } from '../tuning/PlayerTuning'
 import { CHAMP_TUNING_MAX, TUNING_MAX } from '../tuning/PlayerTuning'
 import type { VehicleBranch } from '../vehicle/VehicleLook'
@@ -22,41 +20,100 @@ export function isDnfPlace(place: number): boolean {
   return place >= DNF_PLACE || place <= 0
 }
 
-/** Mírný bonus za těžší sérii (sponzor) — ceny vozů zůstávají tržní. */
-export function purseScaleFromDifficulty(difficulty: DifficultyId): number {
-  const s = getDifficulty(difficulty).speedScale
-  // superEasy 0.56 → ~0.85, normal 1 → 1, superHard 1.69 → ~1.25
-  return Math.max(0.85, Math.min(1.25, 0.75 + s * 0.25))
+/** @deprecated Obtížnost už neškáluje Kč — vždy 1. */
+export function purseScaleFromDifficulty(_difficulty: DifficultyId): number {
+  return 1
 }
 
-/** Startovní hotovost šampionátu (všechny větve včetně moto). */
-export const CHAMP_START_CASH = 45_000
+/** Startovní hotovost šampionátu. */
+export const CHAMP_START_CASH = 50_000
 
 /**
- * Startovní hotovost kariéry — 45 000 Kč (stačí na 2. vůz / mid unlock).
- * Obtížnost neškáluje start; výplaty za kola dál ano.
+ * Startovní hotovost kariéry — 50 000 Kč.
+ * Obtížnost neškáluje výplaty.
  */
 export function startCash(_difficulty: DifficultyId): number {
   return CHAMP_START_CASH
 }
 
 /**
- * Výplata za kolo (klubový šampionát, Kč).
- * Střední pole (~2. místo) ≈ 8 000 → za 18 kol ~144k + start 45k ≈ 189k.
- * Ceny: mid 45k, top 95k → při solidní sezóně oba vozy + trochu tuningu.
- * Slabší sezóna (4.) → mid + tuning, top až při lepších výsledcích.
+ * Výplata za kolo (×2 oproti dřívějšku). Strop = 1. místo.
+ * Opakování stejného kola jen dorovná rozdíl (viz `cashTopUp`).
  */
 const PLACE_CASH_BASE: Record<number, number> = {
-  1: 12_000,
-  2: 8_000,
-  3: 5_500,
-  4: 3_500,
+  1: 24_000,
+  2: 16_000,
+  3: 11_000,
+  4: 7_000,
 }
 
-export function placeCash(place: number, difficulty: DifficultyId): number {
+/** Max výplata za jedno kalendářní kolo (= 1. místo). */
+export function maxPlaceCash(): number {
+  return PLACE_CASH_BASE[1]!
+}
+
+export function placeCash(place: number, _difficulty?: DifficultyId): number {
   if (isDnfPlace(place)) return 0
-  const base = PLACE_CASH_BASE[place] ?? 2_000
-  return Math.round(base * purseScaleFromDifficulty(difficulty))
+  return PLACE_CASH_BASE[place] ?? 4_000
+}
+
+/** Doplatek: už vyplaceno `alreadyPaid`, nové místo → jen rozdíl nahoru (strop 1.). */
+export function cashTopUp(place: number, alreadyPaid: number, stageHalf = false): number {
+  let full = placeCash(place)
+  if (stageHalf) full = Math.round(full * 0.5)
+  const cap = stageHalf ? Math.round(maxPlaceCash() * 0.5) : maxPlaceCash()
+  const target = Math.min(full, cap)
+  const paid = Math.max(0, Math.round(alreadyPaid))
+  return Math.max(0, target - paid)
+}
+
+/** Kariéra: 1. = 3 … 4. = 0. */
+export function champPlacePoints(place: number): number {
+  if (isDnfPlace(place)) return 0
+  if (place === 1) return 3
+  if (place === 2) return 2
+  if (place === 3) return 1
+  return 0
+}
+
+/**
+ * FS kariéra: pořadí podle `2×rank(triky)+1×rank(dojezd)` → body 3/2/1/0.
+ * Remíza skóre → vyšší triky. `entries[0]` = hráč.
+ */
+export function freestyleChampPoints(
+  entries: { place: number; trickPts: number }[],
+): number[] {
+  const n = entries.length
+  if (n === 0) return []
+  const idx = entries.map((_, i) => i)
+  const rankPts = (orderBy: (i: number) => number, preferHigher: boolean): number[] => {
+    const sorted = [...idx].sort((a, b) => {
+      const d = preferHigher ? orderBy(b) - orderBy(a) : orderBy(a) - orderBy(b)
+      if (d !== 0) return d
+      return a - b
+    })
+    const out = Array.from({ length: n }, () => 0)
+    sorted.forEach((id, rank) => {
+      out[id] = champPlacePoints(rank + 1)
+    })
+    return out
+  }
+  const byTricks = rankPts((i) => entries[i]!.trickPts, true)
+  const byPlace = rankPts((i) => entries[i]!.place, false)
+  const combined = idx.map((i) => 2 * byTricks[i]! + byPlace[i]!)
+  const sorted = [...idx].sort((a, b) => {
+    const d = combined[b]! - combined[a]!
+    if (d !== 0) return d
+    // Remíza → preferuj triky
+    const td = entries[b]!.trickPts - entries[a]!.trickPts
+    if (td !== 0) return td
+    return entries[a]!.place - entries[b]!.place
+  })
+  const out = Array.from({ length: n }, () => 0)
+  sorted.forEach((id, rank) => {
+    out[id] = champPlacePoints(rank + 1)
+  })
+  return out
 }
 
 export function roundPoints(
@@ -66,10 +123,10 @@ export function roundPoints(
 ): number {
   if (isDnfPlace(place)) return 0
   if (branch === 'freestyle') {
-    // Stejný vzorec jako freestyleRaceScore — triky > umístění
-    return freestyleRaceScore(trickPts, place, 0.35)
+    // Solo/HUD fallback — kariéra používá freestyleChampPoints se všemi jezdci
+    return freestyleChampPoints([{ place, trickPts }, { place: 4, trickPts: 0 }, { place: 3, trickPts: 0 }, { place: 2, trickPts: 0 }])[0] ?? 0
   }
-  return placePoints(place)
+  return champPlacePoints(place)
 }
 
 /**
@@ -150,22 +207,18 @@ export function tuningUpgradeCost(
   return (next - from) * 1_000
 }
 
-/** Pohár za sezónu → peněženka do další sezóny. */
+/** Pohár za sezónu → peněženka do další sezóny (×2). */
 const PODIUM_PURSE_BASE: Record<1 | 2 | 3 | 4, number> = {
-  1: 80_000,
-  2: 50_000,
-  3: 30_000,
-  4: 12_000,
+  1: 160_000,
+  2: 100_000,
+  3: 60_000,
+  4: 24_000,
 }
 
 export type SeasonPodiumTier = 1 | 2 | 3 | 4
 
-export function maxPossiblePoints(branch: VehicleBranch, totalRounds = 18): number {
-  const perRound =
-    branch === 'freestyle'
-      ? Math.round(placePoints(1) * 0.35 + 120)
-      : placePoints(1)
-  return perRound * Math.max(1, totalRounds)
+export function maxPossiblePoints(_branch: VehicleBranch, totalRounds = 18): number {
+  return 3 * Math.max(1, totalRounds)
 }
 
 export function seasonPodiumTier(
@@ -181,9 +234,9 @@ export function seasonPodiumTier(
 
 export function seasonPodiumPurse(
   tier: SeasonPodiumTier,
-  difficulty: DifficultyId,
+  _difficulty?: DifficultyId,
 ): number {
-  return Math.round(PODIUM_PURSE_BASE[tier] * purseScaleFromDifficulty(difficulty))
+  return PODIUM_PURSE_BASE[tier]!
 }
 
 export function cashCarryFraction(leftoverCash: number): number {
