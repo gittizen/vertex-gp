@@ -11,7 +11,7 @@ Built by [@gittizen](https://github.com/gittizen) · **16+**
 | **Version hub** | [gittizen.github.io/vertex-gp](https://gittizen.github.io/vertex-gp/) |
 
 ```text
-0.3    KlecMania — career, setup, WebP menu   ← current
+0.3  KlecMania — career, setup, WebP menu   ← current
 0.2  Klec GP — brand / freestyle
 0.1  Vertex GP — engine start
 ```
