@@ -199,7 +199,8 @@ export function menuArtForTone(
     garage: art(`menu/garage-${key}.jpg`),
     tracks: art(`menu/tracks-${key}.jpg`),
     settings: art(`menu/settings-${key}.jpg`),
-    board: art(`menu/board-${key}.jpg`),
+    // Klecany žebříček: starší (prev) fotka — aktuální board-klecany je moc tmavá/hutná
+    board: art(key === 'klecany' ? 'menu/board-klecany-prev.jpg' : `menu/board-${key}.jpg`),
     // Domů → Šampionát dlaždice (≠ liga v briefu auto)
     championship: art('menu/champ-tile-featured.jpg'),
     // Setup Jet (≠ šamp auto Jet)

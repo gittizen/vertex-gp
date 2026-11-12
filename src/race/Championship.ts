@@ -1338,33 +1338,49 @@ export function completeSeasonAndPrepareNext(career: ChampCareer): SeasonComplet
     saveCareer(career)
   }
   const slot = champSlotKey(career.branch, career.league)
-  const conquered = career.difficulty === 'superHard'
+  // „Pokořil Klecany“ až po dokončení S2 na superHard — S1→S2 musí jít vždy dál.
+  const conquered = career.difficulty === 'superHard' && career.season >= 2
   if (career.season === 1) {
     meta.season2Unlocked[slot] = true
     if (!meta.season1End) meta.season1End = {}
     meta.season1End[slot] = snapshotFromCareer(career)
+    meta.podiumCarry[slot] = 0
+    saveChampMeta(meta)
+    // S2 = 1:1 cash/auta/tuning, stejná obtížnost, jen nápis S2.
+    try {
+      startSeason2FromSnapshot(
+        career.branch,
+        career.difficulty,
+        career.league,
+        career.trackPool,
+      )
+      return {
+        tier,
+        purse,
+        cashCarry: 0,
+        unlockedSeason2: true,
+        nextSeason: 2,
+        conquered: false,
+      }
+    } catch {
+      return {
+        tier,
+        purse,
+        cashCarry: 0,
+        unlockedSeason2: true,
+        nextSeason: null,
+        conquered: false,
+      }
+    }
   }
   meta.podiumCarry[slot] = 0
   saveChampMeta(meta)
-  const nextSeason = career.season + 1
-  try {
-    startNextSeasonFromCareer(career, nextChampDifficulty(career.difficulty))
-  } catch {
-    return {
-      tier,
-      purse,
-      cashCarry: 0,
-      unlockedSeason2: career.season === 1,
-      nextSeason: null,
-      conquered,
-    }
-  }
   return {
     tier,
     purse,
     cashCarry: 0,
-    unlockedSeason2: nextSeason === 2,
-    nextSeason,
+    unlockedSeason2: Boolean(meta.season2Unlocked[slot]),
+    nextSeason: null,
     conquered,
   }
 }

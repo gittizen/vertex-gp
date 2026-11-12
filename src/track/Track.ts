@@ -496,15 +496,22 @@ export class Track {
     const city = this.def.world === 'city'
     const climbHeights = !!this.def.heights
     const valleyLite = this.usesValleyTerrace() || this.def.id === 'serpentiny'
+    const heavyDecor =
+      this.def.id === 'mexiku' ||
+      this.def.id === 'kasarny' ||
+      this.def.id === 'klecanek' ||
+      this.def.id === 'serpentiny'
     const segs = city
-      ? 64
-      : valleyLite
-        ? 72
-        : this.def.world === 'town' || this.def.loop
-          ? 80
-          : climbHeights
-            ? 96
-            : 160
+      ? 56
+      : heavyDecor
+        ? 64
+        : valleyLite
+          ? 68
+          : this.def.world === 'town' || this.def.loop
+            ? 72
+            : climbHeights
+              ? 80
+              : 128
     const rings = city
       ? [
           this.halfWidth + 3.4,
@@ -1313,13 +1320,13 @@ export class Track {
       matLambert(c, { emissive: c, emissiveIntensity: 0.35 }),
     )
 
-    // Terasa/svahy jako Klecánek — bloky sedí v terénu (60+ fps)
-    this.addValleyBanks(bankEarth, rock, { segs: 10, innerLat: this.halfWidth + 14, outerLat: this.halfWidth + 32 })
+    // Terasa/svahy jako Klecánek — méně segs = méně hitch
+    this.addValleyBanks(bankEarth, rock, { segs: 7, innerLat: this.halfWidth + 14, outerLat: this.halfWidth + 30 })
 
     // Kasárenské bloky — jen když celý footprint (rohy) mimo asfalt
     const asphaltClear = this.halfWidth + 2.2
-    for (let i = 0; i < 8; i++) {
-      const t = (i + 0.4) / 8
+    for (let i = 0; i < 6; i++) {
+      const t = (i + 0.4) / 6
       const s = this.sample(t)
       const side: 1 | -1 = i % 2 === 0 ? 1 : -1
       const depth = 6
@@ -2450,9 +2457,9 @@ export class Track {
       flat(outGrass, -0.02)
     }
 
-    // Hangáry — hustší vojenské letiště (60+ fps)
-    for (let i = 0; i < 7; i++) {
-      const s = this.sample((i + 0.35) / 7)
+    // Hangáry — lehčí hustota (60+ fps)
+    for (let i = 0; i < 5; i++) {
+      const s = this.sample((i + 0.35) / 5)
       const yaw = Math.atan2(s.tangent.x, s.tangent.z)
       const side: 1 | -1 = -1
       const lat = this.safeLateral(s, side, 16) + 20
@@ -2849,9 +2856,9 @@ export class Track {
     const dummy = new THREE.Object3D()
 
     this.addValleyBanks(bankEarth, rock, {
-      segs: 12,
+      segs: 8,
       innerLat: this.halfWidth + 14,
-      outerLat: this.halfWidth + 30,
+      outerLat: this.halfWidth + 28,
     })
 
     // Cedule Brooklyn — klidnější barvy
@@ -2893,9 +2900,9 @@ export class Track {
     this.addBusShelter(0.05, 1)
     this.addBusShelter(0.95, -1)
 
-    // City strana: hustší bloky na terase
-    for (let i = 0; i < 12; i++) {
-      const s = this.sample(0.04 + i * 0.075)
+    // City strana: méně bloků = méně hitch (60+ fps)
+    for (let i = 0; i < 8; i++) {
+      const s = this.sample(0.05 + i * 0.1)
       const w = 7 + (i % 3)
       const h = 6 + (i % 4) * 1.5
       const house = new THREE.Group()
@@ -2913,9 +2920,9 @@ export class Track {
       this.decorRoot.add(house)
     }
 
-    // Vesnice: víc domků
-    for (let i = 0; i < 10; i++) {
-      const s = this.sample(0.06 + i * 0.085)
+    // Vesnice: méně domků (vyvážení FPS)
+    for (let i = 0; i < 7; i++) {
+      const s = this.sample(0.08 + i * 0.11)
       const w = 5.5 + (i % 2)
       const house = new THREE.Group()
       const body = new THREE.Mesh(new THREE.BoxGeometry(w, 3.6, 7), plaster[i % plaster.length]!)
@@ -2947,10 +2954,10 @@ export class Track {
     apron.position.set(apronX, this.terrainYAt(apronX, apronZ) - 0.08, apronZ)
     this.group.add(apron)
 
-    // Stromy — InstancedMesh (1 draw call)
+    // Stromy — InstancedMesh (méně instancí = méně hitch)
     const boleGeo = new THREE.CylinderGeometry(0.22, 0.28, 2.6, 5)
-    const canopyGeo = new THREE.SphereGeometry(1.6, 6, 6)
-    const nTrees = 18
+    const canopyGeo = new THREE.SphereGeometry(1.6, 5, 5)
+    const nTrees = 12
     const boles = new THREE.InstancedMesh(boleGeo, trunk, nTrees)
     const canopies = new THREE.InstancedMesh(canopyGeo, leaf, nTrees)
     for (let i = 0; i < nTrees; i++) {
@@ -2974,7 +2981,7 @@ export class Track {
 
     // Živé ploty — InstancedMesh
     const hdgGeo = new THREE.BoxGeometry(1, 0.6, 3.4)
-    const nHedge = 10
+    const nHedge = 7
     const hedges = new THREE.InstancedMesh(hdgGeo, hedge, nHedge * 2)
     let hi = 0
     for (let i = 0; i < nHedge; i++) {
@@ -3316,8 +3323,8 @@ export class Track {
     const s = this.sample(t)
     const olen = Math.hypot(s.position.x, s.position.z) || 1
     const nOut = (s.normal.x * s.position.x + s.normal.z * s.position.z) / olen
-    // nOut > 0 = normal ven → kladný roll = vnitřní strana dolů (NASCAR dovnitř)
-    return nOut * bankRad
+    // nOut > 0 = normal ven → záporný roll = vozidlo sedí se spádem tratě (ne proti banku)
+    return -nOut * bankRad
   }
 
   progressAt(x: number, z: number, hint?: number): number {

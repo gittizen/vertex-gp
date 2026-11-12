@@ -183,6 +183,7 @@ export type MenuAudioApi = {
   set: (partial: Partial<AudioSettingsValues>) => void
   unlock: () => void
   playClick?: () => void
+  playFanfare?: () => void
 }
 
 export type MenuAtmosphereApi = {
@@ -259,6 +260,7 @@ type Screen =
   | 'champSeason'
   | 'champLeague'
   | 'champPostQual'
+  | 'champQualCongrats'
   | 'champStarter'
   | 'champTrophy'
 
@@ -376,6 +378,9 @@ export class Menu {
   private champCareer: ChampCareer | null = null
   private champSeasonCompleteInfo: SeasonCompleteInfo | null = null
   private champTrophyCareerKey = ''
+  /** Jednorázová vsuvka GRATULUJI po kvalifikaci (před jménem). */
+  private qualCongratsPending = false
+  private qualCongratsTimer: number | null = null
   /** Náhled vozidla v pit stopu (i zamčené z ceníku). */
   private champPitPreview: VehicleKind | null = null
   /** Pit košík: draft tuningu + případný nákup vozu (až po Potvrdit). */
@@ -539,11 +544,11 @@ export class Menu {
     applyUiAtmosphere(this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE)
     const atm = this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE
     const homeArt = menuArtForTone(atm.tone, atm.calendarPack)
-    const brief = champBriefArt()
+    const brief = champBriefArt('auto', atm.tone)
     preloadMenuArts([
       homeArt.race,
       homeArt.settings,
-      champStandingsArt(),
+      champStandingsArt(atm.tone),
       brief.featured,
       brief.jet,
       brief.series,
@@ -569,9 +574,13 @@ export class Menu {
     this.champSeason = season
     this.champCareer = getCareer(branch, league, season) ?? getActiveCareerForBranch(branch)
     const career = this.champCareer
-    // Po kvalifikaci: brána (dál / zrušit) → jméno → Cena → obtížnost → brief.
+    // Po kvalifikaci: GRATULUJI → jméno → Cena → obtížnost → brief.
     if (career && career.qualified && !career.setupComplete && !career.nameChosen) {
-      this.screen = 'champPostQual'
+      if (this.qualCongratsPending) {
+        this.screen = 'champQualCongrats'
+      } else {
+        this.screen = 'champName'
+      }
     } else if (career && career.qualified && !career.nameChosen) {
       this.screen = 'champName'
     } else if (career && career.qualified && !career.leagueChosen) {
@@ -585,6 +594,11 @@ export class Menu {
     applyUiAtmosphere(this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE)
     this.render()
     this.startWatermarkRotation()
+  }
+
+  /** Po dojetí kvalifikace — před otevřením menu nastav vsuvku GRATULUJI. */
+  armQualCongrats(): void {
+    this.qualCongratsPending = true
   }
 
   showChampionshipTrophy(career: ChampCareer): void {
@@ -608,9 +622,17 @@ export class Menu {
   hide(): void {
     this.visible = false
     this.stopWatermarkRotation()
+    this.clearQualCongratsTimer()
     this.disposeVehiclePreview()
     this.root.classList.remove('menu-visible')
     this.root.innerHTML = ''
+  }
+
+  private clearQualCongratsTimer(): void {
+    if (this.qualCongratsTimer != null) {
+      window.clearTimeout(this.qualCongratsTimer)
+      this.qualCongratsTimer = null
+    }
   }
 
   private disposeVehiclePreview(): void {
@@ -935,6 +957,19 @@ export class Menu {
     </div>`
   }
 
+  /** Trophy: DOMŮ vlevo, Další sezóna vpravo (stejná esc lišta). */
+  private trophyNavRow(hasNext: boolean): string {
+    const esc = this.kbdHintHtml()
+    const next = hasNext
+      ? `<button type="button" class="menu-start menu-back-btn menu-trophy-next" data-champ-next-season>${t('champ.nextSeason')}</button>`
+      : `<button type="button" class="btn-ghost menu-back-btn menu-back-btn--phantom" tabindex="-1" aria-hidden="true">${t('champ.nextSeason')}</button>`
+    return `<div class="menu-nav-back menu-nav-back--flow menu-nav-back--split">
+      <button type="button" class="btn-ghost menu-back-btn" data-champ-home>${t('champ.home')}</button>
+      ${next}
+      ${esc}
+    </div>`
+  }
+
   private beginSettingsDraft(kind: SettingsDraftKind): void {
     if (this.settingsDraft?.kind === kind) return
     const draft: NonNullable<typeof this.settingsDraft> = { kind }
@@ -1252,6 +1287,13 @@ export class Menu {
       this.render()
       return 'stay'
     }
+    if (this.screen === 'champQualCongrats') {
+      this.clearQualCongratsTimer()
+      this.qualCongratsPending = false
+      this.screen = 'champName'
+      this.render()
+      return 'stay'
+    }
     if (this.screen === 'champPostQual') {
       this.screen = 'champHub'
       this.render()
@@ -1393,7 +1435,7 @@ export class Menu {
             <button type="button" class="gta-tile gta-tile-setup" data-go-setup style="--tile:url('${art.race}')">
               <strong class="gta-tile-label">${t('menu.raceTile')}</strong>
             </button>
-            <button type="button" class="gta-tile gta-tile-setup" data-go="records" style="--tile:url('${champStandingsArt()}')">
+            <button type="button" class="gta-tile gta-tile-setup" data-go="records" style="--tile:url('${champStandingsArt(atmHome.tone)}')">
               <strong class="gta-tile-label">${t('menu.leaderboard')}</strong>
             </button>
             <button type="button" class="gta-tile gta-tile-setup" data-go="settings" style="--tile:url('${art.settings}')">
@@ -2869,6 +2911,57 @@ export class Menu {
       return
     }
 
+    if (this.screen === 'champQualCongrats') {
+      const cup = champBriefArt(
+        this.champBranch,
+        this.atmosphereApi?.get().tone ?? DEFAULT_ATMOSPHERE.tone,
+      )
+      const sprayN = 22
+      const spray = `<div class="trophy-spray champ-qual-spray" aria-hidden="true">${Array.from({ length: sprayN }, (_, i) => {
+        const ang = (i / sprayN) * Math.PI * 2
+        const dist = 100 + (i % 5) * 14
+        const dx = Math.round(Math.cos(ang) * dist)
+        const dy = Math.round(Math.sin(ang) * dist * 0.65 - 40)
+        return `<span class="trophy-foam" style="--i:${i};--dx:${dx}px;--dy:${dy}px"></span>`
+      }).join('')}</div>`
+      // Stejný shell/stage jako champName — plynulé přepnutí bez změny rámu.
+      this.root.innerHTML = `
+        ${wm}
+        ${this.muteBar()}
+        <div class="menu-shell menu-home gta-home champ-name-screen champ-qual-congrats-screen">
+          <header class="gta-home-hero champ-name-hero">
+            ${brandLockupHtml({ size: 'menu' })}
+            <p class="gta-tagline gta-tagline--slot" aria-hidden="true">&nbsp;</p>
+          </header>
+          <div class="champ-name-stage champ-qual-stage" style="--tile:url('${cup.cup}')">
+            ${spray}
+            <p class="champ-name-kicker">${t('champ.qualKicker')}</p>
+            <h2 class="champ-name-title">${t('champ.qualCongrats')}</h2>
+            <p class="champ-name-blurb">${t('champ.qualCongratsSub')}</p>
+            <p class="champ-qual-easter" aria-hidden="true">${t('champ.qualEaster')}</p>
+          </div>
+          ${this.champOkNavRow('data-qual-phantom-ok', { hideBack: true, okLabel: t('menu.next') })}
+        </div>
+      `
+      this.bindMuteBar()
+      // Phantom OK — stejný footprint lišty jako u jména (bez skoku layoutu).
+      const phantomOk = this.root.querySelector<HTMLButtonElement>('[data-qual-phantom-ok]')
+      if (phantomOk) {
+        phantomOk.disabled = true
+        phantomOk.tabIndex = -1
+        phantomOk.setAttribute('aria-hidden', 'true')
+      }
+      this.clearQualCongratsTimer()
+      this.audioApi?.playFanfare?.()
+      this.qualCongratsTimer = window.setTimeout(() => {
+        this.qualCongratsTimer = null
+        this.qualCongratsPending = false
+        this.screen = 'champName'
+        this.render()
+      }, 5000)
+      return
+    }
+
     if (this.screen === 'champName') {
       const career =
         this.champCareer ?? getActiveCareerForBranch(this.champBranch)
@@ -2971,11 +3064,11 @@ export class Menu {
               ${brandLockupHtml({ size: 'menu' })}
               <p class="gta-tagline">${this.escape(live.playerName || t(`menu.branch.${b}`))} · ${t(`champ.league.${live.league}`)} · S${live.season}</p>
             </header>
-            <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-locked" aria-label="${t('champ.cenaTitle')}">
+            <div class="gta-tiles gta-tiles-champ-hub gta-tiles-champ-locked" aria-label="${t('champ.careerGateTitle')}">
               <button type="button" class="gta-tile gta-tile-live" data-champ-continue style="--tile:url('${briefArt.league}')">
-                <span class="gta-tile-kicker">${t('champ.hubLive')}</span>
+                <span class="gta-tile-kicker">${t('champ.careerGateKicker')}</span>
                 <strong class="gta-tile-label">${t('champ.continue')}</strong>
-                <span class="gta-tile-sub">${championshipProgressLabel(live)} · ${live.points}b · ${t(`diff.${live.difficulty}`)}</span>
+                <span class="gta-tile-sub">${t('champ.careerGateTitle')} · ${championshipProgressLabel(live)} · ${live.points}b · ${t(`diff.${live.difficulty}`)}</span>
               </button>
               <button type="button" class="gta-tile" data-champ-cancel-cup style="--tile:url('${briefArt.series}')">
                 <span class="gta-tile-kicker">${t('champ.restartCareer')}</span>
@@ -3624,7 +3717,7 @@ export class Menu {
             ${brandLockupHtml({ size: 'menu' })}
             <p class="gta-tagline">${t('champ.standingsTile')} · S${career.season}</p>
           </header>
-          <div class="gta-home-scroll champ-pit-body menu-panel-body champ-standings-body" style="--tile:url('${champStandingsArt()}')">
+          <div class="gta-home-scroll champ-pit-body menu-panel-body champ-standings-body" style="--tile:url('${champStandingsArt((this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE).tone)}')">
             <p class="tune-help">${t('champ.standingsHint')}</p>
             <ol class="champ-f1-standings">${rows}</ol>
           </div>
@@ -3991,12 +4084,7 @@ export class Menu {
         : conquered
           ? t('champ.conquerBody')
           : t(`champ.podium.${tier}`)
-      const nextBtn =
-        nextCareer && !nextCareer.done
-          ? `<button type="button" class="btn-ghost menu-tune-btn" data-champ-next-season>${t('champ.nextSeason')}</button>`
-          : consolation
-            ? `<button type="button" class="btn-ghost menu-tune-btn" data-champ-restart>${t('champ.againS1')}</button>`
-            : ''
+      const hasNext = Boolean(nextCareer && !nextCareer.done)
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -4071,22 +4159,12 @@ export class Menu {
                   <tbody>${resultRows || `<tr><td colspan="5">—</td></tr>`}</tbody>
                 </table>
               </div>
-              <div class="champ-trophy-actions">
-                ${nextBtn}
-                ${
-                  conquered
-                    ? `<button type="button" class="menu-start" data-champ-home>${t('champ.conquerMenu')}</button>`
-                    : `<button type="button" class="btn-ghost" data-champ-restart>${t('champ.classesTile')}</button>
-                <button type="button" class="btn-ghost" data-champ-home>${t('champ.home')}</button>`
-                }
-              </div>
             </div>
           </div>
-          ${this.backRow('home', 'flow')}
+          ${this.trophyNavRow(hasNext)}
         </div>
       `
       this.bindMuteBar()
-      this.bindBack('home')
       this.root.querySelector('[data-champ-home]')?.addEventListener('click', () => {
         this.champSeasonCompleteInfo = null
         this.champTrophyCareerKey = ''
@@ -4102,14 +4180,6 @@ export class Menu {
         this.champSeason = nextSeason
         this.champCareer = nextCareer
         this.screen = 'champBrief'
-        this.render()
-      })
-      this.root.querySelector('[data-champ-restart]')?.addEventListener('click', () => {
-        this.champSeasonCompleteInfo = null
-        this.champTrophyCareerKey = ''
-        this.champBranch = career.branch
-        this.champSeason = 1
-        this.screen = 'champHub'
         this.render()
       })
       return

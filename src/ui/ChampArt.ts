@@ -6,7 +6,7 @@ import type { VehicleKind } from '../track/TrackDefs'
 import type { VehicleBranch } from '../vehicle/VehicleLook'
 
 /** Cache-bust po výměně menu fotek (jinak prohlížeč drží starý JPG/WebP). */
-const ART_V = 'v15'
+const ART_V = 'v16'
 
 /**
  * Rezervace (ať se nepřekrývá quick race × šamp):
@@ -86,8 +86,14 @@ export function champSeasonArt(): string {
   return menuArt('menu/champ-tile-season.jpg')
 }
 
-/** Žebříček kariéry + menu 1 leaderboard — sdílený art. */
-export function champStandingsArt(): string {
+/**
+ * Žebříček kariéry + menu 1 leaderboard.
+ * Klecany: starší board (prev), odlehčený jako ostatní tone arty.
+ */
+export function champStandingsArt(tone: MenuTone = 'klecany'): string {
+  if (tone === 'klecany') {
+    return menuArt('menu/board-klecany-prev.jpg')
+  }
   return menuArt('menu/champ-tile-standings.jpg')
 }
 
@@ -143,7 +149,7 @@ export function champBriefArt(
     league: champLeagueArt(branch),
     cup: menuArt('menu/tile-championship-cup.jpg'),
     season: champSeasonArt(),
-    standings: champStandingsArt(),
+    standings: champStandingsArt(tone),
   }
 }
 

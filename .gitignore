@@ -2,6 +2,7 @@ node_modules
 dist
 site
 .worktrees
+.tools
 .DS_Store
 *.local
 .vite

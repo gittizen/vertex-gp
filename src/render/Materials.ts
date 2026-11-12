@@ -368,8 +368,8 @@ export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTextu
   }
   if (world === 'climb') {
     if (trackId === 'mexiku') {
-      // Teplejší travnatý podklad — reálnější Mexiko
-      const t = richGroundTexture('ground-mex-v8', '#4a6a3a', '#5a7a48', '#3a5028', true)
+      // Tmavší tráva — bez přesvětlené zeleně
+      const t = richGroundTexture('ground-mex-v9', '#3a5230', '#4a6238', '#2a3c22', true)
       t.repeat.set(36, 36)
       return t
     }
@@ -389,8 +389,8 @@ export function groundMap(world: WorldKind, trackId?: string): THREE.CanvasTextu
   }
   // town
   if (trackId === 'hruby') {
-    // Pole u benzínky — suchá ornice / strniště
-    const t = richGroundTexture('ground-hruby-v8', '#6a7a40', '#8a8a48', '#4a5028', false)
+    // Pole u benzínky — tmavší olivová / ornice
+    const t = richGroundTexture('ground-hruby-v9', '#455830', '#5a6840', '#354428', false)
     t.repeat.set(44, 44)
     return t
   }

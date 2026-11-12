@@ -411,6 +411,31 @@ export class EngineAudio {
     osc.stop(now + 0.1)
   }
 
+  /** Krátká famfára po kvalifikaci (WebAudio arpeggio). */
+  playFanfare(): void {
+    if (this.settings.muted) return
+    this.unlock()
+    const ctx = this.ctx
+    if (!ctx || !this.master) return
+    const now = ctx.currentTime
+    const amp = 0.07 * (this.settings.menu / 100) * (this.settings.master / 100)
+    const notes = [523.25, 659.25, 783.99, 1046.5]
+    notes.forEach((freq, i) => {
+      const t0 = now + i * 0.12
+      const osc = ctx.createOscillator()
+      const g = ctx.createGain()
+      osc.type = i === notes.length - 1 ? 'triangle' : 'square'
+      osc.frequency.setValueAtTime(freq, t0)
+      g.gain.setValueAtTime(0.0001, t0)
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp), t0 + 0.02)
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28)
+      osc.connect(g)
+      g.connect(this.master!)
+      osc.start(t0)
+      osc.stop(t0 + 0.3)
+    })
+  }
+
   unlock(): void {
     if (this.unlocked) {
       void this.ctx?.resume()

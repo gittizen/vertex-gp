@@ -403,11 +403,10 @@ const TRACKS_RAW: TrackDef[] = [
     world: 'climb',
     loop: false,
     surfaceGrip: 1,
-    aiSpeedMult: 0.1365,
-    targetPaceMs: 61805,
-    playerSpeedMult: 0.5,
+    aiSpeedMult: 1,
+    targetPaceMs: 52000,
     skyBody: 'sun',
-    estTime: '1:02',
+    estTime: '0:52',
     // Sídliště V Mexiku: střídavé 90° L/R (bloky), Brooklyn úplně nahoře, jedna dlouhá zatáčka uprostřed
     points: [
       // ——— Brooklyn (nejvyšší) ———
@@ -462,15 +461,16 @@ const TRACKS_RAW: TrackDef[] = [
     ],
     theme: {
       road: 0x7a7874,
-      ground: 0x4a6a3a,
+      // Tmavší tráva (ne přesvětlená jarní zeleň)
+      ground: 0x3a5230,
       barrierL: 0x8a8078,
       barrierR: 0x8a8078,
       edge: 0xe0dcd4,
-      sky: 0x7aa0b8,
-      fog: 0xb8c8b0,
+      sky: 0x6a90a8,
+      fog: 0x9aacb8,
       building: 0xc4b8a4,
       accent: 0xa87848,
-      detail: 0x3a5a28,
+      detail: 0x2e4a24,
     },
   },
   {
@@ -520,15 +520,16 @@ const TRACKS_RAW: TrackDef[] = [
     ],
     theme: {
       road: 0x989aa2,
-      ground: 0x5a6a38,
+      // Pole / okraj Sedlec — tmavší olivová, ne neonová zeleň
+      ground: 0x455830,
       barrierL: 0xc4a574,
       barrierR: 0xc4a574,
       edge: 0xffffff,
-      sky: 0x9ab8c8,
-      fog: 0xc4c8a8,
+      sky: 0x8aa8b8,
+      fog: 0xaeb4a0,
       building: 0x9a9a94,
       accent: 0xc62828,
-      detail: 0x6a7a40,
+      detail: 0x4a5a34,
     },
   },
   {

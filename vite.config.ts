@@ -41,6 +41,10 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
+    watch: {
+      // Portable Node / Netlify CLI under .tools — watching them can EBUSY-crash Vite.
+      ignored: ['**/.tools/**'],
+    },
   },
   plugins: [paceIngestPlugin()],
 })

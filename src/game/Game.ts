@@ -168,6 +168,8 @@ export class Game {
     league: ChampLeague
   } | null = null
   private recordsSaved = false
+  /** Po dojetí šamp kola: true = Enter → další mapa, false = Enter → znovu. */
+  private lastChampAdvanced: boolean | null = null
   /** Pauza na mapě (Esc). */
   private paused = false
   /** Po otevření pauzy Esc ještě držíš — počkat na puštění. */
@@ -302,6 +304,7 @@ export class Game {
       set: (partial) => this.audio.applySettings(partial),
       unlock: () => this.audio.unlock(),
       playClick: () => this.audio.playMenuClick(),
+      playFanfare: () => this.audio.playFanfare(),
     })
     this.menu.setAtmosphereApi({
       get: () => ({ ...this.atmosphere }),
@@ -814,6 +817,29 @@ export class Game {
       this.lastDifficulty.id,
       { keepTrack: opts?.sameTrack === true },
     )
+  }
+
+  /** Enter na finish kartě = preferované CTA (znovu / další mapa). */
+  private handleFinishEnter(): void {
+    if (this.multiplayer || this.race.phase !== 'finished') return
+    if (this.activeChampionship) {
+      const career = getCareer(
+        this.activeChampionship.branch,
+        this.activeChampionship.league,
+        this.activeChampionship.season,
+      )
+      if (career?.done || (career && needsChampPostQualSetup(career))) {
+        this.openMenu()
+        return
+      }
+      if (this.lastChampAdvanced === true) {
+        this.restartSoloSameRace({ sameTrack: false })
+        return
+      }
+      this.restartSoloSameRace({ sameTrack: true })
+      return
+    }
+    this.restartSoloSameRace({ sameTrack: true })
   }
 
   private beginSoloRace(
@@ -1344,16 +1370,16 @@ export class Game {
       rimBase = 0.2
       this.lightRig.setSunOffset(95, 135, -40)
     } else if (def.id === 'mexiku') {
-      // Mexiko: teplý denní den, tráva + omítka (ne šedo-zelený sci-fi)
-      ambient?.color.setHex(0xc8c0b0)
-      hemi?.color.setHex(0xe0d8c4)
-      hemi?.groundColor.setHex(0x4a6a3a)
-      sun?.color.setHex(0xfff2dc)
-      rim?.color.setHex(0xa8b0a0)
-      ambientBase = 0.32
-      hemiBase = 0.58
-      sunBase = 1.25
-      rimBase = 0.2
+      // Mexiko: teplý den, bez přepálené zeleně / bloom-feel
+      ambient?.color.setHex(0xb0a898)
+      hemi?.color.setHex(0xc8c0b0)
+      hemi?.groundColor.setHex(0x3a5230)
+      sun?.color.setHex(0xffe8c8)
+      rim?.color.setHex(0x98a090)
+      ambientBase = 0.26
+      hemiBase = 0.48
+      sunBase = 1.05
+      rimBase = 0.16
       this.lightRig.setSunOffset(70, 145, 45)
     } else if (def.id === 'vodochody') {
       ambient?.color.setHex(0xc4ccb8)
@@ -1367,15 +1393,15 @@ export class Game {
       rimBase = 0.22
       this.lightRig.setSunOffset(85, 150, -30)
     } else if (def.id === 'hruby') {
-      ambient?.color.setHex(0xc8c4a8)
-      hemi?.color.setHex(0xd8d4b0)
-      hemi?.groundColor.setHex(0x5a6a38)
-      sun?.color.setHex(0xffefd0)
-      rim?.color.setHex(0xa0a888)
-      ambientBase = 0.3
-      hemiBase = 0.58
-      sunBase = 1.2
-      rimBase = 0.18
+      ambient?.color.setHex(0xb0ac98)
+      hemi?.color.setHex(0xc4c0a8)
+      hemi?.groundColor.setHex(0x455830)
+      sun?.color.setHex(0xffe4c0)
+      rim?.color.setHex(0x909888)
+      ambientBase = 0.26
+      hemiBase = 0.48
+      sunBase = 1.05
+      rimBase = 0.15
       this.lightRig.setSunOffset(90, 140, 20)
     } else if (def.world === 'climb') {
       ambient?.color.setHex(0xb8c8d8)
@@ -1634,6 +1660,16 @@ export class Game {
 
     if (
       !this.multiplayer &&
+      this.race.phase === 'finished' &&
+      (this.input.pressed('Enter') || this.input.pressed('NumpadEnter'))
+    ) {
+      this.input.endFrame()
+      this.handleFinishEnter()
+      return
+    }
+
+    if (
+      !this.multiplayer &&
       (this.input.actionPressed('restart') || this.input.pressed('KeyR'))
     ) {
       // Musí endFrame — jinak KeyR zůstane v justPressed a restart jede každý frame (= freeze)
@@ -1840,11 +1876,14 @@ export class Game {
               trickPts: this.player.trickPoints,
               rivalPlaces,
             })
-            // Kvalifikace: bez výsledkové karty → volba obtížnosti (S1), pak brief.
+            // Kvalifikace: GRATULUJI vsuvka → jméno (bez výsledkové karty).
             if (wasQual) {
+              this.lastChampAdvanced = null
               this.hud.setChampionshipResult(null)
+              this.menu.armQualCongrats()
               queueMicrotask(() => this.openMenu())
             } else {
+              this.lastChampAdvanced = advanced
               this.hud.setChampionshipResult({
                 points: updated.points,
                 progress: championshipProgressLabel(updated),
