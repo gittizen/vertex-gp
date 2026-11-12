@@ -618,6 +618,12 @@ export class Input {
     this.tiltSteer = 0
   }
 
+  /** Start / restart / unpause — vyčisti joystick, tap i tilt nulu. */
+  prepareForRace(): void {
+    this.resetMobileAxes()
+    this.recenterTilt()
+  }
+
   private portraitScreen(): boolean {
     return window.matchMedia('(orientation: portrait)').matches
   }

@@ -1,8 +1,7 @@
 /**
  * Build playable static archives into ./site/
  * GH Pages base: /vertex-gp/<ver>/
- * Public hub: 0.3 (current) → 0.0.2 → 0.0.1
- * (git branch refs 0.1 / 0.2 zůstávají; public ID je přečíslené)
+ * Public hub: 0.3 (current) → 0.2 → 0.1
  */
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -21,22 +20,21 @@ const VERSIONS = [
     ref: 'HEAD',
     base: '/vertex-gp/0.3/',
     title: 'KlecMania',
-    blurb: '0.3.1 — career ramp, pit paints, rear-view fix.',
+    blurb: 'Career, garage paints, rear-view, settings polish.',
     current: true,
   },
   {
-    id: '0.0.2',
+    id: '0.2',
     ref: '0.2',
-    base: '/vertex-gp/0.0.2/',
+    base: '/vertex-gp/0.2/',
     title: 'Klec GP',
     blurb: 'Klecany brand, freestyle, atmospheres.',
-    /** screenshot / notes folder (legacy name kept on disk) */
     notesDir: '0.2',
   },
   {
-    id: '0.0.1',
+    id: '0.1',
     ref: '0.1',
-    base: '/vertex-gp/0.0.1/',
+    base: '/vertex-gp/0.1/',
     title: 'Vertex GP',
     blurb: 'First engine: tracks, AI, online WS.',
     notesDir: '0.1',
@@ -202,7 +200,7 @@ ${rows}
       </tbody>
     </table>
     <footer>
-      Current release is <strong>0.3</strong>. Earlier public builds are labeled <strong>0.0.1</strong> / <strong>0.0.2</strong>.
+      Current release is <strong>0.3</strong>. Earlier playables: <strong>0.2</strong> · <strong>0.1</strong>.
       Extra notes under <code>versions/</code> stay in the repo; experiment tags remain in git history.
     </footer>
   </main>

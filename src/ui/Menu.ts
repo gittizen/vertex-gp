@@ -2115,53 +2115,59 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock">
+        <div class="menu-shell menu-panel menu-settings menu-panel-dock">
           <div class="menu-panel-body">
-            <p class="tune-rules">${t('menu.aiLearnBlurb')}</p>
-            <p class="tune-help">${t('menu.aiLearnStats', { n: samples.length, c: model.cells.length })}</p>
-            <div class="dir-grid" style="margin:12px 0">
-              <button type="button" class="track-card ${learn.enabled ? 'active' : ''}" data-learn-enabled>
-                <strong>${t('menu.aiLearnCollect')}</strong>
-                <span>${learn.enabled ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-              </button>
-              <button type="button" class="track-card ${learn.upload ? 'active' : ''}" data-learn-upload>
-                <strong>${t('menu.aiLearnUpload')}</strong>
-                <span>${learn.upload ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-              </button>
-              <button type="button" class="track-card ${learn.applyToAi ? 'active' : ''}" data-learn-apply>
-                <strong>${t('menu.aiLearnApply')}</strong>
-                <span>${learn.applyToAi ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-              </button>
-            </div>
-            <div class="dir-grid" style="margin-bottom:12px">
-              <button type="button" class="menu-start" data-learn-export>${t('menu.aiLearnExport')}</button>
-              <button type="button" class="btn-ghost" data-learn-import>${t('menu.aiLearnImport')}</button>
-            </div>
-            <input type="file" accept="application/json,.json" data-learn-file hidden />
-            <textarea class="text-input" data-learn-box readonly rows="5" style="width:100%;font-size:11px" placeholder="${t('menu.aiLearnPh')}"></textarea>
-            <p class="tune-rules" data-learn-status style="margin-top:8px"></p>
-            <div style="overflow:auto;max-height:240px;margin-top:12px">
-              <table class="ai-learn-table">
-                <thead>
-                  <tr>
-                    <th>${t('menu.aiLearnColTrack')}</th>
-                    <th>${t('menu.aiLearnColVeh')}</th>
-                    <th>${t('menu.aiLearnColDiff')}</th>
-                    <th>N</th>
-                    <th>${t('menu.aiLearnColPlayers')}</th>
-                    <th>${t('menu.aiLearnColMedian')}</th>
-                    <th>${t('menu.aiLearnColTarget')}</th>
-                  </tr>
-                </thead>
-                <tbody>${tableRows || `<tr><td colspan="7">${t('menu.aiLearnEmpty')}</td></tr>`}</tbody>
-              </table>
-            </div>
-            <div class="atm-scene-panel" style="margin-top:18px">
-              <p class="atm-scene-title">${t('menu.paceExport')}</p>
-              <p class="tune-help">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
-              <button type="button" class="menu-start" data-pace-export>${t('menu.paceExportBtn')}</button>
-              <p class="tune-rules" data-pace-status style="margin-top:8px"></p>
-              <textarea class="text-input" data-pace-box readonly rows="5" style="width:100%;margin-top:10px;font-size:12px;opacity:0.9" placeholder="${t('menu.paceExportPh')}"></textarea>
+            <div class="bind-list">
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.settingsAiLearn')}</h3>
+                <p class="tune-rules">${t('menu.aiLearnBlurb')}</p>
+                <p class="tune-help">${t('menu.aiLearnStats', { n: samples.length, c: model.cells.length })}</p>
+                <div class="bind-row ${learn.enabled ? 'active' : ''}" data-learn-enabled role="button" tabindex="0">
+                  <span class="bind-name">${t('menu.aiLearnCollect')}</span>
+                  <span class="bind-row-keys">${learn.enabled ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
+                <div class="bind-row ${learn.upload ? 'active' : ''}" data-learn-upload role="button" tabindex="0">
+                  <span class="bind-name">${t('menu.aiLearnUpload')}</span>
+                  <span class="bind-row-keys">${learn.upload ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
+                <div class="bind-row ${learn.applyToAi ? 'active' : ''}" data-learn-apply role="button" tabindex="0">
+                  <span class="bind-name">${t('menu.aiLearnApply')}</span>
+                  <span class="bind-row-keys">${learn.applyToAi ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
+                <div class="settings-actions">
+                  <button type="button" class="btn-ghost" data-learn-export>${t('menu.aiLearnExport')}</button>
+                  <button type="button" class="btn-ghost" data-learn-import>${t('menu.aiLearnImport')}</button>
+                </div>
+                <input type="file" accept="application/json,.json" data-learn-file hidden />
+                <textarea class="text-input" data-learn-box readonly rows="4" placeholder="${t('menu.aiLearnPh')}"></textarea>
+                <p class="tune-rules" data-learn-status></p>
+              </div>
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.paceExport')}</h3>
+                <p class="tune-help">${t('menu.paceExportHint', { n: getPaceSamples().length, r: allRecords().length })}</p>
+                <button type="button" class="btn-ghost" data-pace-export>${t('menu.paceExportBtn')}</button>
+                <p class="tune-rules" data-pace-status></p>
+                <textarea class="text-input" data-pace-box readonly rows="4" placeholder="${t('menu.paceExportPh')}"></textarea>
+              </div>
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.aiLearnTitle')}</h3>
+                <div class="settings-table-wrap">
+                  <table class="ai-learn-table">
+                    <thead>
+                      <tr>
+                        <th>${t('menu.aiLearnColTrack')}</th>
+                        <th>${t('menu.aiLearnColVeh')}</th>
+                        <th>${t('menu.aiLearnColDiff')}</th>
+                        <th>N</th>
+                        <th>${t('menu.aiLearnColPlayers')}</th>
+                        <th>${t('menu.aiLearnColMedian')}</th>
+                        <th>${t('menu.aiLearnColTarget')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>${tableRows || `<tr><td colspan="7">${t('menu.aiLearnEmpty')}</td></tr>`}</tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
           ${this.settingsOkNavRow()}
@@ -2239,34 +2245,20 @@ export class Menu {
                 <span class="bind-row-keys">${feel.allowPortraitRotation ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
               </div>
             </div>`
+      const feelToggle = (attr: string, on: boolean, label: string, hint?: string) =>
+        `<div class="bind-row ${on ? 'active' : ''}" ${attr} role="button" tabindex="0">
+          <div class="bind-row-label">
+            <strong>${label}</strong>
+            ${hint ? `<span class="bind-row-hint">${hint}</span>` : ''}
+          </div>
+          <span class="bind-row-keys">${on ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+        </div>`
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-controls menu-panel-dock">
+        <div class="menu-shell menu-panel menu-controls menu-settings menu-panel-dock">
           <div class="menu-panel-body">
             <p class="tune-rules">${onPhone ? t('menu.ctrlBlurbMobile') : t('menu.ctrlBlurb')}</p>
-            ${
-              onPhone
-                ? ''
-                : `<div class="ctrl-overview" aria-label="${t('menu.ctrlTitle')}">
-              <div class="ctrl-overview-item">
-                <strong>${t('menu.ctrlOverviewSteer')}</strong>
-                <span>${t('menu.ctrlOverviewSteerVal')}</span>
-              </div>
-              <div class="ctrl-overview-item">
-                <strong>${t('menu.ctrlOverviewGas')}</strong>
-                <span>${t('menu.ctrlOverviewGasVal')}</span>
-              </div>
-              <div class="ctrl-overview-item">
-                <strong>${t('menu.ctrlOverviewSpecial')}</strong>
-                <span>${t('menu.ctrlOverviewSpecialVal')}</span>
-              </div>
-              <div class="ctrl-overview-item">
-                <strong>${t('menu.ctrlOverviewMenu')}</strong>
-                <span>${t('menu.ctrlOverviewMenuVal')}</span>
-              </div>
-            </div>`
-            }
             <div class="bind-list">
               ${mobileSchemeHtml}
               <div class="bind-section">
@@ -2280,49 +2272,32 @@ export class Menu {
                   <span>${t('menu.ctrlHudScale')} <strong class="tune-val" data-feel-hud-val>${hudPct}%</strong></span>
                   <input type="range" min="75" max="135" step="5" value="${hudPct}" data-feel-hud />
                 </label>
-                <div class="dir-grid" style="margin:10px 0">
-                  <button type="button" class="track-card ${feel.invertSteer ? 'active' : ''}" data-feel-invert>
-                    <strong>${t('menu.ctrlInvertSteer')}</strong>
-                    <span>${feel.invertSteer ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                  </button>
-                  <button type="button" class="track-card ${feel.stabilityAssist ? 'active' : ''}" data-feel-stability>
-                    <strong>${t('menu.ctrlStability')}</strong>
-                    <span>${feel.stabilityAssist ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                  </button>
-                  <button type="button" class="track-card ${feel.driftMode ? 'active' : ''}" data-feel-drift>
-                    <strong>${t('menu.ctrlDrift')}</strong>
-                    <span>${feel.driftMode ? t('menu.ctrlOn') : t('menu.ctrlOff')} · ${t('menu.ctrlDriftBlurb')}</span>
-                  </button>
-                  <button type="button" class="track-card ${raceFeel.skipCountdown ? 'active' : ''}" data-feel-skip-cd>
-                    <strong>${t('menu.ctrlSkipCountdown')}</strong>
-                    <span>${raceFeel.skipCountdown ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                  </button>
-                  <button type="button" class="track-card ${feel.immortality ? 'active' : ''}" data-feel-immortal>
-                    <strong>${t('menu.ctrlImmortal')}</strong>
-                    <span>${feel.immortality ? t('menu.ctrlOn') : t('menu.ctrlOff')} · ${t('menu.ctrlImmortalBlurb')}</span>
-                  </button>
-                </div>
+                ${feelToggle('data-feel-invert', feel.invertSteer, t('menu.ctrlInvertSteer'))}
+                ${feelToggle('data-feel-stability', feel.stabilityAssist, t('menu.ctrlStability'))}
+                ${feelToggle('data-feel-drift', feel.driftMode, t('menu.ctrlDrift'), t('menu.ctrlDriftBlurb'))}
+                ${feelToggle('data-feel-skip-cd', raceFeel.skipCountdown, t('menu.ctrlSkipCountdown'))}
+                ${feelToggle('data-feel-immortal', feel.immortality, t('menu.ctrlImmortal'), t('menu.ctrlImmortalBlurb'))}
                 <p class="tune-rules">${t('menu.ctrlCamFollow')}</p>
-                <div class="dir-grid">
-                  ${camFollows
-                    .map((c) => {
-                      const active = c === feel.camFollow ? 'active' : ''
-                      return `<button type="button" class="track-card ${active}" data-feel-cam="${c}">
-                        <strong>${t(`menu.ctrlCam.${c}`)}</strong>
-                      </button>`
-                    })
-                    .join('')}
-                </div>
-                <p class="tune-rules" style="margin-top:12px">${t('menu.ctrlSkateStance')}</p>
-                <div class="dir-grid">
-                  ${SKATE_STANCES.map((s) => {
-                    const active = s === feel.skateStance ? 'active' : ''
-                    return `<button type="button" class="track-card ${active}" data-feel-stance="${s}">
+                ${camFollows
+                  .map((c) => {
+                    const active = c === feel.camFollow ? 'active' : ''
+                    return `<div class="bind-row ${active}" data-feel-cam="${c}" role="button" tabindex="0">
+                      <span class="bind-name">${t(`menu.ctrlCam.${c}`)}</span>
+                      <span class="bind-row-keys">${active ? '✓' : ''}</span>
+                    </div>`
+                  })
+                  .join('')}
+                <p class="tune-rules">${t('menu.ctrlSkateStance')}</p>
+                ${SKATE_STANCES.map((s) => {
+                  const active = s === feel.skateStance ? 'active' : ''
+                  return `<div class="bind-row ${active}" data-feel-stance="${s}" role="button" tabindex="0">
+                    <div class="bind-row-label">
                       <strong>${t(`menu.ctrlSkate.${s}`)}</strong>
-                      <span>${t(`menu.ctrlSkate.${s}.blurb`)}</span>
-                    </button>`
-                  }).join('')}
-                </div>
+                      <span class="bind-row-hint">${t(`menu.ctrlSkate.${s}.blurb`)}</span>
+                    </div>
+                    <span class="bind-row-keys">${active ? '✓' : ''}</span>
+                  </div>`
+                }).join('')}
               </div>
               ${
                 onPhone
@@ -2333,23 +2308,20 @@ export class Menu {
                   : `<div class="bind-section">
                 <h3 class="bind-section-title">${t('menu.manualTitle')}</h3>
                 <p class="tune-rules">${t('menu.manualBlurb')}</p>
-                <div class="manual-grid">
-                  <button type="button" class="track-card ${raceFeel.transmission === 'auto' ? 'active' : ''}" data-tx="auto">
-                    <strong>${t('menu.manual.off')}</strong>
-                    <span>${t('menu.manual.offBlurb')}</span>
-                    <em class="manual-hist">${t('menu.manual.offHist')}</em>
-                  </button>
-                  <button type="button" class="track-card ${raceFeel.transmission === 'manual' ? 'active' : ''}" data-tx="manual">
-                    <strong>${t('menu.manual.on')}</strong>
-                    <span>${t('menu.manual.onBlurb')}</span>
-                    <em class="manual-hist">${t('menu.manual.onHist')}</em>
-                  </button>
-                  <button type="button" class="track-card track-card-wide ${raceFeel.transmission === 'clutch' ? 'active' : ''}" data-tx="clutch">
-                    <strong>${t('menu.manual.clutch')}</strong>
-                    <span>${t('menu.manual.clutchBlurb')}</span>
-                    <em class="manual-hist">${t('menu.manual.clutchHist')}</em>
-                  </button>
-                </div>
+                ${(['auto', 'manual', 'clutch'] as const)
+                  .map((mode) => {
+                    const active = raceFeel.transmission === mode ? 'active' : ''
+                    const key =
+                      mode === 'auto' ? 'off' : mode === 'manual' ? 'on' : 'clutch'
+                    return `<div class="bind-row ${active}" data-tx="${mode}" role="button" tabindex="0">
+                      <div class="bind-row-label">
+                        <strong>${t(`menu.manual.${key}`)}</strong>
+                        <span class="bind-row-hint">${t(`menu.manual.${key}Blurb`)}</span>
+                      </div>
+                      <span class="bind-row-keys">${active ? '✓' : ''}</span>
+                    </div>`
+                  })
+                  .join('')}
               </div>
               ${section(t('menu.ctrlSectionDrive'), drive)}
               ${section(t('menu.ctrlSectionSpecial'), special)}
@@ -2357,21 +2329,20 @@ export class Menu {
               <div class="bind-section">
                 <h3 class="bind-section-title">${t('menu.ctrlSectionTricks')}</h3>
                 <p class="tune-rules">${t('menu.ctrlTricksBlurb')}</p>
-                <div class="dir-grid" style="margin-bottom:10px">
-                  <button type="button" class="track-card ${trickKind === 'skate' ? 'active' : ''}" data-trick-kind="skate">
-                    <strong>${t('vehicle.skate')}</strong>
-                  </button>
-                  <button type="button" class="track-card ${trickKind === 'skates' ? 'active' : ''}" data-trick-kind="skates">
-                    <strong>${t('vehicle.skates')}</strong>
-                  </button>
-                  <button type="button" class="track-card ${trickKind === 'bike' ? 'active' : ''}" data-trick-kind="bike">
-                    <strong>${t('vehicle.bike')}</strong>
-                  </button>
-                </div>
-                <div class="trick-bind-list">${trickRows}</div>
+                <p class="tune-help">${t('menu.ctrlTricksPick')}</p>
+                ${(['skate', 'skates', 'bike'] as const)
+                  .map((k) => {
+                    const active = trickKind === k ? 'active' : ''
+                    return `<div class="bind-row ${active}" data-trick-kind="${k}" role="button" tabindex="0">
+                      <span class="bind-name">${t(`vehicle.${k}`)}</span>
+                      <span class="bind-row-keys">${active ? '✓' : ''}</span>
+                    </div>`
+                  })
+                  .join('')}
+                ${trickRows}
               </div>`
               }
-              <button type="button" class="btn-ghost" data-reset-binds style="margin-top:6px">${t('menu.ctrlReset')}</button>
+              <button type="button" class="btn-ghost" data-reset-binds>${t('menu.ctrlReset')}</button>
             </div>
           </div>
           ${this.settingsOkNavRow()}
@@ -2615,48 +2586,53 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock menu-difficulty">
+        <div class="menu-shell menu-panel menu-settings menu-panel-dock menu-difficulty">
           <div class="menu-panel-body">
-            <p class="tune-rules">${t('menu.difficulty')}</p>
-            <div class="track-grid">
-              ${DIFFICULTIES.map((d) => {
-                const active = d.id === this.selectedDifficulty ? 'active' : ''
-                return `<button type="button" class="track-card track-card-photo ${active}" data-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
-                  <strong>${t(`diff.${d.id}`)}</strong>
-                </button>`
-              }).join('')}
-            </div>
-            <div class="atm-scene-panel">
-              <p class="atm-scene-title">${t('menu.opponents')}</p>
-              <p class="tune-help">${t('menu.opponentsBlurb')}</p>
-              <label class="manual-option ${race.randomOpponentsEachRace ? 'active' : ''}" style="margin:12px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer">
-                <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} style="margin-top:4px" />
-                <span>
-                  <strong>${t('menu.opponentsRandomEach')}</strong>
-                  <span class="tune-help" style="display:block;margin-top:4px">${t('menu.opponentsRandomEachBlurb')}</span>
-                </span>
-              </label>
-              <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
-              ${[0, 1, 2]
-                .map((slot) => {
-                  const cur = opp[slot]!
-                  return `<div class="opp-row">
-                    <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
-                    <div class="opp-picks">
-                      ${pool
-                        .map((k) => {
-                          const active = k === cur ? 'active' : ''
-                          const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
-                          return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
-                          <strong>${this.vehicleLabel(k)}</strong>
-                        </button>`
-                        })
-                        .join('')}
-                    </div>
-                  </div>`
-                })
-                .join('')}
-              <button type="button" class="menu-start" data-opp-random style="margin-top:14px" ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
+            <div class="bind-list">
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.difficulty')}</h3>
+                <div class="track-grid">
+                  ${DIFFICULTIES.map((d) => {
+                    const active = d.id === this.selectedDifficulty ? 'active' : ''
+                    return `<button type="button" class="track-card track-card-photo ${active}" data-diff="${d.id}" style="--card-photo:url('${difficultyArt(d.id)}')">
+                      <strong>${t(`diff.${d.id}`)}</strong>
+                    </button>`
+                  }).join('')}
+                </div>
+              </div>
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.opponents')}</h3>
+                <p class="tune-help">${t('menu.opponentsBlurb')}</p>
+                <div class="bind-row ${race.randomOpponentsEachRace ? 'active' : ''}" data-opp-random-each-row role="button" tabindex="0">
+                  <div class="bind-row-label">
+                    <strong>${t('menu.opponentsRandomEach')}</strong>
+                    <span class="bind-row-hint">${t('menu.opponentsRandomEachBlurb')}</span>
+                  </div>
+                  <span class="bind-row-keys">${race.randomOpponentsEachRace ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
+                <input type="checkbox" data-opp-random-each ${race.randomOpponentsEachRace ? 'checked' : ''} hidden />
+                <div class="opp-fixed ${race.randomOpponentsEachRace ? 'opp-fixed-dim' : ''}">
+                ${[0, 1, 2]
+                  .map((slot) => {
+                    const cur = opp[slot]!
+                    return `<div class="opp-row">
+                      <span class="opp-label">${t('menu.opponent')} ${slot + 1}</span>
+                      <div class="opp-picks">
+                        ${pool
+                          .map((k) => {
+                            const active = k === cur ? 'active' : ''
+                            const disabled = race.randomOpponentsEachRace ? 'disabled' : ''
+                            return `<button type="button" class="track-card opp-card ${active}" data-opp-slot="${slot}" data-opp-kind="${k}" ${disabled}>
+                            <strong>${this.vehicleLabel(k)}</strong>
+                          </button>`
+                          })
+                          .join('')}
+                      </div>
+                    </div>`
+                  })
+                  .join('')}
+                <button type="button" class="btn-ghost" data-opp-random ${race.randomOpponentsEachRace ? 'disabled' : ''}>${t('menu.opponentsRandom')}</button>
+                </div>
               </div>
             </div>
           </div>
@@ -2672,14 +2648,17 @@ export class Menu {
           this.render()
         })
       })
+      const syncOppRandom = (on: boolean) => {
+        this.audioApi?.playClick?.()
+        this.raceApi?.set({ randomOpponentsEachRace: on })
+        this.render()
+      }
+      this.root.querySelector('[data-opp-random-each-row]')?.addEventListener('click', () => {
+        syncOppRandom(!race.randomOpponentsEachRace)
+      })
       this.root.querySelector<HTMLInputElement>('[data-opp-random-each]')?.addEventListener(
         'change',
-        (e) => {
-          this.audioApi?.playClick?.()
-          const on = (e.target as HTMLInputElement).checked
-          this.raceApi?.set({ randomOpponentsEachRace: on })
-          this.render()
-        },
+        (e) => syncOppRandom((e.target as HTMLInputElement).checked),
       )
       this.root.querySelectorAll<HTMLButtonElement>('[data-opp-slot]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -2712,25 +2691,29 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-audio menu-panel-dock">
+        <div class="menu-shell menu-panel menu-audio menu-settings menu-panel-dock">
           <div class="menu-panel-body">
-            <p class="tune-rules">${t('menu.audioTrack')}</p>
-            <div class="track-grid">
-              ${MUSIC_TRACKS.map((m) => {
-                const active = m.id === audio.track ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-music="${m.id}">
-                  <strong>${t(m.labelKey)}</strong>
-                </button>`
-              }).join('')}
-            </div>
-            <div class="atm-scene-panel">
-              <p class="atm-scene-title">${t('menu.audioTitle')}</p>
-              <p class="tune-help">${t('menu.audioMenuBlurb')}</p>
-              <div class="tune-grid atm-scene-sliders">
-                ${this.audioSlider('master', t('menu.audioMaster'), audio.master)}
-                ${this.audioSlider('music', t('menu.audioMusic'), audio.music)}
-                ${this.audioSlider('sfx', t('menu.audioSfx'), audio.sfx)}
-                ${this.audioSlider('menu', t('menu.audioMenu'), audio.menu)}
+            <div class="bind-list">
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.audioTrack')}</h3>
+                <div class="track-grid">
+                  ${MUSIC_TRACKS.map((m) => {
+                    const active = m.id === audio.track ? 'active' : ''
+                    return `<button type="button" class="track-card ${active}" data-music="${m.id}">
+                      <strong>${t(m.labelKey)}</strong>
+                    </button>`
+                  }).join('')}
+                </div>
+              </div>
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.audioTitle')}</h3>
+                <p class="tune-help">${t('menu.audioMenuBlurb')}</p>
+                <div class="tune-grid">
+                  ${this.audioSlider('master', t('menu.audioMaster'), audio.master)}
+                  ${this.audioSlider('music', t('menu.audioMusic'), audio.music)}
+                  ${this.audioSlider('sfx', t('menu.audioSfx'), audio.sfx)}
+                  ${this.audioSlider('menu', t('menu.audioMenu'), audio.menu)}
+                </div>
               </div>
             </div>
           </div>
@@ -2797,45 +2780,45 @@ export class Menu {
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
-        <div class="menu-shell menu-panel menu-panel-dock">
+        <div class="menu-shell menu-panel menu-settings menu-panel-dock">
           <div class="menu-panel-body">
-            <p class="tune-rules">${t('menu.atmTone')}</p>
-            <div class="track-grid">
-              ${toneCards}
-            </div>
-            ${calendarPacksHtml}
-            <p class="tune-rules" style="margin-top:18px">${t('menu.visualQuality')}</p>
-            <p class="tune-help">${t('menu.visualQualityBlurb')}</p>
-            <p class="tune-help">${t('menu.visualRecommend', {
-              q: t(`menu.visual.${lastSuggestedQuality() ?? suggestVisualQuality()}`),
-            })}</p>
-            <div class="track-grid">
-              ${VISUAL_QUALITIES.map((q) => {
-                const active = q === vis.quality ? 'active' : ''
-                return `<button type="button" class="track-card ${active}" data-visual-q="${q}">
-                  <strong>${t(`menu.visual.${q}`)}</strong>
-                  <span>${t(`menu.visual.${q}.blurb`)}</span>
-                </button>`
-              }).join('')}
-            </div>
-            <div class="atm-scene-panel">
-              <p class="atm-scene-title">${t('menu.atmScene')}</p>
-              <p class="tune-help">${t('menu.atmSceneBlurb')}</p>
-              <div class="atm-fx-toggles">
-                <button type="button" class="atm-fx-toggle ${vis.bloom ? 'active' : ''}" data-visual-bloom>
-                  <strong>${t('menu.visualBloom')}</strong>
-                  <span>${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
-                <button type="button" class="atm-fx-toggle ${vis.shadows ? 'active' : ''}" data-visual-shadows>
-                  <strong>${t('menu.visualShadows')}</strong>
-                  <span>${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
-                <button type="button" class="atm-fx-toggle ${vis.rearMirror ? 'active' : ''}" data-visual-mirror>
-                  <strong>${t('menu.visualMirror')}</strong>
-                  <span>${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
-                </button>
+            <div class="bind-list">
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.atmTone')}</h3>
+                <div class="track-grid">${toneCards}</div>
+                ${calendarPacksHtml}
               </div>
-              <div class="tune-grid atm-scene-sliders">
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.visualQuality')}</h3>
+                <p class="tune-help">${t('menu.visualQualityBlurb')}</p>
+                <p class="tune-help">${t('menu.visualRecommend', {
+                  q: t(`menu.visual.${lastSuggestedQuality() ?? suggestVisualQuality()}`),
+                })}</p>
+                <div class="track-grid">
+                  ${VISUAL_QUALITIES.map((q) => {
+                    const active = q === vis.quality ? 'active' : ''
+                    return `<button type="button" class="track-card ${active}" data-visual-q="${q}">
+                      <strong>${t(`menu.visual.${q}`)}</strong>
+                      <span>${t(`menu.visual.${q}.blurb`)}</span>
+                    </button>`
+                  }).join('')}
+                </div>
+              </div>
+              <div class="bind-section">
+                <h3 class="bind-section-title">${t('menu.atmScene')}</h3>
+                <p class="tune-help">${t('menu.atmSceneBlurb')}</p>
+                <div class="bind-row ${vis.bloom ? 'active' : ''}" data-visual-bloom role="button" tabindex="0">
+                  <span class="bind-name">${t('menu.visualBloom')}</span>
+                  <span class="bind-row-keys">${vis.bloom ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
+                <div class="bind-row ${vis.shadows ? 'active' : ''}" data-visual-shadows role="button" tabindex="0">
+                  <span class="bind-name">${t('menu.visualShadows')}</span>
+                  <span class="bind-row-keys">${vis.shadows ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
+                <div class="bind-row ${vis.rearMirror ? 'active' : ''}" data-visual-mirror role="button" tabindex="0">
+                  <span class="bind-name">${t('menu.visualMirror')}</span>
+                  <span class="bind-row-keys">${vis.rearMirror ? t('menu.ctrlOn') : t('menu.ctrlOff')}</span>
+                </div>
                 <label class="tune-row">
                   <span class="tune-label">${t('menu.atmLight')} <span class="tune-val" data-atm-light-val>${t(`menu.atmLight.${atm.light}`)}</span></span>
                   <input type="range" min="0" max="3" step="1" value="${lightIdx}" data-atm-light />

@@ -637,6 +637,7 @@ export class Game {
 
   private resumeFromPause(): void {
     this.clearPause()
+    this.input.prepareForRace()
   }
 
   private syncPauseHud(): void {
@@ -948,6 +949,8 @@ export class Game {
     this.menu.hide()
     this.mode = 'race'
     this.resetEscEdge()
+    // Telefon: vynuluj joystick/tilt — jinak další závod „táhne“ do strany
+    this.input.prepareForRace()
     this.setupGridSolo(name, look)
     this.loadTrack(trackId, vehicle, tuning)
     this.applyAiDifficulty()
@@ -1025,6 +1028,7 @@ export class Game {
     this.mode = 'race'
     laps = clampRaceLaps(laps)
     this.resetEscEdge()
+    this.input.prepareForRace()
     this.lastTrackId = trackId
     this.lastMpLaps = laps
     this.setupGridMultiplayer(order, room)
@@ -1611,7 +1615,7 @@ export class Game {
     this.onResize()
   }
 
-  /** Stíny jen hráč + nejbližší rival (balanced 60fps). */
+  /** Stíny: hráč + nejbližší rival (autoUpdate zapnutý — plynulý look). */
   private applyShadowCasters(shadowsOn: boolean): void {
     if (!this.player || this.vehicles.length === 0) return
     if (!shadowsOn) {

@@ -2,8 +2,10 @@ import * as THREE from 'three'
 import type { Vehicle } from '../vehicle/Vehicle'
 
 /** Max vnitřní rozlišení zrcátka (extra full-scene pass). */
-const MIRROR_RT_W = 160
-const MIRROR_RT_H = 68
+const MIRROR_RT_W = 128
+const MIRROR_RT_H = 54
+/** Obnovit scénu v RT každý N-tý frame (blit pořád). */
+const MIRROR_REFRESH_EVERY = 3
 
 /**
  * Funkční zpětné zrcátko — low-res RT + upscale do scissor viewportu.
@@ -11,6 +13,7 @@ const MIRROR_RT_H = 68
  *
  * Horizontální flip = negace projectionMatrix[0] + dočasné CW frontFace
  * (camera.scale.x = -1 by shodilo backface culling → prázdný obraz).
+ * Shadow map se při mirror passu nepřepočítává (hlavní zdroj fps dropu).
  */
 export class RearViewMirror {
   readonly camera: THREE.PerspectiveCamera
@@ -25,7 +28,7 @@ export class RearViewMirror {
   private frameSkip = 0
 
   constructor() {
-    this.camera = new THREE.PerspectiveCamera(55, MIRROR_RT_W / MIRROR_RT_H, 0.5, 220)
+    this.camera = new THREE.PerspectiveCamera(52, MIRROR_RT_W / MIRROR_RT_H, 0.6, 160)
     this.rt = new THREE.WebGLRenderTarget(MIRROR_RT_W, MIRROR_RT_H, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
@@ -59,10 +62,9 @@ export class RearViewMirror {
     const heading = Number.isFinite(p.heading) ? p.heading : 0
     const fx = Math.sin(heading)
     const fz = Math.cos(heading)
-    // Nad kabinou / střechou — kouká dozadu na trať a soupeře za autem
     const y = Math.max(vehicle.groundY + 1.55, vehicle.mesh.position.y + 1.15)
     this.camera.position.set(p.x + fx * 0.15, y, p.z + fz * 0.15)
-    this.look.set(p.x - fx * 28, y - 0.35, p.z - fz * 28)
+    this.look.set(p.x - fx * 24, y - 0.35, p.z - fz * 24)
     this.camera.up.set(0, 1, 0)
     this.camera.lookAt(this.look)
   }
@@ -74,12 +76,10 @@ export class RearViewMirror {
     const mw = Math.floor(Math.min(320, this.size.x * 0.28))
     const mh = Math.floor(mw * 0.42)
     const mx = Math.floor((this.size.x - mw) / 2)
-    // WebGL Y = odspodu — zarovnání s .hud-mirror (top ~3.5 %)
     const my = this.size.y - mh - Math.floor(this.size.y * 0.035)
 
-    // Každý 2. frame přerenderuj scénu do RT (upscale pořád každý frame)
     this.frameSkip++
-    const refresh = this.frameSkip % 2 === 1
+    const refresh = this.frameSkip % MIRROR_REFRESH_EVERY === 1
     if (refresh) {
       this.camera.aspect = MIRROR_RT_W / MIRROR_RT_H
       this.camera.updateProjectionMatrix()
@@ -93,7 +93,12 @@ export class RearViewMirror {
       const prevFrontFace = gl.getParameter(gl.FRONT_FACE) as number
       const prevTarget = renderer.getRenderTarget()
       const prevAutoClear = renderer.autoClear
+      const prevShadowAuto = renderer.shadowMap.autoUpdate
+      const prevShadowNeeds = renderer.shadowMap.needsUpdate
 
+      // Nepřepočítávat shadow mapy — to zabíjelo FPS při zapnutém zrcátku
+      renderer.shadowMap.autoUpdate = false
+      renderer.shadowMap.needsUpdate = false
       renderer.setRenderTarget(this.rt)
       renderer.autoClear = true
       renderer.clear()
@@ -103,10 +108,11 @@ export class RearViewMirror {
 
       renderer.setRenderTarget(prevTarget)
       renderer.autoClear = prevAutoClear
+      renderer.shadowMap.autoUpdate = prevShadowAuto
+      renderer.shadowMap.needsUpdate = prevShadowNeeds
       if (mesh) mesh.visible = prevVisible
     }
 
-    // Upscale low-res RT do HUD rámečku
     const prevAutoClear = renderer.autoClear
     renderer.autoClear = false
     renderer.setScissorTest(true)

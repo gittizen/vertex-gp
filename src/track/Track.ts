@@ -87,7 +87,26 @@ export class Track {
     this.enableWorldShadows()
     this.addSkyBody()
     this.addSkyBackdrop()
+    this.freezeStaticWorld()
     scene.add(this.group)
+  }
+
+  /**
+   * Statická trať/dekorace — vypni matrixAutoUpdate (CPU úspora každý frame).
+   * Sky backdrop zůstane animovatelný.
+   */
+  private freezeStaticWorld(): void {
+    const freeze = (root: THREE.Object3D) => {
+      root.traverse((obj) => {
+        obj.updateMatrix()
+        obj.matrixAutoUpdate = false
+      })
+    }
+    for (const child of this.group.children) {
+      if (child === this.skyBackdrop) continue
+      freeze(child)
+    }
+    this.group.updateMatrixWorld(true)
   }
 
   /** Tráva/keře/kameny — vždy mimo asfalt (Námko mělo zelené „v silnici“). */
@@ -112,7 +131,16 @@ export class Track {
     const bush = matLambert(0x2a4024)
     const rock = matLambert(0x6a6860)
     // Námko: žádné roadside objekty na asfalt — jen dál od hrany, méně kusů
-    const n = tight ? 10 : climb ? 28 : this.def.loop ? 36 : 44
+    // Klecánek: méně roadside propů (look stejný, míň draw calls)
+    const n = tight
+      ? 10
+      : this.def.id === 'klecanek'
+        ? 16
+        : climb
+          ? 22
+          : this.def.loop
+            ? 28
+            : 36
     const clear = this.halfWidth + (tight ? 11 : climb ? 7 : 6)
     for (let i = 0; i < n; i++) {
       const s = this.sample((i + 0.37) / n)
@@ -2567,7 +2595,7 @@ export class Track {
       river.position.set(valley.x - 160, valley.y - 1.4, valley.z - 40)
       this.group.add(river)
       this.addValleyBanks(bankEarth, rock, {
-        segs: 12,
+        segs: 8,
         innerLat: this.halfWidth + 22,
         outerLat: this.halfWidth + 36,
       })
@@ -2582,7 +2610,7 @@ export class Track {
     }
 
     // Blízko startu — Klecánek: domy na údolní terase (terrainYAt), ne na špejlích
-    const nearCount = serp ? 0 : zlaty ? 16 : id === 'klecanek' ? 10 : 12
+    const nearCount = serp ? 0 : zlaty ? 16 : id === 'klecanek' ? 8 : 12
     const houseStyle = id === 'klecanek' ? 'town' : 'climb'
     for (let i = 0; i < nearCount; i++) {
       const s = this.sample(0.04 + i * 0.014)

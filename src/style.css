@@ -1509,7 +1509,8 @@ html.portrait-blocked #app {
 
 .mobile-scheme-row,
 .bind-row[data-allow-portrait],
-.bind-row[data-mobile-scheme] {
+.bind-row[data-mobile-scheme],
+.menu-settings .bind-row[role='button'] {
   grid-template-columns: 1fr auto;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1520,7 +1521,8 @@ html.portrait-blocked #app {
 
 .mobile-scheme-row.active,
 .bind-row[data-allow-portrait].active,
-.bind-row[data-mobile-scheme].active {
+.bind-row[data-mobile-scheme].active,
+.menu-settings .bind-row[role='button'].active {
   border-color: color-mix(in srgb, var(--menu-accent, #c4a574) 70%, transparent);
   background: rgba(255, 255, 255, 0.08);
 }
@@ -1553,6 +1555,37 @@ html.portrait-blocked #app {
   opacity: 0.95;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.menu-settings .bind-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.menu-settings .bind-section {
+  width: 100%;
+  margin: 0 0 8px;
+}
+
+.menu-settings .settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.menu-settings .settings-table-wrap {
+  overflow: auto;
+  max-height: 240px;
+  margin-top: 8px;
+}
+
+.menu-settings .text-input {
+  width: 100%;
+  margin-top: 8px;
+  font-size: 12px;
 }
 
 .bind-name {
