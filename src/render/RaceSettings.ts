@@ -29,7 +29,8 @@ export type RaceSettingsValues = {
 }
 
 export const DEFAULT_RACE: RaceSettingsValues = {
-  reverse: false,
+  /** Rychlý závod + MP: default opačný směr. Kariéra si směr řídí sama. */
+  reverse: true,
   transmission: 'auto',
   freestyle: false,
   skipCountdown: false,
@@ -98,7 +99,8 @@ export function clampOpponentsToCategory(
   return [fix(opponents[0]), fix(opponents[1]), fix(opponents[2])]
 }
 
-const REVERSE_NORMAL_FIX = `${STORAGE_KEY}.dirNormal.v1`
+/** Jednorázově přepnout uložený směr na opačný (rychlý závod / MP default). */
+const REVERSE_DEFAULT_FIX = `${STORAGE_KEY}.dirReverse.v1`
 
 export function loadRaceSettings(): RaceSettingsValues {
   try {
@@ -106,13 +108,13 @@ export function loadRaceSettings(): RaceSettingsValues {
     if (!raw) return { ...DEFAULT_RACE, opponents: [...DEFAULT_RACE.opponents] }
     const parsed = JSON.parse(raw) as Partial<RaceSettingsValues> & { manualShift?: boolean }
     const op = Array.isArray(parsed.opponents) ? parsed.opponents : DEFAULT_RACE.opponents
-    // Jednorázově: default směr = normální (ne obráceně)
     let reverse = Boolean(parsed.reverse)
-    if (!localStorage.getItem(REVERSE_NORMAL_FIX)) {
-      reverse = false
-      localStorage.setItem(REVERSE_NORMAL_FIX, '1')
+    const migrateReverse = !localStorage.getItem(REVERSE_DEFAULT_FIX)
+    if (migrateReverse) {
+      reverse = true
+      localStorage.setItem(REVERSE_DEFAULT_FIX, '1')
     }
-    return {
+    const vals: RaceSettingsValues = {
       reverse,
       transmission: normTransmission(parsed.transmission, parsed.manualShift),
       freestyle: false, // freestyle závod zrušen — skate/kolo mají triky v klasice
@@ -130,6 +132,8 @@ export function loadRaceSettings(): RaceSettingsValues {
         normOpponent(op[2], DEFAULT_RACE.opponents[2]),
       ],
     }
+    if (migrateReverse) saveRaceSettings(vals)
+    return vals
   } catch {
     return { ...DEFAULT_RACE, opponents: [...DEFAULT_RACE.opponents] }
   }
@@ -138,10 +142,23 @@ export function loadRaceSettings(): RaceSettingsValues {
 export function saveRaceSettings(vals: RaceSettingsValues): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(vals))
   try {
-    localStorage.setItem(REVERSE_NORMAL_FIX, '1')
+    localStorage.setItem(REVERSE_DEFAULT_FIX, '1')
   } catch {
     /* ignore */
   }
+}
+
+/** Načti jen uložený směr (po kariéře — ať nepřepíše quick/MP preferenci). */
+export function peekPersistedReverse(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('klec-gp-race')
+    if (!raw) return DEFAULT_RACE.reverse
+    const parsed = JSON.parse(raw) as Partial<RaceSettingsValues>
+    if (typeof parsed.reverse === 'boolean') return parsed.reverse
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_RACE.reverse
 }
 
 /** Náhodní soupeři — v solo vždy stejná kategorie jako hráč (FS vč. raket, bez koloběžek). */

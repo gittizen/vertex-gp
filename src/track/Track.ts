@@ -2553,14 +2553,18 @@ export class Track {
     const bankEarth = matLambert(id === 'klecanek' ? 0x6a5a40 : 0x4a5a34)
 
     const start = this.sample(0)
-    // Řeka jen u Do Klecánek — daleko, pod terénem (dno údolí)
+    // Řeka jen u Do Klecánek — daleko, pod terénem (dno údolí).
+    // Výšku ber od nižšího konce trati (ne start) — reverse start je nahoře u hřbitova.
     if (id === 'klecanek') {
+      const finish = this.sample(1)
+      const valley =
+        start.position.y <= finish.position.y ? start.position : finish.position
       const river = new THREE.Mesh(
         new THREE.PlaneGeometry(100, 200),
         matLambert(0x2a4050, { emissive: 0x121c28, emissiveIntensity: 0.06 }),
       )
       river.rotation.x = -Math.PI / 2
-      river.position.set(start.position.x - 160, start.position.y - 1.4, start.position.z - 40)
+      river.position.set(valley.x - 160, valley.y - 1.4, valley.z - 40)
       this.group.add(river)
       this.addValleyBanks(bankEarth, rock, {
         segs: 12,

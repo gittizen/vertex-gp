@@ -31,6 +31,7 @@ import {
 import { createSkyGradientTexture, tickSkyBackdrop } from '../render/SkyBackdrop'
 import {
   loadRaceSettings,
+  peekPersistedReverse,
   randomOpponents,
   saveRaceSettings,
   transmissionAllowedFor,
@@ -549,6 +550,8 @@ export class Game {
       this.activeChampionship = null
       this.menu.showOnline()
     } else if (champ) {
+      // Obnov quick/MP směr — kariéra ho měnila jen v paměti.
+      this.raceSettings.reverse = peekPersistedReverse()
       const career = getCareer(champ.branch, champ.league, champ.season)
       if (career?.done) {
         // Trophy (completeSeason auto-startuje S2 s těžší obtížností).
@@ -560,6 +563,7 @@ export class Game {
         this.menu.showHome()
       }
     } else if (fromRace) {
+      this.menu.syncSelectedTrack(this.lastTrackId)
       this.menu.showRaceSetup()
     } else {
       this.menu.showHome()
@@ -876,8 +880,8 @@ export class Game {
       const champTrack = career ? championshipTrackId(career) : null
       if (champTrack) trackId = champTrack
       if (career) {
+        // Jen pro tento závod — neukládat, ať kariéra nepřepíše default quick/MP.
         this.raceSettings.reverse = championshipReverse(career)
-        saveRaceSettings(this.raceSettings)
       }
     }
     this.lastTrackId = trackId

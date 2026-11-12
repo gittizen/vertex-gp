@@ -10,7 +10,6 @@ import {
   championshipRaceLaps,
   championshipTotalRounds,
   championshipTrackId,
-  championshipReverse,
   listUnlockOrder,
   starterVehicles,
   buyVehicle,
@@ -564,6 +563,12 @@ export class Menu {
     applyUiAtmosphere(this.atmosphereApi?.get() ?? DEFAULT_ATMOSPHERE)
     this.render()
     this.startWatermarkRotation()
+  }
+
+  /** Po návratu ze závodu — ať menu 2 ukazuje stejnou trať, co se jela. */
+  syncSelectedTrack(trackId: string): void {
+    if (!TRACKS.some((tr) => tr.id === trackId)) return
+    this.selectedTrackId = trackId
   }
 
   showChampionshipBrief(branch: VehicleBranch, league: ChampLeague, season: number): void {
@@ -1477,19 +1482,10 @@ export class Menu {
       const lapsSelectable = Boolean(trackDef && !trackDef.sandbox && trackDef.loop)
       const trackName = this.escape(this.trackLabel())
       const vehicleName = this.vehicleLabel(this.selectedVehicle)
+      // Počet kol jen ve Trati — ne duplicitní stepper tady (menu 2).
       const jetSub = lapsSelectable
         ? `${trackName} · ${vehicleName} · ${lapsNow} ${t('menu.onlineLaps').toLowerCase()}`
         : `${trackName} · ${vehicleName}`
-      const lapsPanel = lapsSelectable
-        ? `<section class="menu-section race-setup-laps" aria-label="${t('menu.onlineLaps')}">
-            <p class="tune-rules">${t('menu.onlineLaps')}</p>
-            <div class="lap-stepper" role="group" aria-label="${t('menu.onlineLaps')}">
-              <button type="button" class="btn-ghost lap-step" data-setup-laps-delta="-1" aria-label="-">−</button>
-              <input type="number" class="lap-step-input" min="${RACE_LAP_MIN}" max="${RACE_LAP_MAX}" step="1" value="${lapsNow}" data-setup-laps-input inputmode="numeric" />
-              <button type="button" class="btn-ghost lap-step" data-setup-laps-delta="1" aria-label="+">+</button>
-            </div>
-          </section>`
-        : `<p class="tune-help race-setup-laps-na">${t('menu.circuitLapsNA')}</p>`
       this.root.innerHTML = `
         ${wm}
         ${this.muteBar()}
@@ -1515,28 +1511,11 @@ export class Menu {
               <strong class="gta-tile-label">${t('menu.raceMulti')}</strong>
             </button>
           </div>
-          ${lapsPanel}
           ${this.backRow('home', 'flow')}
         </div>
       `
       this.bindMuteBar()
       this.bindBack('home')
-      if (lapsSelectable) {
-        this.bindLapStepper({
-          get: () => clampRaceLaps(this.raceApi?.get().laps ?? DEFAULT_RACE.laps),
-          set: (n) => {
-            this.raceApi?.set({ laps: n })
-            const input = this.root.querySelector<HTMLInputElement>('[data-setup-laps-input]')
-            if (input && input.value !== String(n)) input.value = String(n)
-            const jetSubEl = this.root.querySelector<HTMLElement>('[data-setup-jet] .gta-tile-sub')
-            if (jetSubEl) {
-              jetSubEl.textContent = `${this.trackLabel()} · ${this.vehicleLabel(this.selectedVehicle)} · ${n} ${t('menu.onlineLaps').toLowerCase()}`
-            }
-          },
-          deltaAttr: 'data-setup-laps-delta',
-          inputAttr: 'data-setup-laps-input',
-        })
-      }
       this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const go = (btn.dataset.go as Screen) || 'raceSetup'
@@ -1548,8 +1527,6 @@ export class Menu {
       })
       this.root.querySelector('[data-setup-jet]')?.addEventListener('click', () => {
         this.raceModePick = 'classic'
-        const lapsInput = this.root.querySelector<HTMLInputElement>('[data-setup-laps-input]')
-        if (lapsInput) this.raceApi?.set({ laps: clampRaceLaps(lapsInput.value) })
         this.raceApi?.set({ freestyle: false })
         const raceNow = this.raceApi?.get()
         if (raceNow) {
@@ -4718,7 +4695,7 @@ export class Menu {
       championshipTrackId(career) ??
       (isChampQualifying(career) ? championshipQualTrackId(career.branch) : null)
     if (!trackId) return
-    this.raceApi?.set({ reverse: championshipReverse(career) })
+    // Směr kariéry nastaví Game.beginSoloRace (bez save) — quick/MP reverse zůstane.
     const look = this.currentLook()
     const fsQual = isChampFsQual(career)
     const qual = isChampQualifying(career)
