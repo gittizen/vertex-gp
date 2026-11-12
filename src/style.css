@@ -1425,6 +1425,37 @@ html.portrait-blocked #app {
   }
 }
 
+/* Telefon na výšku: OK/Zpět nesmí spadnout pod browser chrome / home indicator */
+@media (orientation: portrait) and (max-width: 900px) {
+  .menu-panel.menu-panel-dock {
+    --gta-shell-h: min(
+      780px,
+      calc(100svh - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))
+    );
+    --gta-pad-y: 16px;
+    --gta-pad-x: 14px;
+    --gta-pad-b: 8px;
+    --gta-footer-h: 78px;
+    width: min(1080px, 100%);
+    max-width: 100%;
+  }
+
+  #menu:has(.menu-panel-dock) {
+    align-items: stretch;
+    justify-content: flex-start;
+    padding-top: max(6px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) + 6px));
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+
+  .menu-panel-dock > .menu-nav-back,
+  .menu-panel-dock > .menu-nav-back--flow {
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    z-index: 6;
+  }
+}
+
 /* Ovládání — dlaždice na plnou šířku */
 .menu-controls .dir-grid,
 .menu-controls .mobile-scheme-grid,

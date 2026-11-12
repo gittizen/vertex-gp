@@ -3,7 +3,8 @@
 ## [0.3.2] — 2026-11-12 · *KlecMania current*
 
 - Stíny zase plynulé (bez 20 Hz throttle); zrcátko low-res 128×54 / 3. frame; Klecánek méně propů + freeze static.
-- Telefon: reset joysticku/tiltu při startu a unpause (už netáhne do strany).
+- Zpětné zrcátko **není default** (ani Cinematic ho nezapne); jednorázově vypne staré auto-zapnutí.
+- Telefon: reset joysticku/tiltu při startu a unpause; portrait — OK/Zpět nad safe-area (mapa/vozidlo).
 - Nastavení (menu 3): jeden styl bind-row; FS mapování jako řízení; lidské texty.
 - Hub verzí: **0.1 / 0.2 / 0.3** (místo 0.0.1 / 0.0.2).
 

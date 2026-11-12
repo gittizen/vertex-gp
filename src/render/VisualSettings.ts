@@ -24,6 +24,9 @@ export const DEFAULT_VISUAL: VisualSettingsValues = {
 
 export const VISUAL_QUALITIES: VisualQuality[] = ['perf', 'balanced', 'cinematic']
 
+/** Jednorázově vypni zrcátko, pokud ho dřív zapnula předvolba Cinematic. */
+const MIRROR_OFF_FLAG = `${GAME_STORAGE_NS}.visual-mirror-default-off-v1`
+
 export function loadVisualSettings(): VisualSettingsValues {
   const fallback = suggestedVisualSettings()
   try {
@@ -37,12 +40,24 @@ export function loadVisualSettings(): VisualSettingsValues {
     const quality = VISUAL_QUALITIES.includes(p.quality as VisualQuality)
       ? (p.quality as VisualQuality)
       : fallback.quality
-    return {
+    let rearMirror = !!p.rearMirror
+    // Zrcátko není default — jednou vypni staré auto-zapnutí z Cinematic.
+    if (!localStorage.getItem(MIRROR_OFF_FLAG)) {
+      try {
+        localStorage.setItem(MIRROR_OFF_FLAG, '1')
+      } catch {
+        /* ignore */
+      }
+      rearMirror = false
+    }
+    const out: VisualSettingsValues = {
       quality,
       bloom: p.bloom !== undefined ? !!p.bloom : fallback.bloom,
       shadows: p.shadows !== undefined ? !!p.shadows : fallback.shadows,
-      rearMirror: !!p.rearMirror,
+      rearMirror,
     }
+    if (rearMirror !== !!p.rearMirror) saveVisualSettings(out)
+    return out
   } catch {
     return fallback
   }
@@ -83,7 +98,8 @@ export function visualFlagsForQuality(quality: VisualQuality): Pick<
   VisualSettingsValues,
   'bloom' | 'shadows' | 'rearMirror'
 > {
+  // Zrcátko nikdy automaticky — jen ručně v Atmosféře (extra draw / FPS).
   if (quality === 'perf') return { bloom: false, shadows: false, rearMirror: false }
   if (quality === 'balanced') return { bloom: true, shadows: true, rearMirror: false }
-  return { bloom: true, shadows: true, rearMirror: true }
+  return { bloom: true, shadows: true, rearMirror: false }
 }

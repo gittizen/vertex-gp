@@ -5,9 +5,10 @@ const AUTO_FLAG = `${GAME_STORAGE_NS}.visual-auto-v1`
 const SUGGEST_KEY = `${GAME_STORAGE_NS}.visual-suggest-v1`
 
 function flagsFor(quality: VisualQuality): Pick<VisualSettingsValues, 'bloom' | 'shadows' | 'rearMirror'> {
+  // Zrcátko jen ručně — žádná předvolba ho nezapíná.
   if (quality === 'perf') return { bloom: false, shadows: false, rearMirror: false }
   if (quality === 'balanced') return { bloom: true, shadows: true, rearMirror: false }
-  return { bloom: true, shadows: true, rearMirror: true }
+  return { bloom: true, shadows: true, rearMirror: false }
 }
 
 /**
